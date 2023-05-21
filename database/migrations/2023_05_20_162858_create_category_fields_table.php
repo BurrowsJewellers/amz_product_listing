@@ -13,8 +13,9 @@ return new class extends Migration
     {
         Schema::create('category_fields', function (Blueprint $table) {
             $table->id();
-            $table->string('field_name');
             $table->foreignId('category_id')->constrained();
+            $table->string('amz_name');
+            $table->string('e_web_name')->nullable();
             $table->timestamps();
         });
     }

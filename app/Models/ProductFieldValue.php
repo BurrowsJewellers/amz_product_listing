@@ -5,17 +5,15 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class ProductType extends Model
+class ProductFieldValue extends Model
 {
     use HasFactory;
 
     protected $fillable = [
-        'name',
-        'category_id',
+        'product_id',
+        'category_field_id',
+        'product_type_field_id',
+        'value',
     ];
-
-    public function fields(){
-        return $this->hasMany(ProductTypeField::class);
-    }
 
 }

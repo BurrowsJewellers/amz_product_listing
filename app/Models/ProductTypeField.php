@@ -10,7 +10,13 @@ class ProductTypeField extends Model
     use HasFactory;
 
     protected $fillable = [
-        'field_name',
         'product_type_id',
+        'amz_name',
+        'e_web_name',
     ];
+
+    public function productType() {
+        return $this->belongsTo(ProductType::class);
+    }
+
 }

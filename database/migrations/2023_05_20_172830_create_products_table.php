@@ -15,8 +15,9 @@ return new class extends Migration
             $table->id();
             $table->string('sku');
             $table->string('title');
-            $table->string('external_product_id')->nullable();
-            $table->string('external_product_id_type')->nullable();
+            $table->string('asin')->nullable();
+            $table->string('ean')->nullable();
+            $table->string('upc')->nullable();
             $table->foreignId('brand_id')->constrained();
             $table->foreignId('marketplace_id')->constrained();
             $table->foreignId('category_id')->constrained();

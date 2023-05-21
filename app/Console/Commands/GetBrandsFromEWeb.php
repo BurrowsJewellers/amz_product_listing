@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Http\Controllers\EWebController;
 use App\Models\Brand;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 class GetBrandsFromEWeb extends Command
 {
@@ -36,6 +37,7 @@ class GetBrandsFromEWeb extends Command
                 $this->info($brand->Name);
             }
         } catch (\Exception $e) {
+            Log::debug('getBrandsFromEWeb : '. $e->getMessage());
             dd($e->getMessage());
         }
 

@@ -21,13 +21,25 @@ class ProductTypeFieldSeeder extends Seeder
         $productType = ProductType::where(['name' => 'Necklace', 'category_id' => $category->id])->first();
 
         $fields = [
-            'GemType',
-            'SupplierDeclaredMaterialRegulation',
-            'TargetGender',
+            [
+                'product_type_id' => $productType->id,
+                'amz_name' => 'GemType',
+                'e_web_name' => 'SStoneType',
+            ],
+            [
+                'product_type_id' => $productType->id,
+                'amz_name' => 'TargetGender',
+                'e_web_name' => 'TargetGender',
+            ],
+            [
+                'product_type_id' => $productType->id,
+                'amz_name' => 'SupplierDeclaredMaterialRegulation',
+                'e_web_name' => 'SupplierDeclaredMaterialRegulation',
+            ],
         ];
 
         foreach ($fields as $field) {
-            ProductTypeField::firstOrCreate(['field_name' => $field, 'product_type_id' => $productType->id]);
+            ProductTypeField::firstOrCreate($field);
         }
     }
 }

@@ -11,11 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('product_type_fields', function (Blueprint $table) {
+        Schema::create('product_field_values', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('product_type_id')->constrained();
-            $table->string('amz_name');
-            $table->string('e_web_name')->nullable();
+            $table->foreignId('product_id')->constrained();
+            $table->foreignId('category_field_id')->constrained();
+            $table->foreignId('product_type_field_id')->nullable()->constrained();
+            $table->string('value');
             $table->timestamps();
         });
     }
@@ -25,6 +26,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('product_type_fields');
+        Schema::dropIfExists('product_field_values');
     }
 };

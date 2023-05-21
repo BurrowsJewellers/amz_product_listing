@@ -14,4 +14,8 @@ class Category extends Model
         'marketplace_id',
     ];
 
+    public function fields(){
+        return $this->hasMany(CategoryField::class);
+    }
+
 }

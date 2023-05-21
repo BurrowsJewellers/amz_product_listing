@@ -19,12 +19,20 @@ class CategoryFieldSeeder extends Seeder
         $category = Category::where(['name' => 'Jewelry', 'marketplace_id' => $marketplace->id])->first();
 
         $fields = [
-            'ModelNumber',
-            'MetalType',
+            [
+                'category_id' => $category->id,
+                'amz_name' => 'ModelNumber',
+                'e_web_name' => 'RealDesignNum',
+            ],
+            [
+                'category_id' => $category->id,
+                'amz_name' => 'MetalType',
+                'e_web_name' => 'SMetalType',
+            ],
         ];
 
         foreach ($fields as $field) {
-            CategoryField::firstOrCreate(['field_name' => $field, 'category_id' => $category->id]);
+            CategoryField::firstOrCreate($field);
         }
 
 
