@@ -19,4 +19,8 @@ class CategoryField extends Model
         return $this->belongsTo(Category::class);
     }
 
+    public function value() {
+        return $this->hasOne(ProductFieldValue::class, 'category_field_id', 'id')->whereNull('product_type_field_id');
+    }
+
 }

@@ -19,4 +19,9 @@ class ProductTypeField extends Model
         return $this->belongsTo(ProductType::class);
     }
 
+    public function value() {
+        return $this->hasOne(ProductFieldValue::class, 'product_type_field_id', 'id')->whereNotNull('product_type_field_id');
+    }
+
+
 }

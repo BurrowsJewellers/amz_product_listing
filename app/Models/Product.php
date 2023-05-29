@@ -34,4 +34,12 @@ class Product extends Model
         return $this->hasMany(ProductFieldValue::class);
     }
 
+    public function categoryFields() {
+        return $this->hasMany(CategoryField::class, 'category_id', 'category_id');
+    }
+
+    public function productTypeFields() {
+        return $this->hasMany(ProductTypeField::class, 'product_type_id', 'product_type_id');
+    }
+
 }

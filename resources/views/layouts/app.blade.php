@@ -66,14 +66,14 @@
     <script src="{{ asset('vendors/chart.js/js/chart.min.js') }}"></script>
     <script src="{{ asset('vendors/@coreui/chartjs/js/coreui-chartjs.js') }}"></script>
     <script src="{{ asset('vendors/@coreui/utils/js/coreui-utils.js') }}"></script>
-    <script src="{{ asset('js/main.js') }}"></script>
+    <!-- <script src="{{ asset('js/main.js') }}"></script> -->
     <script>
         function logout() {
             document.getElementById('logout-form').submit();
         }
     </script>
-    <script></script>
 
+    @yield('scripts')
 </body>
 
 </html>

@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('product_field_values', function (Blueprint $table) {
             $table->id();
             $table->foreignId('product_id')->constrained();
-            $table->foreignId('category_field_id')->constrained();
+            $table->foreignId('category_field_id')->nullable()->constrained();
             $table->foreignId('product_type_field_id')->nullable()->constrained();
             $table->string('value');
             $table->timestamps();

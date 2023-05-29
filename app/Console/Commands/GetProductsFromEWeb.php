@@ -35,13 +35,16 @@ class GetProductsFromEWeb extends Command
     public function handle()
     {
         try {
+            $this->info('Calling GetAllActiveItems');
             $eWeb = new EWebController;
-            // $resp = $eWeb->call('GetAllActiveItems');
-            
-            $params = ["SKU" => "001-022-04646"];
-            $resp = $eWeb->call('GetActiveItemBySKU', $params);
+            $resp = $eWeb->call('GetAllActiveItems');
+            $activeItems = $resp->GetAllActiveItemsResult->ActiveItem;
+            // dd($getAllActiveItemsResult);
+
+            // $params = ["SKU" => "001-022-04646"];
+            // $resp = $eWeb->call('GetActiveItemBySKU', $params);
             // dd($resp);
-            $item = $resp->GetActiveItemBySKUResult;
+            // $item = $resp->GetActiveItemBySKUResult;
             // dd($resp->GetActiveItemBySKUResult);
 
             $marketplace = Marketplace::where('name', 'Amazon')->first();
@@ -49,137 +52,141 @@ class GetProductsFromEWeb extends Command
             $productType = ProductType::where(['name' => 'Necklace', 'category_id' => $category->id])->with('fields')->first();
             $brands = Brand::all();
 
-            if ($item->WebOptionBoolean7 == true) {
-                $brandsArray = [];
-    
-                foreach ($brands as $brand) {
-                    $brandsArray[$brand->brand_id]['id'] = $brand->id;
-                    $brandsArray[$brand->brand_id]['name'] = $brand->name;
-                }
-    
-                // dd($brandsArray);
-                // dd($brandsArray['1-63']['name']);
-                
-                $productData = [];
-                // $productData['sku'] = $item->SKU;
-                $productData['title'] = $item->ShortMarketingDescription;
-                $productData['asin'] = null;
-    
-                $barcode = trim($item->Barcode);
-                
-                if (strlen($barcode) == 11 || strlen($barcode) == 12) {
-                    $productData['upc'] = $barcode;
-                } elseif (strlen($barcode) == 13) {
-                    $productData['ean'] = $barcode;
-                } 
-    
-                $productData['brand_id'] = $brandsArray[$item->BrandID]['id'];
-                // $productData['marketplace_id'] = $marketplace->id;
-                $productData['category_id'] = $category->id;
-                $productData['product_type_id'] = $productType->id;
-                $productData['description'] = $item->MarketingDescription;
-                $productData['manufacturer'] = $brandsArray[$item->BrandID]['id'];
-                $productData['recommended_browse_nodes'] = '5131129051';
-                $productData['department_name'] = 'Womens';
-                $productData['size_name'] = 'Standard';
-    
-                if ($brandsArray[$item->BrandID]['name'] == 'Thoms Sabo') {
-                    $countryOfOrigin = 'GR';
-                } elseif ($brandsArray[$item->BrandID]['name'] == 'Ania Haie') {
-                    $countryOfOrigin = 'UK';
-                } else {
-                    $countryOfOrigin = 'AU';
-                }
-    
-                $productData['country_of_origin'] = $countryOfOrigin;
-                $productData['item_type_name'] = $item->ShortMarketingDescription;
-                $productData['quantity'] = intval($item->TotalAvailQOH);
-                $productData['standard_price'] = $item->Price;
+            foreach ($activeItems as $item) {
+                // dd($item);
+                $this->info($item->SKU);
 
-                $otherFields = [];
-
-                // Loop through the ItemsIDSs and add them in the main item object
-                foreach ($item->ISDs->ItemISD as  $other) {
-                    $keyName = str_replace(['.', ' ', ',', '_', '\''], [], $other->Name);
-                    $otherFields[] = $keyName;
-                    $item->{$keyName} = $other->Value;
-                }
-
-                /** Add the required field which are missing in eWeb API */
-                if (!property_exists($item, 'TargetGender')) {
-                    $item->TargetGender = 'female';
-                }
-                
-                if (!property_exists($item, 'SupplierDeclaredMaterialRegulation')) {
-                    $item->SupplierDeclaredMaterialRegulation = 'not_applicable';
-                }
-
-                $categoryFieldValues = [];
-                foreach ($category->fields as $field) {
-                    if (property_exists($item, $field->e_web_name)) {
-                        $categoryFieldValues[] = [
-                            'category_field_id' => $field->id,
-                            // 'amz_name' => $field->amz_name,
-                            'value' => $item->{$field->e_web_name},
-                        ];
+                if ($item->WebOptionBoolean7 == true) {
+                    $brandsArray = [];
+        
+                    foreach ($brands as $brand) {
+                        $brandsArray[$brand->brand_id]['id'] = $brand->id;
+                        $brandsArray[$brand->brand_id]['name'] = $brand->name;
                     }
-                }
-    
-                // dd($categoryFieldValues);
-    
-                $productTypeFieldValues = [];
-                foreach ($productType->fields as $field) {
-                    if (property_exists($item, $field->e_web_name)) {
-                        $productTypeFieldValues[] = [
-                            'product_type_field_id' => $field->id,
-                            // 'amz_name' => $field->amz_name,
-                            'category_field_id' => $productType->category_id,
-                            'value' => $item->{$field->e_web_name},
-                        ];
+        
+                    // dd($brandsArray);
+                    // dd($brandsArray['1-63']['name']);
+                    
+                    $productData = [];
+                    // $productData['sku'] = $item->SKU;
+                    $productData['title'] = $item->ShortMarketingDescription;
+                    $productData['asin'] = null;
+        
+                    $barcode = trim($item->Barcode);
+                    
+                    if (strlen($barcode) == 11 || strlen($barcode) == 12) {
+                        $productData['upc'] = $barcode;
+                    } elseif (strlen($barcode) == 13) {
+                        $productData['ean'] = $barcode;
+                    } 
+        
+                    $productData['brand_id'] = $brandsArray[$item->BrandID]['id'];
+                    // $productData['marketplace_id'] = $marketplace->id;
+                    $productData['category_id'] = $category->id;
+                    $productData['product_type_id'] = $productType->id;
+                    $productData['description'] = $item->MarketingDescription;
+                    $productData['manufacturer'] = $brandsArray[$item->BrandID]['id'];
+                    $productData['recommended_browse_nodes'] = '5131129051';
+                    $productData['department_name'] = 'Womens';
+                    $productData['size_name'] = 'Standard';
+        
+                    if ($brandsArray[$item->BrandID]['name'] == 'Thoms Sabo') {
+                        $countryOfOrigin = 'GR';
+                    } elseif ($brandsArray[$item->BrandID]['name'] == 'Ania Haie') {
+                        $countryOfOrigin = 'UK';
+                    } else {
+                        $countryOfOrigin = 'AU';
                     }
-                }
-
-                $merged = array_merge($productTypeFieldValues, $categoryFieldValues);
-
-                // dd($merged);
-
-                
-                // exit;
-                DB::beginTransaction();
-
-                try {
-                    $product = Product::updateOrCreate(
-                        [
-                            'sku' => $item->SKU,
-                            'marketplace_id' => $marketplace->id,
-                        ],
-                        $productData
-                    );
-
-                    if (!empty($merged)) {
-                        foreach ($merged as $value) {
-                            ProductFieldValue::updateOrCreate(
-                                [
-                                    'product_id' => $product->id,
-                                    'category_field_id' => $value['category_field_id'],
-                                    'product_type_field_id' => isset($value['product_type_field_id']) ? $value['product_type_field_id'] : null,
-                                    
-                                ],
-                                [
-                                    'value' => $value['value'],
-                                ]
-                            );
+        
+                    $productData['country_of_origin'] = $countryOfOrigin;
+                    $productData['item_type_name'] = $item->ShortMarketingDescription;
+                    $productData['quantity'] = intval($item->TotalAvailQOH);
+                    $productData['standard_price'] = $item->RetailPrice2;
+    
+                    $otherFields = [];
+    
+                    // Loop through the ItemsIDSs and add them in the main item object
+                    foreach ($item->ISDs->ItemISD as  $other) {
+                        $keyName = str_replace(['.', ' ', ',', '_', '\''], [], $other->Name);
+                        $otherFields[] = $keyName;
+                        $item->{$keyName} = $other->Value;
+                    }
+    
+                    /** Add the required field which are missing in eWeb API */
+                    if (!property_exists($item, 'TargetGender')) {
+                        $item->TargetGender = 'female';
+                    }
+                    
+                    if (!property_exists($item, 'SupplierDeclaredMaterialRegulation')) {
+                        $item->SupplierDeclaredMaterialRegulation = 'not_applicable';
+                    }
+    
+                    $categoryFieldValues = [];
+                    foreach ($category->fields as $field) {
+                        if (property_exists($item, $field->e_web_name)) {
+                            $categoryFieldValues[] = [
+                                'category_field_id' => $field->id,
+                                // 'amz_name' => $field->amz_name,
+                                'value' => $item->{$field->e_web_name},
+                            ];
                         }
                     }
-
-                    DB::commit();
-                } catch (\Exception $e) {
-                    var_dump($e->getMessage());
-                    DB::rollBack();
+        
+                    // dd($categoryFieldValues);
+        
+                    $productTypeFieldValues = [];
+                    foreach ($productType->fields as $field) {
+                        if (property_exists($item, $field->e_web_name)) {
+                            $productTypeFieldValues[] = [
+                                'product_type_field_id' => $field->id,
+                                // 'amz_name' => $field->amz_name,
+                                'value' => $item->{$field->e_web_name},
+                            ];
+                        }
+                    }
+    
+                    $merged = array_merge($productTypeFieldValues, $categoryFieldValues);
+    
+                    // dd($merged);
+    
+                    
+                    // exit;
+                    DB::beginTransaction();
+    
+                    try {
+                        $product = Product::updateOrCreate(
+                            [
+                                'sku' => $item->SKU,
+                                'marketplace_id' => $marketplace->id,
+                            ],
+                            $productData
+                        );
+    
+                        if (!empty($merged)) {
+                            foreach ($merged as $value) {
+                                ProductFieldValue::updateOrCreate(
+                                    [
+                                        'product_id' => $product->id,
+                                        'category_field_id' => isset($value['category_field_id']) ? $value['category_field_id'] : null,
+                                        'product_type_field_id' => isset($value['product_type_field_id']) ? $value['product_type_field_id'] : null,
+                                    ],
+                                    [
+                                        'value' => $value['value'],
+                                    ]
+                                );
+                            }
+                        }
+    
+                        DB::commit();
+                    } catch (\Exception $e) {
+                        var_dump($e->getMessage());
+                        DB::rollBack();
+                    }
+    
+                } else {
+                    $this->error('WebOptionBoolean7 false');
                 }
-
             }
-
         } catch (\Exception $e) {
             $msg = 'getBrandsFromEWeb : '. $e->getMessage() . ' - Line : '. $e->getLine();
             Log::debug($msg);

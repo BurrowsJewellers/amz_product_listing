@@ -18,4 +18,8 @@ class Category extends Model
         return $this->hasMany(CategoryField::class);
     }
 
+    public function productTypes() {
+        return $this->hasMany(ProductType::class);
+    }
+
 }
