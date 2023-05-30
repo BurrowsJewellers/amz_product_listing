@@ -29,9 +29,12 @@ class GenerateAmzProductsXml extends Command
      */
     public function handle()
     {
-        // $product = Product::with(['fields', 'brand', 'category', 'productType', 'categoryFields', 'productTypeFields'])->where(['xml_generated' => 0, 'published' => 0])->find(1);
+        // $product = Product::with(['fields' => function($query) {
+        //     $query->with(['category', 'productType', 'categoryField', 'productTypeField']);
+        // }, 'brand', 'category', 'productType'])->where(['xml_generated' => 0, 'published' => 0])->find(2);
+        
+        // Log::debug(print_r($product->toJson(), true));
         // dd($product);
-
 
         $marketplace = 'Amazon';
         $jobType = 'generateAmzProductsXml';
@@ -49,7 +52,9 @@ class GenerateAmzProductsXml extends Command
                 while($count){
                     $limit = 1;
 
-                    $products = Product::with(['fields', 'brand', 'category', 'productType', 'categoryFields', 'productTypeFields'])->where(['xml_generated' => 0, 'published' => 0])->limit($limit)->get();
+                    $products = Product::with(['fields' => function($query) {
+                        $query->with(['category', 'productType', 'categoryField', 'productTypeField']);
+                    }, 'brand', 'category', 'productType'])->where(['xml_generated' => 0, 'published' => 0])->limit($limit)->get();
 
                     if($products->count()) {
                         $merchantId = config('amazon.merchand_id');
@@ -112,8 +117,15 @@ class GenerateAmzProductsXml extends Command
                             $elementDescriptionData = $dom->createElement('DescriptionData');
                             $elementDescriptionData->appendChild($dom->createElement('Title', $product->title));
                             $elementDescriptionData->appendChild($dom->createElement('Brand', $product->brand->name));
-                            $elementDescriptionData->appendChild($dom->createElement('Description', '<![CDATA['.$product->description.']]>'));
-                            $elementDescriptionData->appendChild($dom->createElement('BulletPoint', '<![CDATA['. $product->title .']]>'));
+
+                            $elementDescription = $dom->createElement('Description');
+                            $elementDescription->appendChild($dom->createCDATASection($product->description));
+                            $elementDescriptionData->appendChild($elementDescription);
+
+
+                            $elementBulletPoint1 = $dom->createElement('BulletPoint');
+                            $elementBulletPoint1->appendChild($dom->createCDATASection($product->title));
+                            $elementDescriptionData->appendChild($elementBulletPoint1);
 
                             $elementDescriptionData->appendChild($dom->createElement('Manufacturer', $product->brand->name));
                             $elementDescriptionData->appendChild($dom->createElement('RecommendedBrowseNode', '5131129051'));
@@ -134,8 +146,22 @@ class GenerateAmzProductsXml extends Command
                                 $elementProductTypeName = $dom->createElement($product->productType->name);
                             }
 
+                            foreach ($product->fields as $productField) {
+                                if (!$productField->categoryField && $productField->productTypeField) {
+                                    $elementProductTypeName->appendChild($dom->createElement($productField->productTypeField->amz_name, $productField->value));
+                                } elseif ($productField->categoryField && !$productField->productTypeField) {
+                                    $elementCategoryName->appendChild($dom->createElement($productField->categoryField->amz_name, $productField->value));
+                                }
+                            }
 
+                            $elementProductType = $dom->createElement('ProductType');
+                            $elementProductType->appendChild($elementProductTypeName);
 
+                            $elementCategoryName->appendChild($elementProductType);
+
+                            $elementProductData->appendChild($elementCategoryName);
+
+                            $elementProd->appendChild($elementProductData);
                         }
             
                         $xmlRoot = $dom->appendChild($envelop);
