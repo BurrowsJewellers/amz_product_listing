@@ -125,6 +125,8 @@ class GetProductsFromEWeb extends Command
                     foreach ($category->fields as $field) {
                         if (property_exists($item, $field->e_web_name)) {
                             $categoryFieldValues[] = [
+                                'category_id' => $category->id,
+                                'product_type_id' => $productType->id,
                                 'category_field_id' => $field->id,
                                 // 'amz_name' => $field->amz_name,
                                 'value' => $item->{$field->e_web_name},
@@ -138,6 +140,8 @@ class GetProductsFromEWeb extends Command
                     foreach ($productType->fields as $field) {
                         if (property_exists($item, $field->e_web_name)) {
                             $productTypeFieldValues[] = [
+                                'category_id' => $category->id,
+                                'product_type_id' => $productType->id,
                                 'product_type_field_id' => $field->id,
                                 // 'amz_name' => $field->amz_name,
                                 'value' => $item->{$field->e_web_name},
@@ -171,6 +175,8 @@ class GetProductsFromEWeb extends Command
                                         'product_type_field_id' => isset($value['product_type_field_id']) ? $value['product_type_field_id'] : null,
                                     ],
                                     [
+                                        'category_id' => $value['category_id'],
+                                        'product_type_id' => $value['product_type_id'],
                                         'value' => $value['value'],
                                     ]
                                 );

@@ -31,6 +31,16 @@ return new class extends Migration
             $table->string('item_type_name')->nullable();
             $table->integer('quantity')->nullable();
             $table->decimal('standard_price', 8, 2)->nullable();
+            $table->boolean('xml_generated')->default(false);
+            $table->boolean('price_feed_status')->default(false);
+            $table->boolean('image_feed_status')->default(false);
+            $table->boolean('inventory_feed_status')->default(false);
+            $table->boolean('submitted')->default(false);
+            $table->boolean('published')->default(false);
+            $table->boolean('update')->default(false);
+            $table->string('status')->nullable();
+            $table->text('message')->nullable();
+            $table->foreignId('amz_feed_id')->nullable()->references('id')->on('amz_feeds');
             $table->timestamps();
         });
     }

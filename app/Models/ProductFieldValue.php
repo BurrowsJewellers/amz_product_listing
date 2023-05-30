@@ -11,7 +11,9 @@ class ProductFieldValue extends Model
 
     protected $fillable = [
         'product_id',
+        'category_id',
         'category_field_id',
+        'product_type_id',
         'product_type_field_id',
         'value',
     ];
