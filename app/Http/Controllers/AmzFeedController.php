@@ -14,7 +14,6 @@ use GuzzleHttp\Client;
 use GuzzleHttp\Psr7\Request;
 use App\Models\AmzFeed;
 use App\Models\Product;
-use App\Models\AmzRequestedReport;
 use App\Http\Controllers\AmzConfigController;
 
 class AmzFeedController extends Controller

@@ -27,6 +27,14 @@ class SyncJobsSeeder extends Seeder
                 'type' => 'generateAmzInventoryXml',
             ],
             [
+                'marketplace' => 'Amazon',
+                'type' => 'generateAmzImagesXml',
+            ],
+            [
+                'marketplace' => 'Amazon',
+                'type' => 'generateAmzPriceXml',
+            ],
+            [
                 'marketplace' => 'EWeb',
                 'type' => 'getImagesFromEWeb',
             ],
