@@ -29,13 +29,6 @@ class GenerateAmzProductsXml extends Command
      */
     public function handle()
     {
-        // $product = Product::with(['fields' => function($query) {
-        //     $query->with(['category', 'productType', 'categoryField', 'productTypeField']);
-        // }, 'brand', 'category', 'productType'])->where(['xml_generated' => 0, 'published' => 0])->find(2);
-        
-        // Log::debug(print_r($product->toJson(), true));
-        // dd($product);
-
         $marketplace = 'Amazon';
         $jobType = 'generateAmzProductsXml';
 
@@ -43,14 +36,14 @@ class GenerateAmzProductsXml extends Command
 
         if(!$job->isRunning()){
             Log::info("$marketplace $jobType started!");
-            // $job->update(['status' => 1]);
+            $job->update(['status' => 1]);
 
             try {
                 $count = Product::where(['xml_generated' => 0, 'published' => 0])->count();
 
                 $this->info($count);
                 while($count){
-                    $limit = 1;
+                    $limit = 100;
 
                     $products = Product::with(['fields' => function($query) {
                         $query->with(['category', 'productType', 'categoryField', 'productTypeField']);
@@ -106,7 +99,6 @@ class GenerateAmzProductsXml extends Command
                             $standardProductID->appendChild($dom->createElement('Value', $standardProductIDValue));
 
                             $elementProd->appendChild($standardProductID);
-
 
                             $elementCondition = $dom->createElement('Condition');
                             $elementCondition->appendChild($dom->createElement('ConditionType', 'New'));
@@ -177,7 +169,7 @@ class GenerateAmzProductsXml extends Command
                     }
                     $count = Product::where(['xml_generated' => 0, 'published' => 0])->count();
                 }
-
+                $job->update(['status' => 0, 'message' => null]);
             } catch (\Exception $e){
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
                 Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() .' Line : '. $e->getLine());

@@ -2,18 +2,16 @@
 
 namespace App\Console\Commands;
 
-use App\Http\Controllers\ConfigController;
-use App\Http\Controllers\EWebController;
 use Illuminate\Console\Command;
 
-class TestEWeb extends Command
+class GenerateImagesXml extends Command
 {
     /**
      * The name and signature of the console command.
      *
      * @var string
      */
-    protected $signature = 'testEWeb';
+    protected $signature = 'app:generate-images-xml';
 
     /**
      * The console command description.
@@ -27,9 +25,6 @@ class TestEWeb extends Command
      */
     public function handle()
     {
-        $eWeb = new EWebController;
-        $params = ["SKU" => "001-021-07825"];
-        $resp = $eWeb->call('GetItemImagesBySKU', $params);
-        dd($resp);
+
     }
 }

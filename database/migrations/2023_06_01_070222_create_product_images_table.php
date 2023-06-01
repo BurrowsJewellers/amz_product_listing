@@ -11,15 +11,14 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('amz_feeds', function (Blueprint $table) {
+        Schema::create('product_images', function (Blueprint $table) {
             $table->id();
-            $table->string('feed_id')->nullable();
-            $table->string('type');
-            $table->string('file_name');
-            $table->string('response_file_name')->nullable();
-            $table->string('processing_status')->nullable();
+            $table->foreignId('product_id')->references('id')->on('products')->cascadeOnDelete();
+            $table->integer('e_web_index')->nullable();
+            $table->integer('width')->nullable();
+            $table->integer('height')->nullable();
+            $table->string('url', 500);
             $table->timestamps();
-            $table->softDeletes();
         });
     }
 
@@ -28,6 +27,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('amz_feeds');
+        Schema::dropIfExists('product_images');
     }
 };

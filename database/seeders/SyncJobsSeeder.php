@@ -15,9 +15,22 @@ class SyncJobsSeeder extends Seeder
     {
         $jobs = [
             [
-                'type' => 'generateAmzProductsXml',
-                'marketplace' => 'Amazon',
+                'marketplace' => 'EWeb',
+                'type' => 'getProductsFromEWeb',
             ],
+            [
+                'marketplace' => 'Amazon',
+                'type' => 'generateAmzProductsXml',
+            ],
+            [
+                'marketplace' => 'Amazon',
+                'type' => 'generateAmzInventoryXml',
+            ],
+            [
+                'marketplace' => 'EWeb',
+                'type' => 'getImagesFromEWeb',
+            ],
+
         ];
 
         foreach ($jobs as $job) {
