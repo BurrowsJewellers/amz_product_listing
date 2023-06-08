@@ -7,25 +7,25 @@ use SellingPartnerApi\Configuration;
 
 class AmzConfigController extends Controller
 {
-    public static function getConfig($region = 'NA', $debug = false){
+    public static function getConfig($region = 'FE', $debug = false)
+    {
         $options = [
-            'lwaRefreshToken'       => config('spapi.refresh_token'),
-            'lwaClientId'           => config('spapi.client_id'),
-            'lwaClientSecret'       => config('spapi.client_secret'),
-            'awsAccessKeyId'        => config('spapi.access_key'),
-            'awsSecretAccessKey'    => config('spapi.secret_key'),
+            'lwaRefreshToken'       => config('amazon.spapi.refresh_token'),
+            'lwaClientId'           => config('amazon.spapi.client_id'),
+            'lwaClientSecret'       => config('amazon.spapi.client_secret'),
+            'awsAccessKeyId'        => config('amazon.spapi.access_key'),
+            'awsSecretAccessKey'    => config('amazon.spapi.secret_key'),
             'endpoint'              => constant("\SellingPartnerApi\Endpoint::$region"),
-            'roleArn'               => config('spapi.role_arn'),
+            'roleArn'               => config('amazon.spapi.role_arn'),
         ];
 
         $config = new Configuration($options);
 
-        if($debug){
+        if ($debug) {
             $config->setDebug(true);
-            $config->setDebugFile(storage_path() .'/logs/amz-api-debug.log');
+            $config->setDebugFile(storage_path() . '/logs/laravel.log');
         }
 
         return $config;
     }
-
 }
