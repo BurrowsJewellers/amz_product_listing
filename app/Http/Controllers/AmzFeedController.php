@@ -57,7 +57,8 @@ class AmzFeedController extends Controller
 
             $fileName = $type . '_' . time() . '.xml';
 
-            $data = mb_convert_encoding($data, 'UTF-8');
+            // $data = mb_convert_encoding($data, 'UTF-8');
+            $data = utf8_encode($data);
 
             $dom = new \DOMDocument;
             $dom->preserveWhiteSpace = FALSE;
@@ -152,7 +153,9 @@ class AmzFeedController extends Controller
 
                                 $body = new CreateFeedSpecification($specifications);
 
+                                // dd($body);
                                 $response = $feedsApiInstance->createFeed($body);
+
 
                                 $feedId = $response->getFeedId();
 
@@ -266,33 +269,33 @@ class AmzFeedController extends Controller
 
     public function amazonFeeds()
     {
-        return view('feeds.amazon.amazonFeeds');
-    }
-
-    public function amazonFeedsData(Req $request)
-    {
-        $feeds = AmzFeed::query();
-        return datatables()->of($feeds)
-            ->addColumn('feed_xml', function ($feed) {
-                $link = route('amazon_feed.amazon.feeds.download', ['id' => $feed->id, 'type' => 'feed']);
-                return '<a href="' . $link . '">Download</a>';
-            })
-            ->addColumn('response_xml', function ($feed) {
-                if ($feed->response_file_name) {
-                    $link = route('amazon_feed.amazon.feeds.download', ['id' => $feed->id, 'type' => 'response']);
+        if (request()->ajax()) {
+            $feeds = AmzFeed::query();
+            return datatables()->of($feeds)
+                ->addColumn('feed_xml', function ($feed) {
+                    $link = route('amazon.feed.download', ['id' => $feed->id, 'type' => 'feed']);
                     return '<a href="' . $link . '">Download</a>';
-                } else {
-                    return '';
-                }
-            })
-            ->editColumn('created_at', function ($feed) {
-                return $feed->created_at->format('Y-m-d');
-            })
+                })
+                ->addColumn('response_xml', function ($feed) {
+                    if ($feed->response_file_name) {
+                        $link = route('amazon.feed.download', ['id' => $feed->id, 'type' => 'response']);
+                        return '<a href="' . $link . '">Download</a>';
+                    } else {
+                        return '';
+                    }
+                })
+                ->editColumn('created_at', function ($feed) {
+                    return $feed->created_at->format('Y-m-d H:i:s');
+                })
+                ->editColumn('updated_at', function ($feed) {
+                    return $feed->updated_at->format('Y-m-d H:i:s');
+                })
 
-            ->rawColumns(['feed_xml', 'response_xml'])
-            ->toJson();
+                ->rawColumns(['feed_xml', 'response_xml'])
+                ->toJson();
+        }
+        return view('amazon.feeds');
     }
-
 
     public function downloadFile(Req $request)
     {

@@ -39,6 +39,14 @@
                     Products</a>
             </li>
 
+            <li class="nav-item">
+                <a class="nav-link" href="{{ route('amazon.feeds') }}">
+                    <svg class="nav-icon">
+                        <use xlink:href="{{ asset('vendors/@coreui/icons/svg/free.svg#cil-list') }}"></use>
+                    </svg>
+                    Amazon Feeds</a>
+            </li>
+
             <!-- <li class="nav-item">
                 <a class="nav-link" href="charts.html">
                     <svg class="nav-icon">

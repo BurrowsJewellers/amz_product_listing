@@ -1,11 +1,12 @@
 <?php
 
-use App\Http\Controllers\CategoryController;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProductTypeController;
+use App\Http\Controllers\AmzFeedController;
+use App\Http\Controllers\CategoryController;
 
 /*
 |--------------------------------------------------------------------------
@@ -31,8 +32,8 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/product/edit/{id}', [ProductController::class, 'edit'])->name('product.edit');
     Route::post('/product/save', [ProductController::class, 'save'])->name('product.save');
 
+    Route::get('/amazon/feeds', [AmzFeedController::class, 'amazonFeeds'])->name('amazon.feeds');
+    Route::get('/amazon/feed/download', [AmzFeedController::class, 'downloadFile'])->name('amazon.feed.download');
+
     Route::get('/get/producttypes', [ProductTypeController::class, 'getProductTypes'])->name('get.productTypes');
-
-
 });
-
