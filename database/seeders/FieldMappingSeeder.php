@@ -14,7 +14,7 @@ class FieldMappingSeeder extends Seeder
      */
     public function run(): void
     {
-        $amazon = Marketplace::where('name', 'Amazon')->first();
-        $category = Category::where('name', 'Necklace');
+        // $amazon = Marketplace::where('name', 'Amazon')->first();
+        // $category = Category::where('name', 'Necklace');
     }
 }

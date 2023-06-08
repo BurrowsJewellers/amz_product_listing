@@ -2,18 +2,17 @@
 
 namespace App\Console\Commands;
 
-use App\Http\Controllers\ConfigController;
-use App\Http\Controllers\EWebController;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Artisan;
 
-class TestEWeb extends Command
+class RefreshProject extends Command
 {
     /**
      * The name and signature of the console command.
      *
      * @var string
      */
-    protected $signature = 'testEWeb';
+    protected $signature = 'refreshProject';
 
     /**
      * The console command description.
@@ -27,9 +26,10 @@ class TestEWeb extends Command
      */
     public function handle()
     {
-        $eWeb = new EWebController;
-        $params = ["SKU" => "001-021-07825"];
-        $resp = $eWeb->call('GetItemImagesBySKU', $params);
-        dd($resp);
+        Artisan::call('db:wipe');
+        Artisan::call('migrate');
+        Artisan::call('db:seed');
+        Artisan::call('getBrandsFromEWeb');
+        Artisan::call('getProductsFromEWeb');
     }
 }
