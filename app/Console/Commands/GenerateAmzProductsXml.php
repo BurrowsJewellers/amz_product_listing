@@ -110,13 +110,20 @@ class GenerateAmzProductsXml extends Command
                             $elementDescriptionData->appendChild($dom->createElement('Title', $product->title));
                             $elementDescriptionData->appendChild($dom->createElement('Brand', $product->brand->name));
 
+                            $productDescription = str_replace("Product Description:", '', $product->description);
+
                             $elementDescription = $dom->createElement('Description');
-                            $elementDescription->appendChild($dom->createCDATASection($product->description));
+                            $elementDescription->appendChild($dom->createCDATASection($productDescription));
                             $elementDescriptionData->appendChild($elementDescription);
 
+                            $dataBulletPoint1 = $productDescription;
+
+                            if (strlen($dataBulletPoint1) > 500) {
+                                $dataBulletPoint1 = substr($dataBulletPoint1, 0, 490) . '...';
+                            }
 
                             $elementBulletPoint1 = $dom->createElement('BulletPoint');
-                            $elementBulletPoint1->appendChild($dom->createCDATASection($product->title));
+                            $elementBulletPoint1->appendChild($dom->createCDATASection($dataBulletPoint1));
                             $elementDescriptionData->appendChild($elementBulletPoint1);
 
                             $elementDescriptionData->appendChild($dom->createElement('Manufacturer', $product->brand->name));
