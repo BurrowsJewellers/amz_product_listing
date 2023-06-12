@@ -28,13 +28,13 @@ class ProductTypeFieldSeeder extends Seeder
             ],
             [
                 'product_type_id' => $productType->id,
-                'amz_name' => 'TargetGender',
-                'e_web_name' => 'TargetGender',
+                'amz_name' => 'SupplierDeclaredMaterialRegulation',
+                'e_web_name' => 'SupplierDeclaredMaterialRegulation',
             ],
             [
                 'product_type_id' => $productType->id,
-                'amz_name' => 'SupplierDeclaredMaterialRegulation',
-                'e_web_name' => 'SupplierDeclaredMaterialRegulation',
+                'amz_name' => 'TargetGender',
+                'e_web_name' => 'TargetGender',
             ],
         ];
 
