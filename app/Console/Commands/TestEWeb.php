@@ -29,7 +29,9 @@ class TestEWeb extends Command
     {
         $eWeb = new EWebController;
         $params = ["SKU" => "001-021-07825"];
-        $resp = $eWeb->call('GetItemImagesBySKU', $params);
+        // $resp = $eWeb->call('GetItemImagesBySKU', $params);
+        // $params = ["SKU" => "001-022-04646"];
+        $resp = $eWeb->call('GetActiveItemQOHBySKU', $params);
         dd($resp);
     }
 }
