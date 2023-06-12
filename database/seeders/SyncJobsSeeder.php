@@ -38,12 +38,15 @@ class SyncJobsSeeder extends Seeder
                 'marketplace' => 'EWeb',
                 'type' => 'getImagesFromEWeb',
             ],
+            [
+                'marketplace' => 'EWeb',
+                'type' => 'getInventoryFromEWeb',
+            ],
 
         ];
 
         foreach ($jobs as $job) {
             SyncJob::updateOrCreate($job);
         }
-
     }
 }
