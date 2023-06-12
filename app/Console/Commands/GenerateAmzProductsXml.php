@@ -148,15 +148,27 @@ class GenerateAmzProductsXml extends Command
                             foreach ($product->fields as $productField) {
                                 if (!$productField->categoryField && $productField->productTypeField) {
                                     $elementProductTypeName->appendChild($dom->createElement($productField->productTypeField->amz_name, $productField->value));
-                                } elseif ($productField->categoryField && !$productField->productTypeField) {
-                                    $elementCategoryName->appendChild($dom->createElement($productField->categoryField->amz_name, $productField->value));
-                                }
+                                } 
+                                
+                                // elseif ($productField->categoryField && !$productField->productTypeField) {
+                                //     $elementCategoryName->appendChild($dom->createElement($productField->categoryField->amz_name, $productField->value));
+                                // }
                             }
 
                             $elementProductType = $dom->createElement('ProductType');
                             $elementProductType->appendChild($elementProductTypeName);
 
                             $elementCategoryName->appendChild($elementProductType);
+
+                            foreach ($product->fields as $productField) {
+                                // if (!$productField->categoryField && $productField->productTypeField) {
+                                //     $elementProductTypeName->appendChild($dom->createElement($productField->productTypeField->amz_name, $productField->value));
+                                // } else
+                                
+                                if ($productField->categoryField && !$productField->productTypeField) {
+                                    $elementCategoryName->appendChild($dom->createElement($productField->categoryField->amz_name, $productField->value));
+                                }
+                            }
 
                             $elementProductData->appendChild($elementCategoryName);
 
