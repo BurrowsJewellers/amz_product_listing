@@ -8,6 +8,7 @@ class EWebController extends ConfigController
 {
 
     public function call($method, $params = [], $auth = true) {
+        ini_set("default_socket_timeout", 600);
         $client = $this->getEwebSoapClient();
         $resp = $client->__soapCall($method, [$this->formatParams($params, $auth)]);
         $request = $client->__getLastRequest();

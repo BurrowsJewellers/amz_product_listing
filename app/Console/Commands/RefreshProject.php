@@ -31,5 +31,6 @@ class RefreshProject extends Command
         Artisan::call('db:seed');
         Artisan::call('getBrandsFromEWeb');
         Artisan::call('getProductsFromEWeb');
+        Artisan::call('optimize');
     }
 }
