@@ -131,7 +131,7 @@ class GenerateAmzProductsXml extends Command
                             $elementDescriptionData->appendChild($dom->createElement('DepartmentName', $product->department_name));
                             $elementDescriptionData->appendChild($dom->createElement('SizeName', $product->size_name));
                             $elementDescriptionData->appendChild($dom->createElement('CountryOfOrigin', $product->country_of_origin));
-                            $elementDescriptionData->appendChild($dom->createElement('ItemTypeName', $product->item_type_name));
+                            $elementDescriptionData->appendChild($dom->createElement('ItemTypeName', substr($product->item_type_name, 0, 47) . '...'));
 
                             $elementProd->appendChild($elementDescriptionData);
 
