@@ -86,8 +86,10 @@ class GenerateAmzProductsXml extends Command
                                 $standardProductIDType = 'ASIN';
                                 $standardProductIDValue = $product->asin;
                             } elseif ($product->ean) {
-                                $standardProductIDType = 'EAN';
-                                $standardProductIDValue = $product->ean;
+                                // $standardProductIDType = 'EAN';
+                                // $standardProductIDValue = $product->ean;
+                                $standardProductIDType = 'UPC';
+                                $standardProductIDValue = '0'.$product->ean;
                             } elseif ($product->upc) {
                                 $standardProductIDType = 'UPC';
                                 $standardProductIDValue = $product->upc;

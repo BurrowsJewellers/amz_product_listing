@@ -48,6 +48,8 @@ class GetImagesFromEWeb extends Command
 
                 $products = $products->get();
 
+                $this->info($products->count());
+
                 $eWeb = new EWebController;
 
                 foreach ($products as $product) {

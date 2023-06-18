@@ -42,13 +42,13 @@ class GenerateAmzPriceXml extends Command
 
             try {
                 // delete the pending feeds
-                $feeds = AmzFeed::where(['type' => 'POST_PRODUCT_PRICING_DATA', 'status' => 0])->get();
+                // $feeds = AmzFeed::where(['type' => 'POST_PRODUCT_PRICING_DATA', 'status' => 0])->get();
 
-                foreach($feeds as $feed){
-                    $delete = Storage::disk('local')->delete($feed->file_name);
-                    $feed->update(['processing_status' => 'Feed deleted']);
-                    $feed->delete();
-                }
+                // foreach($feeds as $feed){
+                //     $delete = Storage::disk('local')->delete($feed->file_name);
+                //     $feed->update(['processing_status' => 'Feed deleted']);
+                //     $feed->delete();
+                // }
 
                 $count = Product::where(['price_feed_status' => 0, 'published' => 1])->count();
 

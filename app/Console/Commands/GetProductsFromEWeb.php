@@ -59,7 +59,7 @@ class GetProductsFromEWeb extends Command
                     $this->info('SKU ' . $item->SKU);
 
                     try {
-                        if ($item->WebOptionBoolean7 !== true) {
+                        if ($item->WebOptionBoolean7 !== true || $item->ID3 !== 'AMZPEND') {
                             $this->error('WebOptionBoolean7 false');
                             continue;
                         }
@@ -105,7 +105,7 @@ class GetProductsFromEWeb extends Command
                         $productData['country_of_origin'] = $countryOfOrigin;
                         $productData['item_type_name'] = $item->ShortMarketingDescription;
                         $productData['quantity'] = intval($item->TotalAvailQOH);
-                        $productData['standard_price'] = $item->RetailPrice2;
+                        $productData['standard_price'] = $item->RetailPrice;
 
                         $otherFields = [];
 
