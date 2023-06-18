@@ -92,6 +92,7 @@ class GenerateAmzImagesXml extends Command
                                         $mainImageUrl = $image->url;
                                     } else{
                                         $imageType = 'PT'.$i;
+                                        $i++;
                                     }
                                     $productImage->appendChild($dom->createElement('SKU', $product->sku));
                                     $productImage->appendChild($dom->createElement('ImageType', $imageType));
@@ -99,12 +100,12 @@ class GenerateAmzImagesXml extends Command
                                     // $elementImageLocation = $dom->createElement('ImageLocation');
                                     $productImage->ImageLocation = $image->url;
                                     $productImage->appendChild($dom->createElement('ImageLocation', htmlspecialchars($image->url)));
-                                    $i++;
                                 }
         
                                 /**
                                  * Swatch image
                                  */
+                                /*
                                 if($mainImageUrl){
                                     $message = $envelop->appendChild($dom->createElement('Message'));
             
@@ -118,6 +119,7 @@ class GenerateAmzImagesXml extends Command
                                     // $productImage->appendChild($dom->createElement('ImageLocation', $mainImageUrl));
                                     $productImage->ImageLocation = $mainImageUrl;
                                 }
+                                */
                             }
                         }
 
@@ -132,7 +134,6 @@ class GenerateAmzImagesXml extends Command
                             $feedController->createAmzFeed($xml, 'POST_PRODUCT_IMAGE_DATA', $productIds);
                         }
                     }
-
                     $count = Product::where(['image_feed_status' => 0, 'published' => 1])->count();
                 }
 

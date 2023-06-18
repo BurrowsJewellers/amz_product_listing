@@ -19,6 +19,7 @@
                     <th>SKU</th>
                     <th>EAN</th>
                     <th>ASIN</th>
+                    <th>Message</th>
                     <!-- <th>Status</th> -->
                 </tr>
             </thead>
@@ -55,6 +56,7 @@
                     {data: 'sku', name: 'sku'},
                     {data: 'ean', name: 'ean'},
                     {data: 'asin', name: 'asin'},
+                    {data: 'message', name: 'message'},
                 ],
 
                 columnDefs: [

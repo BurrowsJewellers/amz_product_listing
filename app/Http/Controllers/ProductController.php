@@ -21,7 +21,17 @@ class ProductController extends Controller
                 $btn = '<a href="'.route('product.edit', [$row->id]).'" class="edit btn btn-primary btn-sm">View</a>';
                 return $btn;
             })
-            ->rawColumns(['action'])
+            ->editColumn('message', function($row){
+                // return $row->message == null ? 'No' : 'Yes';
+                if ($row->message) {
+                    $html = '<button type="button" class="btn btn-secondary" data-coreui-toggle="tooltip" data-coreui-placement="top" title="'. $row->message. '">View Error</button>';
+                } else {
+                    $html = '';
+                }
+                return $html;
+            })
+            ->rawColumns(['action', 'message'])
+            // ->make(true);
             ->toJson();
         }
         return view('product.index');
