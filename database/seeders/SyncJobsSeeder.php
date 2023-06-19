@@ -16,7 +16,19 @@ class SyncJobsSeeder extends Seeder
         $jobs = [
             [
                 'marketplace' => 'EWeb',
+                'type' => 'getBrandsFromEWeb',
+            ],
+            [
+                'marketplace' => 'EWeb',
                 'type' => 'getProductsFromEWeb',
+            ],
+            [
+                'marketplace' => 'EWeb',
+                'type' => 'getImagesFromEWeb',
+            ],
+            [
+                'marketplace' => 'EWeb',
+                'type' => 'getInventoryFromEWeb',
             ],
             [
                 'marketplace' => 'Amazon',
@@ -35,14 +47,9 @@ class SyncJobsSeeder extends Seeder
                 'type' => 'generateAmzPriceXml',
             ],
             [
-                'marketplace' => 'EWeb',
-                'type' => 'getImagesFromEWeb',
+                'marketplace' => 'Amazon',
+                'type' => 'checkAmzFeedStatus',
             ],
-            [
-                'marketplace' => 'EWeb',
-                'type' => 'getInventoryFromEWeb',
-            ],
-
         ];
 
         foreach ($jobs as $job) {

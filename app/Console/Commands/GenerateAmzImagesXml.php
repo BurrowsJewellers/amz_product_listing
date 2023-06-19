@@ -42,13 +42,13 @@ class GenerateAmzImagesXml extends Command
 
             try {
                 // delete the pending feeds
-                $feeds = AmzFeed::where(['type' => 'POST_PRODUCT_IMAGE_DATA', 'status' => 0])->get();
+                // $feeds = AmzFeed::where(['type' => 'POST_PRODUCT_IMAGE_DATA', 'processing_status' => 0])->get();
 
-                foreach($feeds as $feed){
-                    $delete = Storage::disk('local')->delete($feed->file_name);
-                    $feed->update(['processing_status' => 'Feed deleted']);
-                    $feed->delete();
-                }
+                // foreach($feeds as $feed){
+                //     $delete = Storage::disk('local')->delete($feed->file_name);
+                //     $feed->update(['processing_status' => 'Feed deleted']);
+                //     $feed->delete();
+                // }
 
                 $count = Product::where(['image_feed_status' => 0, 'published' => 1])->count();
 
@@ -92,17 +92,20 @@ class GenerateAmzImagesXml extends Command
                                         $mainImageUrl = $image->url;
                                     } else{
                                         $imageType = 'PT'.$i;
+                                        $i++;
                                     }
                                     $productImage->appendChild($dom->createElement('SKU', $product->sku));
                                     $productImage->appendChild($dom->createElement('ImageType', $imageType));
         
-                                    $productImage->appendChild($dom->createElement('ImageLocation', $image->url));
-                                    $i++;
+                                    // $elementImageLocation = $dom->createElement('ImageLocation');
+                                    $productImage->ImageLocation = $image->url;
+                                    $productImage->appendChild($dom->createElement('ImageLocation', htmlspecialchars($image->url)));
                                 }
         
                                 /**
                                  * Swatch image
                                  */
+                                /*
                                 if($mainImageUrl){
                                     $message = $envelop->appendChild($dom->createElement('Message'));
             
@@ -113,8 +116,10 @@ class GenerateAmzImagesXml extends Command
                                     $productImage->appendChild($dom->createElement('SKU', $product->sku));
                                     $productImage->appendChild($dom->createElement('ImageType', 'Swatch'));
             
-                                    $productImage->appendChild($dom->createElement('ImageLocation', $mainImageUrl));
+                                    // $productImage->appendChild($dom->createElement('ImageLocation', $mainImageUrl));
+                                    $productImage->ImageLocation = $mainImageUrl;
                                 }
+                                */
                             }
                         }
 
@@ -129,7 +134,6 @@ class GenerateAmzImagesXml extends Command
                             $feedController->createAmzFeed($xml, 'POST_PRODUCT_IMAGE_DATA', $productIds);
                         }
                     }
-
                     $count = Product::where(['image_feed_status' => 0, 'published' => 1])->count();
                 }
 
