@@ -40,6 +40,5 @@ class GetBrandsFromEWeb extends Command
             Log::debug('getBrandsFromEWeb : '. $e->getMessage());
             dd($e->getMessage());
         }
-
     }
 }
