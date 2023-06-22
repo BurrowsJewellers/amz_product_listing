@@ -28,6 +28,8 @@ class Product extends Model
         'quantity',
         'retail_price',
         'retail_price2',
+        'real_design_number',
+        'e_web_code',
         'xml_generated',
         'price_feed_status',
         'image_feed_status',
@@ -67,5 +69,10 @@ class Product extends Model
     public function images() {
         return $this->hasMany(ProductImage::class);
     }
+
+    public function eWebCode() {
+        return $this->hasOne(EWebShortCode::class, 'e_web_code', 'code');
+    }
+
 
 }

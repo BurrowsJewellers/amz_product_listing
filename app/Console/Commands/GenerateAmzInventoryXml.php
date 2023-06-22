@@ -89,7 +89,7 @@ class GenerateAmzInventoryXml extends Command
 
                             $inventory->appendChild($dom->createElement('SKU', $product->sku));
                             $inventory->appendChild($dom->createElement('Quantity', $product->quantity));
-                            $inventory->appendChild($dom->createElement('FulfillmentLatency', 3));
+                            $inventory->appendChild($dom->createElement('FulfillmentLatency', 2));
                         }
 
                         $xmlRoot = $dom->appendChild($envelop);

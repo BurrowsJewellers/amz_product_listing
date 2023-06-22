@@ -12,7 +12,6 @@ class ProductType extends Model
     protected $fillable = [
         'name',
         'category_id',
-        'amz_recommended_browse_node',
     ];
 
     public function fields(){

@@ -16,7 +16,6 @@ return new class extends Migration
             $table->string('name');
             $table->unsignedBigInteger('category_id')->nullable();
             $table->foreign('category_id')->references('id')->on('categories')->cascadeOnDelete();
-            $table->string('amz_recommended_browse_node')->nullable();
             $table->timestamps();
         });
     }
