@@ -9,6 +9,7 @@ use App\Http\Controllers\SyncJobController;
 use App\Http\Controllers\EWebController;
 use App\Models\Brand;
 use App\Models\Category;
+use App\Models\EWebShortCode;
 use App\Models\Marketplace;
 use App\Models\ProductFieldValue;
 use App\Models\ProductType;
@@ -51,45 +52,50 @@ class GetProductsFromEWeb extends Command
                 $activeItems = $resp->GetAllActiveItemsResult->ActiveItem;
 
                 $marketplace = Marketplace::where('name', 'Amazon')->first();
+                $category = Category::where(['name' => 'Jewelry', 'marketplace_id' => $marketplace->id])->with('fields')->first();
                 $brands = Brand::all();
-                $category = null;
+                $brandsArray = [];
+
+                foreach ($brands as $brand) {
+                    $brandsArray[$brand->brand_id]['id'] = $brand->id;
+                    $brandsArray[$brand->brand_id]['name'] = $brand->name;
+                }
+
                 $productType = null;
 
                 $webOptionBoolean7FalseSkuArray = [];
+
                 foreach ($activeItems as $item) {
-                    $this->info('SKU ' . $item->SKU);
-
-                    if ($item->WebOptionBoolean7 !== true ) {
-                        $webOptionBoolean7FalseSkuArray[] = $item->SKU;
-                        continue;
-                    }
-
-                    if(trim($item->ID1) == '') {
-                        continue;
-                    }
-
-                    
-
                     try {
-                        if ($item->WebOptionBoolean7 !== true || $item->ID3 !== 'AMZPEND' || $item->ID3 !== 'AMZEAR') {
-                            $this->error('WebOptionBoolean7 false');
+                        $this->info('SKU ' . $item->SKU);
+
+                        if ($item->WebOptionBoolean7 !== true ) {
+                            $webOptionBoolean7FalseSkuArray[] = $item->SKU;
                             continue;
                         }
 
-                        if ($item->ID3 === 'AMZPEND' || $item->ID3 === 'AMZEAR') {
-                            $category = Category::where(['name' => 'Jewelry', 'marketplace_id' => $marketplace->id])->with('fields')->first();
-                            $productType = ProductType::where(['e_web_name' => $item->ID3, 'category_id' => $category->id])->with('fields')->first();
-                        } else {
-                            $this->error('ID3 is not equal to AMZPEND or AMZEAR');
+                        if(trim($item->ID1) == '') {
+                            $this->info('ID1 field is empty.');
                             continue;
                         }
 
-                        $brandsArray = [];
+                        $eWebCodes = explode(" ", $item->ID1);
 
-                        foreach ($brands as $brand) {
-                            $brandsArray[$brand->brand_id]['id'] = $brand->id;
-                            $brandsArray[$brand->brand_id]['name'] = $brand->name;
+                        if(!isset($eWebCodes[1])) {
+                            $this->info('Short code for Amazon not found.');
+                            continue;
                         }
+
+                        $eWebCode = $eWebCodes[1];
+
+                        $shortCode = EWebShortCode::where('code', $eWebCode)->with('productType.fields')->first();
+
+                        if(!$shortCode) {
+                            $this->info('Short code not found in EWebShortCode.');
+                            continue;
+                        }
+
+                        $productType = $shortCode->productType;
 
                         $productData = [];
 
@@ -105,17 +111,16 @@ class GetProductsFromEWeb extends Command
                         }
 
                         $productData['brand_id'] = $brandsArray[$item->BrandID]['id'];
-                        // $productData['marketplace_id'] = $marketplace->id;
                         $productData['category_id'] = $category->id;
                         $productData['product_type_id'] = $productType->id;
                         $productData['description'] = $item->MarketingDescription;
                         $productData['manufacturer'] = $brandsArray[$item->BrandID]['id'];
-                        // $productData['recommended_browse_nodes'] = $productType->amz_recommended_browse_node;
-                        $productData['department_name'] = 'Womens';
 
-                        if ($item->ID3 === 'AMZPEND') {
+                        $productData['department_name'] = $shortCode->code[1] == 'W' ? 'Womens' : 'Mens';
+
+                        if ($shortCode->code == 'AWNE') {
                             $productData['size_name'] = 'Standard';
-                        } elseif($item->ID3 === 'AMZEAR') {
+                        } elseif($shortCode->code == 'AWEA') {
                             $productData['size_name'] = 'Small';
                         }
 
@@ -132,6 +137,8 @@ class GetProductsFromEWeb extends Command
                         $productData['quantity'] = intval($item->TotalAvailQOH);
                         $productData['retail_price'] = $item->RetailPrice;
                         $productData['retail_price2'] = $item->RetailPrice2;
+                        $productData['real_design_number'] = $item->RealDesignNum;
+                        $productData['e_web_code'] = $shortCode->code;
 
                         $otherFields = [];
 
@@ -144,7 +151,7 @@ class GetProductsFromEWeb extends Command
 
                         /** Add the required field which are missing in eWeb API */
                         if (!property_exists($item, 'TargetGender')) {
-                            $item->TargetGender = 'female';
+                            $item->TargetGender = $shortCode->code[1] == 'W' ? 'female' : 'male';
                         }
 
                         if (!property_exists($item, 'SupplierDeclaredMaterialRegulation')) {
@@ -258,6 +265,13 @@ class GetProductsFromEWeb extends Command
                     } catch (\Exception $e) {
                         Log::error("SKU : $item->SKU Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
                     }
+                }
+
+                if (!empty($webOptionBoolean7FalseSkuArray)) {
+                    Product::whereIn('sku', $webOptionBoolean7FalseSkuArray)->update([
+                        'quantity' => 0,
+                        'inventory_feed_status' => 0
+                    ]);
                 }
 
                 $job->update(['status' => 0, 'message' => null]);

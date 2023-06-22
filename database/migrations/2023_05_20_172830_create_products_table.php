@@ -31,6 +31,8 @@ return new class extends Migration
             $table->integer('quantity')->nullable();
             $table->decimal('retail_price', 8, 2)->nullable();
             $table->decimal('retail_price2', 8, 2)->nullable();
+            $table->string('real_design_number')->nullable();
+            $table->string('e_web_code')->nullable();
             $table->boolean('xml_generated')->default(false);
             $table->boolean('price_feed_status')->default(false);
             $table->boolean('image_feed_status')->default(false);

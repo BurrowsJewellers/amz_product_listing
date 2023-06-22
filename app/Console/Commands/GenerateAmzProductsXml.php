@@ -47,7 +47,7 @@ class GenerateAmzProductsXml extends Command
 
                     $products = Product::with(['fields' => function($query) {
                         $query->with(['category', 'productType', 'categoryField', 'productTypeField']);
-                    }, 'brand', 'category', 'productType'])->where(['xml_generated' => 0, 'published' => 0])->limit($limit)->get();
+                    }, 'brand', 'category', 'productType', 'eWebCode'])->where(['xml_generated' => 0, 'published' => 0])->limit($limit)->get();
 
                     if($products->count()) {
                         $merchantId = config('amazon.merchand_id');
@@ -129,8 +129,19 @@ class GenerateAmzProductsXml extends Command
                             $elementDescriptionData->appendChild($elementBulletPoint1);
 
                             $elementDescriptionData->appendChild($dom->createElement('Manufacturer', $product->brand->name));
-                            $elementDescriptionData->appendChild($dom->createElement('RecommendedBrowseNode', $product->productType->amz_recommended_browse_node));
+                            $elementDescriptionData->appendChild($dom->createElement('MfrPartNumber', $product->real_design_number));
+                            $elementDescriptionData->appendChild($dom->createElement('IsGiftWrapAvailable', true));
+                            $elementDescriptionData->appendChild($dom->createElement('RecommendedBrowseNode', $product->eWebCode->amz_recommended_browse_node));
                             $elementDescriptionData->appendChild($dom->createElement('MerchantShippingGroupName', $product->retail_price2 > 100 ? 'Over $100' : 'Sub $100 order'));
+
+                            // Battery
+                            $elementBattery = $dom->createElement('Battery');
+                            $elementBattery->appendChild($dom->createElement('AreBatteriesIncluded', $product->eWebCode->button_cell === 1 ? true : false));
+                            $elementBattery->appendChild($dom->createElement('AreBatteriesRequired', $product->eWebCode->button_cell === 1 ? true : false));
+
+                            $elementDescriptionData->appendChild($elementBattery);
+
+                            $elementDescriptionData->appendChild($dom->createElement('SupplierDeclaredDGHZRegulation', 'storage'));
                             $elementDescriptionData->appendChild($dom->createElement('DepartmentName', $product->department_name));
                             $elementDescriptionData->appendChild($dom->createElement('SizeName', $product->size_name));
                             $elementDescriptionData->appendChild($dom->createElement('CountryOfOrigin', $product->country_of_origin));

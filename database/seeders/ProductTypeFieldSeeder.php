@@ -18,24 +18,43 @@ class ProductTypeFieldSeeder extends Seeder
     {
         $marketplace = Marketplace::where('name', 'Amazon')->first();
         $category = Category::where(['name' => 'Jewelry', 'marketplace_id' => $marketplace->id])->first();
-        $productType = ProductType::where(['name' => 'Necklace', 'category_id' => $category->id])->first();
+        $necklace = ProductType::where(['name' => 'Necklace', 'category_id' => $category->id])->first();
+        $earring = ProductType::where(['name' => 'Earring', 'category_id' => $category->id])->first();
 
         $fields = [
             [
-                'product_type_id' => $productType->id,
+                'product_type_id' => $necklace->id,
                 'amz_name' => 'GemType',
                 'e_web_name' => 'SStoneType',
             ],
             [
-                'product_type_id' => $productType->id,
+                'product_type_id' => $necklace->id,
                 'amz_name' => 'SupplierDeclaredMaterialRegulation',
                 'e_web_name' => 'SupplierDeclaredMaterialRegulation',
             ],
             [
-                'product_type_id' => $productType->id,
+                'product_type_id' => $necklace->id,
                 'amz_name' => 'TargetGender',
                 'e_web_name' => 'TargetGender',
             ],
+
+            [
+                'product_type_id' => $earring->id,
+                'amz_name' => 'GemType',
+                'e_web_name' => 'SStoneType',
+            ],
+            [
+                'product_type_id' => $earring->id,
+                'amz_name' => 'SupplierDeclaredMaterialRegulation',
+                'e_web_name' => 'SupplierDeclaredMaterialRegulation',
+            ],
+            [
+                'product_type_id' => $earring->id,
+                'amz_name' => 'TargetGender',
+                'e_web_name' => 'TargetGender',
+            ],
+
+
         ];
 
         foreach ($fields as $field) {
