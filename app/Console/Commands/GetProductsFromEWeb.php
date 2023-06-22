@@ -51,16 +51,36 @@ class GetProductsFromEWeb extends Command
                 $activeItems = $resp->GetAllActiveItemsResult->ActiveItem;
 
                 $marketplace = Marketplace::where('name', 'Amazon')->first();
-                $category = Category::where(['name' => 'Jewelry', 'marketplace_id' => $marketplace->id])->with('fields')->first();
-                $productType = ProductType::where(['name' => 'Necklace', 'category_id' => $category->id])->with('fields')->first();
                 $brands = Brand::all();
+                $category = null;
+                $productType = null;
 
+                $webOptionBoolean7FalseSkuArray = [];
                 foreach ($activeItems as $item) {
                     $this->info('SKU ' . $item->SKU);
 
+                    if ($item->WebOptionBoolean7 !== true ) {
+                        $webOptionBoolean7FalseSkuArray[] = $item->SKU;
+                        continue;
+                    }
+
+                    if(trim($item->ID1) == '') {
+                        continue;
+                    }
+
+                    
+
                     try {
-                        if ($item->WebOptionBoolean7 !== true || $item->ID3 !== 'AMZPEND') {
+                        if ($item->WebOptionBoolean7 !== true || $item->ID3 !== 'AMZPEND' || $item->ID3 !== 'AMZEAR') {
                             $this->error('WebOptionBoolean7 false');
+                            continue;
+                        }
+
+                        if ($item->ID3 === 'AMZPEND' || $item->ID3 === 'AMZEAR') {
+                            $category = Category::where(['name' => 'Jewelry', 'marketplace_id' => $marketplace->id])->with('fields')->first();
+                            $productType = ProductType::where(['e_web_name' => $item->ID3, 'category_id' => $category->id])->with('fields')->first();
+                        } else {
+                            $this->error('ID3 is not equal to AMZPEND or AMZEAR');
                             continue;
                         }
 
@@ -90,9 +110,14 @@ class GetProductsFromEWeb extends Command
                         $productData['product_type_id'] = $productType->id;
                         $productData['description'] = $item->MarketingDescription;
                         $productData['manufacturer'] = $brandsArray[$item->BrandID]['id'];
-                        $productData['recommended_browse_nodes'] = '5131129051';
+                        // $productData['recommended_browse_nodes'] = $productType->amz_recommended_browse_node;
                         $productData['department_name'] = 'Womens';
-                        $productData['size_name'] = 'Standard';
+
+                        if ($item->ID3 === 'AMZPEND') {
+                            $productData['size_name'] = 'Standard';
+                        } elseif($item->ID3 === 'AMZEAR') {
+                            $productData['size_name'] = 'Small';
+                        }
 
                         if ($brandsArray[$item->BrandID]['name'] == 'Thoms Sabo') {
                             $countryOfOrigin = 'GR';
@@ -105,7 +130,8 @@ class GetProductsFromEWeb extends Command
                         $productData['country_of_origin'] = $countryOfOrigin;
                         $productData['item_type_name'] = $item->ShortMarketingDescription;
                         $productData['quantity'] = intval($item->TotalAvailQOH);
-                        $productData['standard_price'] = $item->RetailPrice;
+                        $productData['retail_price'] = $item->RetailPrice;
+                        $productData['retail_price2'] = $item->RetailPrice2;
 
                         $otherFields = [];
 

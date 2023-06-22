@@ -129,7 +129,8 @@ class GenerateAmzProductsXml extends Command
                             $elementDescriptionData->appendChild($elementBulletPoint1);
 
                             $elementDescriptionData->appendChild($dom->createElement('Manufacturer', $product->brand->name));
-                            $elementDescriptionData->appendChild($dom->createElement('RecommendedBrowseNode', '5131129051'));
+                            $elementDescriptionData->appendChild($dom->createElement('RecommendedBrowseNode', $product->productType->amz_recommended_browse_node));
+                            $elementDescriptionData->appendChild($dom->createElement('MerchantShippingGroupName', $product->retail_price2 > 100 ? 'Over $100' : 'Sub $100 order'));
                             $elementDescriptionData->appendChild($dom->createElement('DepartmentName', $product->department_name));
                             $elementDescriptionData->appendChild($dom->createElement('SizeName', $product->size_name));
                             $elementDescriptionData->appendChild($dom->createElement('CountryOfOrigin', $product->country_of_origin));
@@ -150,7 +151,7 @@ class GenerateAmzProductsXml extends Command
                             foreach ($product->fields as $productField) {
                                 if (!$productField->categoryField && $productField->productTypeField) {
                                     $elementProductTypeName->appendChild($dom->createElement($productField->productTypeField->amz_name, $productField->value));
-                                } 
+                                }
                                 
                                 // elseif ($productField->categoryField && !$productField->productTypeField) {
                                 //     $elementCategoryName->appendChild($dom->createElement($productField->categoryField->amz_name, $productField->value));

@@ -28,10 +28,11 @@ class TestEWeb extends Command
     public function handle()
     {
         $eWeb = new EWebController;
-        $params = ["SKU" => "001-021-07825"];
+        $params = ["SKU" => "001-024-05122"];
         // $resp = $eWeb->call('GetItemImagesBySKU', $params);
+        $resp = $eWeb->call('GetActiveItemBySKU', $params);
         // $params = ["SKU" => "001-022-04646"];
-        $resp = $eWeb->call('GetActiveItemQOHBySKU', $params);
+        // $resp = $eWeb->call('GetActiveItemQOHBySKU', $params);
         dd($resp);
     }
 }

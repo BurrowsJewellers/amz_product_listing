@@ -17,6 +17,7 @@ class ProductTypeSeeder extends Seeder
     {
         $marketplace = Marketplace::where('name', 'Amazon')->first();
         $category = Category::where(['name' => 'Jewelry', 'marketplace_id' => $marketplace->id])->first();
-        ProductType::updateOrCreate(['name' => 'Necklace', 'category_id' => $category->id]);
+        ProductType::updateOrCreate(['name' => 'Necklace', 'category_id' => $category->id],['amz_recommended_browse_node' => '5131129051']);
+        ProductType::updateOrCreate(['name' => 'Earring', 'category_id' => $category->id],['amz_recommended_browse_node' => '5131126051']);
     }
 }

@@ -24,13 +24,13 @@ return new class extends Migration
             $table->foreignId('product_type_id')->constrained();
             $table->text('description')->nullable();
             $table->string('manufacturer')->nullable();
-            $table->string('recommended_browse_nodes')->nullable();
             $table->string('department_name')->nullable();
             $table->string('size_name')->nullable();
             $table->string('country_of_origin')->nullable();
             $table->string('item_type_name')->nullable();
             $table->integer('quantity')->nullable();
-            $table->decimal('standard_price', 8, 2)->nullable();
+            $table->decimal('retail_price', 8, 2)->nullable();
+            $table->decimal('retail_price2', 8, 2)->nullable();
             $table->boolean('xml_generated')->default(false);
             $table->boolean('price_feed_status')->default(false);
             $table->boolean('image_feed_status')->default(false);
