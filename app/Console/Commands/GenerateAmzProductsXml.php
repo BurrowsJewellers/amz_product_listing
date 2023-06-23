@@ -68,6 +68,7 @@ class GenerateAmzProductsXml extends Command
             
                         $productIds = [];
                         foreach($products as $product){
+                            $this->info('SKU '. $product->sku);
                             array_push($productIds, $product->id);
             
                             $message = $envelop->appendChild($dom->createElement('Message'));
@@ -109,7 +110,7 @@ class GenerateAmzProductsXml extends Command
                             $message->appendChild($elementProd);
 
                             $elementDescriptionData = $dom->createElement('DescriptionData');
-                            $elementDescriptionData->appendChild($dom->createElement('Title', $product->title));
+                            $elementDescriptionData->appendChild($dom->createElement('Title', htmlspecialchars($product->title)));
                             $elementDescriptionData->appendChild($dom->createElement('Brand', $product->brand->name));
 
                             $productDescription = str_replace("Product Description:", '', $product->description);
@@ -118,7 +119,9 @@ class GenerateAmzProductsXml extends Command
                             $elementDescription->appendChild($dom->createCDATASection($productDescription));
                             $elementDescriptionData->appendChild($elementDescription);
 
+
                             $dataBulletPoint1 = $productDescription;
+
 
                             if (strlen($dataBulletPoint1) > 500) {
                                 $dataBulletPoint1 = substr($dataBulletPoint1, 0, 490) . '...';
@@ -136,8 +139,8 @@ class GenerateAmzProductsXml extends Command
 
                             // Battery
                             $elementBattery = $dom->createElement('Battery');
-                            $elementBattery->appendChild($dom->createElement('AreBatteriesIncluded', $product->eWebCode->button_cell === 1 ? true : false));
-                            $elementBattery->appendChild($dom->createElement('AreBatteriesRequired', $product->eWebCode->button_cell === 1 ? true : false));
+                            $elementBattery->appendChild($dom->createElement('AreBatteriesIncluded', $product->eWebCode->button_cell === 1 ? "true" : "false"));
+                            $elementBattery->appendChild($dom->createElement('AreBatteriesRequired', $product->eWebCode->button_cell === 1 ? "true" : "false"));
 
                             $elementDescriptionData->appendChild($elementBattery);
 
@@ -145,7 +148,7 @@ class GenerateAmzProductsXml extends Command
                             $elementDescriptionData->appendChild($dom->createElement('DepartmentName', $product->department_name));
                             $elementDescriptionData->appendChild($dom->createElement('SizeName', $product->size_name));
                             $elementDescriptionData->appendChild($dom->createElement('CountryOfOrigin', $product->country_of_origin));
-                            $elementDescriptionData->appendChild($dom->createElement('ItemTypeName', substr($product->item_type_name, 0, 47) . '...'));
+                            $elementDescriptionData->appendChild($dom->createElement('ItemTypeName', substr(htmlspecialchars($product->item_type_name), 0, 47) . '...'));
 
                             $elementProd->appendChild($elementDescriptionData);
 

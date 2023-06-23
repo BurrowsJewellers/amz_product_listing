@@ -4,10 +4,8 @@ namespace App\Console\Commands;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use App\Http\Controllers\AmzFeedController;
 use App\Http\Controllers\SyncJobController;
-use App\Models\AmzFeed;
 use App\Models\Product;
 
 class GenerateAmzPriceXml extends Command
@@ -85,7 +83,7 @@ class GenerateAmzPriceXml extends Command
 
                             $price->appendChild($dom->createElement('SKU', $product->sku));
 
-                            $standardPrice = $dom->createElement('StandardPrice', $product->standard_price);
+                            $standardPrice = $dom->createElement('StandardPrice', $product->retail_price);
                             $standardPrice->setAttribute('currency', 'AUD');
                             $price->appendChild($standardPrice);
                         }

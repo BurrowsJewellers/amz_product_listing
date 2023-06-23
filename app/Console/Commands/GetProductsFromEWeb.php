@@ -161,12 +161,18 @@ class GetProductsFromEWeb extends Command
                         $categoryFieldValues = [];
                         foreach ($category->fields as $field) {
                             if (property_exists($item, $field->e_web_name)) {
+
+                                $fValue = $item->{$field->e_web_name};
+                                if ($field->e_web_name == 'SMetalType' && $item->{$field->e_web_name} == 'N/A') {
+                                    $fValue = 'No Metal';
+                                }
+
                                 $categoryFieldValues[] = [
                                     'category_id' => $category->id,
                                     'product_type_id' => $productType->id,
                                     'category_field_id' => $field->id,
                                     // 'amz_name' => $field->amz_name,
-                                    'value' => $item->{$field->e_web_name},
+                                    'value' => $fValue,
                                 ];
                             }
                         }
@@ -176,12 +182,18 @@ class GetProductsFromEWeb extends Command
                         $productTypeFieldValues = [];
                         foreach ($productType->fields as $field) {
                             if (property_exists($item, $field->e_web_name)) {
+
+                                $fValue = $item->{$field->e_web_name};
+                                if ($field->e_web_name == 'SStoneType' && $item->{$field->e_web_name} == 'N/A') {
+                                    $fValue = 'No Gemstone';
+                                }
+
                                 $productTypeFieldValues[] = [
                                     'category_id' => $category->id,
                                     'product_type_id' => $productType->id,
                                     'product_type_field_id' => $field->id,
                                     // 'amz_name' => $field->amz_name,
-                                    'value' => $item->{$field->e_web_name},
+                                    'value' => $fValue,
                                 ];
                             }
                         }
