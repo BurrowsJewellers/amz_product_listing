@@ -39,7 +39,13 @@ class GenerateAmzProductsXml extends Command
             $job->update(['status' => 1]);
 
             try {
-                $count = Product::where(['xml_generated' => 0, 'published' => 0])->count();
+                $count = Product::where(['xml_generated' => 0, 'published' => 0])
+                ->where(function($query){
+                    $query->whereNotNull('ean');
+                    $query->orWhereNotNull('upc');
+                    $query->orWhereNotNull('asin');
+                })
+                ->count();
 
                 $this->info($count);
                 while($count){
@@ -47,7 +53,13 @@ class GenerateAmzProductsXml extends Command
 
                     $products = Product::with(['fields' => function($query) {
                         $query->with(['category', 'productType', 'categoryField', 'productTypeField']);
-                    }, 'brand', 'category', 'productType', 'eWebCode'])->where(['xml_generated' => 0, 'published' => 0])->limit($limit)->get();
+                    }, 'brand', 'category', 'productType', 'eWebCode'])->where(['xml_generated' => 0, 'published' => 0])
+                    ->where(function($query){
+                        $query->whereNotNull('ean');
+                        $query->orWhereNotNull('upc');
+                        $query->orWhereNotNull('asin');
+                    })
+                    ->limit($limit)->get();
 
                     if($products->count()) {
                         $merchantId = config('amazon.merchand_id');
@@ -69,16 +81,6 @@ class GenerateAmzProductsXml extends Command
                         $productIds = [];
                         foreach($products as $product){
                             $this->info('SKU '. $product->sku);
-                            array_push($productIds, $product->id);
-            
-                            $message = $envelop->appendChild($dom->createElement('Message'));
-            
-                            $message->appendChild($dom->createElement('MessageID', $product->id));
-                            $message->appendChild($dom->createElement('OperationType', 'Update'));
-
-                            $elementProd = $dom->createElement('Product');
-                            
-                            $elementProd->appendChild($dom->createElement('SKU', $product->sku));
 
                             $standardProductIDType = null;
                             $standardProductIDValue = null;
@@ -95,6 +97,22 @@ class GenerateAmzProductsXml extends Command
                                 $standardProductIDType = 'UPC';
                                 $standardProductIDValue = $product->upc;
                             }
+
+                            if (!$standardProductIDType) {
+                                $this->error('standardProductIDType is not set.');
+                                continue;
+                            }
+
+                            array_push($productIds, $product->id);
+            
+                            $message = $envelop->appendChild($dom->createElement('Message'));
+            
+                            $message->appendChild($dom->createElement('MessageID', $product->id));
+                            $message->appendChild($dom->createElement('OperationType', 'Update'));
+
+                            $elementProd = $dom->createElement('Product');
+                            
+                            $elementProd->appendChild($dom->createElement('SKU', $product->sku));
 
                             $standardProductID = $dom->createElement('StandardProductID');
 
@@ -119,9 +137,7 @@ class GenerateAmzProductsXml extends Command
                             $elementDescription->appendChild($dom->createCDATASection($productDescription));
                             $elementDescriptionData->appendChild($elementDescription);
 
-
                             $dataBulletPoint1 = $productDescription;
-
 
                             if (strlen($dataBulletPoint1) > 500) {
                                 $dataBulletPoint1 = substr($dataBulletPoint1, 0, 490) . '...';
@@ -203,7 +219,13 @@ class GenerateAmzProductsXml extends Command
                             $feedController->createAmzFeed($xml, 'POST_PRODUCT_DATA', $productIds);
                         }
                     }
-                    $count = Product::where(['xml_generated' => 0, 'published' => 0])->count();
+                    $count = Product::where(['xml_generated' => 0, 'published' => 0])
+                    ->where(function($query){
+                        $query->whereNotNull('ean');
+                        $query->orWhereNotNull('upc');
+                        $query->orWhereNotNull('asin');
+                    })
+                    ->count();
                 }
                 $job->update(['status' => 0, 'message' => null]);
             } catch (\Exception $e){

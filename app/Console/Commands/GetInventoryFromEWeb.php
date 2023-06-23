@@ -36,6 +36,7 @@ class GetInventoryFromEWeb extends Command
      */
     public function handle()
     {
+        exit;
         $marketplace = 'EWeb';
         $jobType = 'getInventoryFromEWeb';
 

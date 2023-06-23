@@ -158,7 +158,6 @@ class AmzFeedController extends Controller
                                     // dd($body);
                                     $response = $feedsApiInstance->createFeed($body);
     
-    
                                     $feedId = $response->getFeedId();
     
                                     $id = $feed->id;
