@@ -12,7 +12,6 @@ use App\Models\Category;
 use App\Models\EWebShortCode;
 use App\Models\Marketplace;
 use App\Models\ProductFieldValue;
-use App\Models\ProductType;
 use App\Models\Product;
 use App\Models\ProductImage;
 
@@ -51,8 +50,8 @@ class GetProductsFromEWeb extends Command
                 $resp = $eWeb->call('GetAllActiveItems');
                 $activeItems = $resp->GetAllActiveItemsResult->ActiveItem;
 
-                $marketplace = Marketplace::where('name', 'Amazon')->first();
-                $category = Category::where(['name' => 'Jewelry', 'marketplace_id' => $marketplace->id])->with('fields')->first();
+                $marketplaceObj = Marketplace::where('name', 'Amazon')->first();
+                $category = Category::where(['name' => 'Jewelry', 'marketplace_id' => $marketplaceObj->id])->with('fields')->first();
                 $brands = Brand::all();
                 $brandsArray = [];
 
@@ -161,12 +160,18 @@ class GetProductsFromEWeb extends Command
                         $categoryFieldValues = [];
                         foreach ($category->fields as $field) {
                             if (property_exists($item, $field->e_web_name)) {
+
+                                $fValue = $item->{$field->e_web_name};
+                                if ($field->e_web_name == 'SMetalType' && $item->{$field->e_web_name} == 'N/A') {
+                                    $fValue = 'No Metal';
+                                }
+
                                 $categoryFieldValues[] = [
                                     'category_id' => $category->id,
                                     'product_type_id' => $productType->id,
                                     'category_field_id' => $field->id,
                                     // 'amz_name' => $field->amz_name,
-                                    'value' => $item->{$field->e_web_name},
+                                    'value' => $fValue,
                                 ];
                             }
                         }
@@ -176,12 +181,18 @@ class GetProductsFromEWeb extends Command
                         $productTypeFieldValues = [];
                         foreach ($productType->fields as $field) {
                             if (property_exists($item, $field->e_web_name)) {
+
+                                $fValue = $item->{$field->e_web_name};
+                                if ($field->e_web_name == 'SStoneType' && $item->{$field->e_web_name} == 'N/A') {
+                                    $fValue = 'No Gemstone';
+                                }
+
                                 $productTypeFieldValues[] = [
                                     'category_id' => $category->id,
                                     'product_type_id' => $productType->id,
                                     'product_type_field_id' => $field->id,
                                     // 'amz_name' => $field->amz_name,
-                                    'value' => $item->{$field->e_web_name},
+                                    'value' => $fValue,
                                 ];
                             }
                         }
@@ -219,10 +230,24 @@ class GetProductsFromEWeb extends Command
                             $product = Product::updateOrCreate(
                                 [
                                     'sku' => $item->SKU,
-                                    'marketplace_id' => $marketplace->id,
+                                    'marketplace_id' => $marketplaceObj->id,
                                 ],
                                 $productData
                             );
+
+                            $newData = [];
+                            if ($product->wasChanged('quantity')) {
+                                $newData['inventory_feed_status'] = 0;
+                            }
+
+                            if ($product->wasChanged('retail_price') || $product->wasChanged('retail_price2')) {
+                                $newData['price_feed_status'] = 0;
+                            }
+
+                            if (!empty($newData)) {
+                                $product->update($newData);
+                                $product = $product->refresh();
+                            }
 
                             if (!empty($merged)) {
                                 foreach ($merged as $value) {
@@ -268,10 +293,16 @@ class GetProductsFromEWeb extends Command
                 }
 
                 if (!empty($webOptionBoolean7FalseSkuArray)) {
-                    Product::whereIn('sku', $webOptionBoolean7FalseSkuArray)->update([
-                        'quantity' => 0,
-                        'inventory_feed_status' => 0
-                    ]);
+                    foreach ($webOptionBoolean7FalseSkuArray as $sku) {
+                        if($product = Product::where('sku', $sku)->first()) {
+                            if ($product->quantity > 0) {
+                                $product->update([
+                                    'quantity' => 0,
+                                    'inventory_feed_status' => 0
+                                ]);
+                            }
+                        }
+                    }
                 }
 
                 $job->update(['status' => 0, 'message' => null]);

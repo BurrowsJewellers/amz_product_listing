@@ -39,7 +39,13 @@ class GenerateAmzProductsXml extends Command
             $job->update(['status' => 1]);
 
             try {
-                $count = Product::where(['xml_generated' => 0, 'published' => 0])->count();
+                $count = Product::where(['xml_generated' => 0, 'published' => 0])
+                ->where(function($query){
+                    $query->whereNotNull('ean');
+                    $query->orWhereNotNull('upc');
+                    $query->orWhereNotNull('asin');
+                })
+                ->count();
 
                 $this->info($count);
                 while($count){
@@ -47,7 +53,13 @@ class GenerateAmzProductsXml extends Command
 
                     $products = Product::with(['fields' => function($query) {
                         $query->with(['category', 'productType', 'categoryField', 'productTypeField']);
-                    }, 'brand', 'category', 'productType', 'eWebCode'])->where(['xml_generated' => 0, 'published' => 0])->limit($limit)->get();
+                    }, 'brand', 'category', 'productType', 'eWebCode'])->where(['xml_generated' => 0, 'published' => 0])
+                    ->where(function($query){
+                        $query->whereNotNull('ean');
+                        $query->orWhereNotNull('upc');
+                        $query->orWhereNotNull('asin');
+                    })
+                    ->limit($limit)->get();
 
                     if($products->count()) {
                         $merchantId = config('amazon.merchand_id');
@@ -68,16 +80,7 @@ class GenerateAmzProductsXml extends Command
             
                         $productIds = [];
                         foreach($products as $product){
-                            array_push($productIds, $product->id);
-            
-                            $message = $envelop->appendChild($dom->createElement('Message'));
-            
-                            $message->appendChild($dom->createElement('MessageID', $product->id));
-                            $message->appendChild($dom->createElement('OperationType', 'Update'));
-
-                            $elementProd = $dom->createElement('Product');
-                            
-                            $elementProd->appendChild($dom->createElement('SKU', $product->sku));
+                            $this->info('SKU '. $product->sku);
 
                             $standardProductIDType = null;
                             $standardProductIDValue = null;
@@ -95,6 +98,22 @@ class GenerateAmzProductsXml extends Command
                                 $standardProductIDValue = $product->upc;
                             }
 
+                            if (!$standardProductIDType) {
+                                $this->error('standardProductIDType is not set.');
+                                continue;
+                            }
+
+                            array_push($productIds, $product->id);
+            
+                            $message = $envelop->appendChild($dom->createElement('Message'));
+            
+                            $message->appendChild($dom->createElement('MessageID', $product->id));
+                            $message->appendChild($dom->createElement('OperationType', 'Update'));
+
+                            $elementProd = $dom->createElement('Product');
+                            
+                            $elementProd->appendChild($dom->createElement('SKU', $product->sku));
+
                             $standardProductID = $dom->createElement('StandardProductID');
 
                             $standardProductID->appendChild($dom->createElement('Type', $standardProductIDType));
@@ -109,7 +128,7 @@ class GenerateAmzProductsXml extends Command
                             $message->appendChild($elementProd);
 
                             $elementDescriptionData = $dom->createElement('DescriptionData');
-                            $elementDescriptionData->appendChild($dom->createElement('Title', $product->title));
+                            $elementDescriptionData->appendChild($dom->createElement('Title', htmlspecialchars($product->title)));
                             $elementDescriptionData->appendChild($dom->createElement('Brand', $product->brand->name));
 
                             $productDescription = str_replace("Product Description:", '', $product->description);
@@ -136,8 +155,8 @@ class GenerateAmzProductsXml extends Command
 
                             // Battery
                             $elementBattery = $dom->createElement('Battery');
-                            $elementBattery->appendChild($dom->createElement('AreBatteriesIncluded', $product->eWebCode->button_cell === 1 ? true : false));
-                            $elementBattery->appendChild($dom->createElement('AreBatteriesRequired', $product->eWebCode->button_cell === 1 ? true : false));
+                            $elementBattery->appendChild($dom->createElement('AreBatteriesIncluded', $product->eWebCode->button_cell === 1 ? "true" : "false"));
+                            $elementBattery->appendChild($dom->createElement('AreBatteriesRequired', $product->eWebCode->button_cell === 1 ? "true" : "false"));
 
                             $elementDescriptionData->appendChild($elementBattery);
 
@@ -145,7 +164,7 @@ class GenerateAmzProductsXml extends Command
                             $elementDescriptionData->appendChild($dom->createElement('DepartmentName', $product->department_name));
                             $elementDescriptionData->appendChild($dom->createElement('SizeName', $product->size_name));
                             $elementDescriptionData->appendChild($dom->createElement('CountryOfOrigin', $product->country_of_origin));
-                            $elementDescriptionData->appendChild($dom->createElement('ItemTypeName', substr($product->item_type_name, 0, 47) . '...'));
+                            $elementDescriptionData->appendChild($dom->createElement('ItemTypeName', substr(htmlspecialchars($product->item_type_name), 0, 47) . '...'));
 
                             $elementProd->appendChild($elementDescriptionData);
 
@@ -200,7 +219,13 @@ class GenerateAmzProductsXml extends Command
                             $feedController->createAmzFeed($xml, 'POST_PRODUCT_DATA', $productIds);
                         }
                     }
-                    $count = Product::where(['xml_generated' => 0, 'published' => 0])->count();
+                    $count = Product::where(['xml_generated' => 0, 'published' => 0])
+                    ->where(function($query){
+                        $query->whereNotNull('ean');
+                        $query->orWhereNotNull('upc');
+                        $query->orWhereNotNull('asin');
+                    })
+                    ->count();
                 }
                 $job->update(['status' => 0, 'message' => null]);
             } catch (\Exception $e){

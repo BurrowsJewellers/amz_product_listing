@@ -71,7 +71,7 @@ class Product extends Model
     }
 
     public function eWebCode() {
-        return $this->hasOne(EWebShortCode::class, 'e_web_code', 'code');
+        return $this->hasOne(EWebShortCode::class, 'code', 'e_web_code');
     }
 
 
