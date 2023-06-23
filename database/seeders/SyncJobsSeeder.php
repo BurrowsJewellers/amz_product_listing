@@ -50,6 +50,14 @@ class SyncJobsSeeder extends Seeder
                 'marketplace' => 'Amazon',
                 'type' => 'checkAmzFeedStatus',
             ],
+            [
+                'marketplace' => 'Amazon',
+                'type' => 'getAmzMerchantListingAllData',
+            ],
+            [
+                'marketplace' => 'Amazon',
+                'type' => 'processAmzMerchantListingAllData',
+            ],
         ];
 
         foreach ($jobs as $job) {

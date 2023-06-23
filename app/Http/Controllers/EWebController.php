@@ -12,7 +12,7 @@ class EWebController extends ConfigController
         $client = $this->getEwebSoapClient();
         $resp = $client->__soapCall($method, [$this->formatParams($params, $auth)]);
         $request = $client->__getLastRequest();
-        // var_dump($request);
+        var_dump($request);
         return $resp;
     }
 
