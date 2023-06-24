@@ -13,16 +13,22 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule): void
     {
         $schedule->command('getBrandsFromEWeb')->dailyAt('00:05');
-        $schedule->command('getProductsFromEWeb')->everyThirtyMinutes();
+        $schedule->command('getProductsFromEWeb')->everyFifteenMinutes();
 
-        $schedule->command('submitAmzXmlFeed POST_PRODUCT_DATA')->hourlyAt(10);
+        $schedule->command('generateAmzProductsXml')->cron('10,25,40,55 * * * *');
+        $schedule->command('submitAmzXmlFeed POST_PRODUCT_DATA')->cron('12,27,42,57 * * * *');
+
+        $schedule->command('generateAmzInventoryXml')->cron('13,28,43,58 * * * *');
+        $schedule->command('generateAmzPriceXml')->hourly();
+        $schedule->command('generateAmzImagesXml')->hourly();
+
         $schedule->command('submitAmzXmlFeed POST_PRODUCT_IMAGE_DATA')->hourlyAt(20);
         $schedule->command('submitAmzXmlFeed POST_PRODUCT_PRICING_DATA')->hourlyAt(25);
         $schedule->command('submitAmzXmlFeed POST_INVENTORY_AVAILABILITY_DATA')->everyTenMinutes();
         $schedule->command('checkAmzFeedStatus')->everyFifteenMinutes();
 
-        $schedule->command('getAmzMerchantListingAllData')->dailyAt('00:10');
-        $schedule->command('processAmzMerchantListingAllData')->dailyAt('02:10');
+        $schedule->command('getAmzMerchantListingAllData')->everyTwoHours();
+        $schedule->command('processAmzMerchantListingAllData')->hourly();
     }
 
     /**
