@@ -19,6 +19,8 @@
                     <th>SKU</th>
                     <th>EAN</th>
                     <th>ASIN</th>
+                    <th>Price</th>
+                    <th>Inventory</th>
                     <th>Message</th>
                     <!-- <th>Status</th> -->
                 </tr>
@@ -56,6 +58,8 @@
                     {data: 'sku', name: 'sku'},
                     {data: 'ean', name: 'ean'},
                     {data: 'asin', name: 'asin'},
+                    {data: 'retail_price', name: 'retail_price'},
+                    {data: 'quantity', name: 'quantity'},
                     {data: 'message', name: 'message'},
                 ],
 
