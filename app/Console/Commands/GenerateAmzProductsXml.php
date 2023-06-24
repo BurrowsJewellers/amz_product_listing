@@ -89,10 +89,13 @@ class GenerateAmzProductsXml extends Command
                                 $standardProductIDType = 'ASIN';
                                 $standardProductIDValue = $product->asin;
                             } elseif ($product->ean) {
-                                // $standardProductIDType = 'EAN';
-                                // $standardProductIDValue = $product->ean;
-                                $standardProductIDType = 'UPC';
-                                $standardProductIDValue = '0'.$product->ean;
+                                if ($product->brand->name == 'Ania Haie') {
+                                    $standardProductIDType = 'UPC';
+                                    $standardProductIDValue = '0'.$product->ean;
+                                } else {
+                                    $standardProductIDType = 'EAN';
+                                    $standardProductIDValue = $product->ean;
+                                }
                             } elseif ($product->upc) {
                                 $standardProductIDType = 'UPC';
                                 $standardProductIDValue = $product->upc;
