@@ -103,8 +103,8 @@
                     </div>
 
                     <div class="col-md-4 mb-3">
-                        <label for="standard_price" class="form-label">Price</label>
-                        <input type="number" step="0.01" class="form-control" id="standard_price" name="standard_price" value="{{ $product->standard_price }}" required>
+                        <label for="retail_price" class="form-label">Price</label>
+                        <input type="number" step="0.01" class="form-control" id="retail_price" name="retail_price" value="{{ $product->retail_price }}" required>
                     </div>
                 </div>
 
