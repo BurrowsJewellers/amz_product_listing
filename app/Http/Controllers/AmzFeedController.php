@@ -201,11 +201,12 @@ class AmzFeedController extends Controller
             ->orWhere('processing_status', 'IN_PROGRESS');
         })->get();
 
+        $productDataFeed = false;
+
         if ($feeds->count()) {
             $config = (new AmzConfigController())->getConfig();
             $feedsApiInstance = new FeedsApi($config);
 
-            $productDataFeed = false;
             foreach ($feeds as $feed) {
                 try {
                     $feedType = constant("SellingPartnerApi\FeedType::$feed->type");
@@ -231,6 +232,7 @@ class AmzFeedController extends Controller
                     }
                 } catch (\Exception $e) {
                     Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
+                    throw new \Exception($e->getMessage());
                 }
             }
         }
