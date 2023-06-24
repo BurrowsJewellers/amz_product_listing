@@ -99,7 +99,7 @@ class GetProductsFromEWeb extends Command
                         $productData = [];
 
                         $productData['title'] = $item->ShortMarketingDescription;
-                        $productData['asin'] = null;
+                        // $productData['asin'] = null;
 
                         $barcode = trim($item->Barcode);
 
