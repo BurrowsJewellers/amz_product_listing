@@ -89,7 +89,7 @@
             ],
 
             order: [
-                [1, "desc"]
+                [0, "desc"]
             ],
             initComplete: function(settings, json) {
                 $(".dt-buttons .btn").removeClass("btn-secondary")
