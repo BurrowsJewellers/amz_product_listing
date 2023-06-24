@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
+use Illuminate\Http\Request as Req;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use SellingPartnerApi\Api\ReportsV20210630Api;
@@ -86,6 +86,47 @@ class AmzReportController extends Controller
             }
         } catch (\Exception $e) {
             Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() .' Line : '. $e->getLine());
+        }
+    }
+
+    public function amazonReports()
+    {
+        if (request()->ajax()) {
+            $reports = AmzRequestedReport::with('marketplace');
+            return datatables()->of($reports)
+                ->addColumn('download', function ($report) {
+                    $link = route('amazon.report.download', ['id' => $report->id, 'type' => 'feed']);
+                    return '<a href="' . $link . '">Download</a>';
+                })
+                ->editColumn('created_at', function ($report) {
+                    return $report->created_at->format('Y-m-d H:i:s');
+                })
+                ->editColumn('updated_at', function ($report) {
+                    return $report->updated_at->format('Y-m-d H:i:s');
+                })
+                ->rawColumns(['download'])
+                ->toJson();
+        }
+        return view('amazon.reports');
+    }
+
+
+    public function downloadReport(Req $request)
+    {
+        if ($request->filled('id')) {
+            $report = AmzRequestedReport::where('id', $request->id)->first();
+
+            if ($report) {
+                if (!Storage::disk('local')->exists($report->file_name)) {
+                    return 'Report not found!';
+                }
+
+                return response()->download(storage_path('/app/' . $report->file_name));
+            } else {
+                return 'Report not found!';
+            }
+        } else {
+            return 'Report not found!';
         }
     }
 

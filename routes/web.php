@@ -6,6 +6,7 @@ use App\Http\Controllers\ProductController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProductTypeController;
 use App\Http\Controllers\AmzFeedController;
+use App\Http\Controllers\AmzReportController;
 use App\Http\Controllers\CategoryController;
 
 /*
@@ -34,6 +35,9 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('/amazon/feeds', [AmzFeedController::class, 'amazonFeeds'])->name('amazon.feeds');
     Route::get('/amazon/feed/download', [AmzFeedController::class, 'downloadFile'])->name('amazon.feed.download');
+    
+    Route::get('/amazon/reports', [AmzReportController::class, 'amazonReports'])->name('amazon.reports');
+    Route::get('/amazon/report/download', [AmzReportController::class, 'downloadReport'])->name('amazon.report.download');
 
     Route::get('/get/producttypes', [ProductTypeController::class, 'getProductTypes'])->name('get.productTypes');
 });

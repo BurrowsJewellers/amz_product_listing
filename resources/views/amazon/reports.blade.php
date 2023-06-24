@@ -10,15 +10,16 @@
             <button type="button" class="btn-close" data-coreui-dismiss="alert" aria-label="Close"></button>
         </div>
         @endif
-        <table id="amzFeeds" class="table table-striped" style="width:100%">
+        <table id="amzReports" class="table table-striped" style="width:100%">
             <thead>
                 <tr>
                     <th>ID</th>
-                    <th>Amazon Feed ID</th>
-                    <th>Type</th>
-                    <th>Processing Status</th>
-                    <th>Feed XML</th>
-                    <th>Response XML</th>
+                    <th>Report ID</th>
+                    <th>Report Type</th>
+                    <th>Marketplace</th>
+                    <th>Downloaded from Amazon API</th>
+                    <th>Processed</th>
+                    <th>Download</th>
                     <th>Created at</th>
                     <th>Last Updated at</th>
                 </tr>
@@ -39,11 +40,11 @@
     $(document).ready(function() {
         "use strict"
 
-        var table = $("#amzFeeds").DataTable({
+        var table = $("#amzReports").DataTable({
             processing: true,
             serverSide: true,
             ajax: {
-                url: "{{ route('amazon.feeds') }}",
+                url: "{{ route('amazon.reports') }}",
                 method: 'GET',
                 data: function(newData) {
                     // newData.cid = $('#cid').val();
@@ -54,24 +55,34 @@
                     data: 'id'
                 },
                 {
-                    name: 'feed_id',
-                    data: 'feed_id'
+                    name: 'report_id',
+                    data: 'report_id'
                 },
                 {
-                    name: 'type',
-                    data: 'type'
+                    name: 'report_type',
+                    data: 'report_type'
                 },
                 {
-                    name: 'processing_status',
-                    data: 'processing_status'
+                    name: 'marketplace.country',
+                    data: 'marketplace.country',
                 },
                 {
-                    name: 'feed_xml',
-                    data: 'feed_xml'
+                    name: 'downloaded',
+                    data: 'downloaded',
+                    render: function (data, type, row, meta) {
+                        return data === 1 ? 'Yes' : 'No';
+                    },
                 },
                 {
-                    name: 'response_xml',
-                    data: 'response_xml'
+                    name: 'processed',
+                    data: 'processed',
+                    render: function (data, type, row, meta) {
+                        return data === 1 ? 'Yes' : 'No';
+                    },
+                },
+                {
+                    name: 'download',
+                    data: 'download'
                 },
                 {
                     name: 'created_at',

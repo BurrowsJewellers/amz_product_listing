@@ -42,9 +42,17 @@
             <li class="nav-item">
                 <a class="nav-link" href="{{ route('amazon.feeds') }}">
                     <svg class="nav-icon">
-                        <use xlink:href="{{ asset('vendors/@coreui/icons/svg/free.svg#cil-list') }}"></use>
+                        <use xlink:href="{{ asset('vendors/@coreui/icons/svg/free.svg#cil-command') }}"></use>
                     </svg>
                     Amazon Feeds</a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="{{ route('amazon.reports') }}">
+                    <svg class="nav-icon">
+                        <use xlink:href="{{ asset('vendors/@coreui/icons/svg/free.svg#cil-applications') }}"></use>
+                    </svg>
+                    Amazon Reports</a>
             </li>
 
             <!-- <li class="nav-item">
