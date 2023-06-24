@@ -2,10 +2,11 @@
 
 namespace App\Console\Commands;
 
-use App\Http\Controllers\EWebController;
-use App\Models\Brand;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
+use App\Http\Controllers\EWebController;
+use App\Http\Controllers\SyncJobController;
+use App\Models\Brand;
 
 class GetBrandsFromEWeb extends Command
 {
@@ -28,17 +29,33 @@ class GetBrandsFromEWeb extends Command
      */
     public function handle()
     {
-        try {
-            $eWeb = new EWebController;
-            $resp = $eWeb->call('GetAllBrands');
+        $marketplace = 'EWeb';
+        $jobType = 'getBrandsFromEWeb';
 
-            foreach ($resp->GetAllBrandsResult->Brand as $brand){
-                Brand::firstOrCreate(['name' => $brand->Name, 'brand_id' => $brand->ID]);
-                $this->info($brand->Name);
+        $job = SyncJobController::getJob($jobType, $marketplace);
+
+        if(!$job->isRunning()){
+            Log::info("$marketplace $jobType started!");
+            $job->update(['status' => 1]);
+
+            try {
+                $eWeb = new EWebController;
+                $resp = $eWeb->call('GetAllBrands');
+
+                foreach ($resp->GetAllBrandsResult->Brand as $brand){
+                    Brand::firstOrCreate(['name' => $brand->Name, 'brand_id' => $brand->ID]);
+                    $this->info($brand->Name);
+                }
+                $job->update(['status' => 0, 'message' => null]);
+            } catch (\Exception $e) {
+                Log::debug('getBrandsFromEWeb : '. $e->getMessage());
+                $job->update(['status' => 0, 'message' => $e->getMessage()]);
             }
-        } catch (\Exception $e) {
-            Log::debug('getBrandsFromEWeb : '. $e->getMessage());
-            dd($e->getMessage());
+
+            Log::info("$marketplace $jobType finished!");
+        } else {
+            Log::info("$marketplace $jobType is already running.");
         }
+
     }
 }
