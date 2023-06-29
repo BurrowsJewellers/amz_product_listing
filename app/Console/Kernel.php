@@ -27,7 +27,7 @@ class Kernel extends ConsoleKernel
         $schedule->command('submitAmzXmlFeed POST_INVENTORY_AVAILABILITY_DATA')->everyTenMinutes();
         $schedule->command('checkAmzFeedStatus')->everyFifteenMinutes();
 
-        $schedule->command('getAmzMerchantListingAllData')->everyTwoHours();
+        $schedule->command('getAmzMerchantListingAllData')->dailyAt('00:20');
         $schedule->command('processAmzMerchantListingAllData')->hourly();
     }
 
