@@ -259,6 +259,8 @@ class AmzFeedController extends Controller
                         // $feed->update(['processing_status' => 3]);
                         // $feed = $feed->refresh();
 
+                        Product::where('id', '>', 0)->update(['message' => null]);
+
                         $ProcessingReport = $data->Message->ProcessingReport;
 
                         $MessagesWithError      = (int) $ProcessingReport->ProcessingSummary->MessagesWithError;
