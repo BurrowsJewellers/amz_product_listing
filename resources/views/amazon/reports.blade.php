@@ -77,7 +77,14 @@
                     name: 'processed',
                     data: 'processed',
                     render: function (data, type, row, meta) {
-                        return data === 1 ? 'Yes' : 'No';
+                        if (data === 0) {
+                            return 'No';
+                        } else if (data === 1) {
+                            return 'Yes';
+                        } else if (data === 2) {
+                            return 'Error';
+                        }
+                        return '';
                     },
                 },
                 {
