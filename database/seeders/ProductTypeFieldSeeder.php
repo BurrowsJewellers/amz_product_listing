@@ -20,6 +20,7 @@ class ProductTypeFieldSeeder extends Seeder
         $category = Category::where(['name' => 'Jewelry', 'marketplace_id' => $marketplace->id])->first();
         $necklace = ProductType::where(['name' => 'Necklace', 'category_id' => $category->id])->first();
         $earring = ProductType::where(['name' => 'Earring', 'category_id' => $category->id])->first();
+        $ring = ProductType::where(['name' => 'Ring', 'category_id' => $category->id])->first();
 
         $fields = [
             [
@@ -54,6 +55,26 @@ class ProductTypeFieldSeeder extends Seeder
                 'e_web_name' => 'TargetGender',
             ],
 
+            [
+                'product_type_id' => $ring->id,
+                'amz_name' => 'GemType',
+                'e_web_name' => 'SStoneType',
+            ],
+            [
+                'product_type_id' => $ring->id,
+                'amz_name' => 'RingSize',
+                'e_web_name' => 'RingSize',
+            ],
+            [
+                'product_type_id' => $ring->id,
+                'amz_name' => 'SupplierDeclaredMaterialRegulation',
+                'e_web_name' => 'SupplierDeclaredMaterialRegulation',
+            ],
+            [
+                'product_type_id' => $ring->id,
+                'amz_name' => 'TargetGender',
+                'e_web_name' => 'TargetGender',
+            ],
 
         ];
 

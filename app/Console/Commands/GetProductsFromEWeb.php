@@ -109,11 +109,11 @@ class GetProductsFromEWeb extends Command
                             $productData['ean'] = $barcode;
                         }
 
-                        $productData['brand_id'] = $brandsArray[$item->BrandID]['id'];
+                        $productData['brand_id'] = isset($brandsArray[$item->BrandID]['id']) ? $brandsArray[$item->BrandID]['id'] : null;
                         $productData['category_id'] = $category->id;
                         $productData['product_type_id'] = $productType->id;
                         $productData['description'] = $item->MarketingDescription;
-                        $productData['manufacturer'] = $brandsArray[$item->BrandID]['id'];
+                        $productData['manufacturer'] = isset($brandsArray[$item->BrandID]['id']) ? $brandsArray[$item->BrandID]['name'] : null;
 
                         $productData['department_name'] = $shortCode->code[1] == 'W' ? 'Womens' : 'Mens';
 
@@ -134,8 +134,8 @@ class GetProductsFromEWeb extends Command
                         $productData['country_of_origin'] = $countryOfOrigin;
                         $productData['item_type_name'] = $item->ShortMarketingDescription;
                         $productData['quantity'] = intval($item->TotalAvailQOH);
-                        $productData['retail_price'] = $item->RetailPrice;
-                        $productData['retail_price2'] = $item->RetailPrice2;
+                        $productData['retail_price'] = number_format($item->RetailPrice, 2);
+                        $productData['retail_price2'] = number_format($item->RetailPrice2, 2);
                         $productData['real_design_number'] = $item->RealDesignNum;
                         $productData['e_web_code'] = $shortCode->code;
 
@@ -149,13 +149,15 @@ class GetProductsFromEWeb extends Command
                         }
 
                         /** Add the required field which are missing in eWeb API */
-                        if (!property_exists($item, 'TargetGender')) {
+                        // if (!property_exists($item, 'TargetGender')) {
                             $item->TargetGender = $shortCode->code[1] == 'W' ? 'female' : 'male';
-                        }
+                        // }
 
-                        if (!property_exists($item, 'SupplierDeclaredMaterialRegulation')) {
+                        // if (!property_exists($item, 'SupplierDeclaredMaterialRegulation')) {
                             $item->SupplierDeclaredMaterialRegulation = 'not_applicable';
-                        }
+                        // }
+
+                        $item->RingSize = 'Adjustable';
 
                         $categoryFieldValues = [];
                         foreach ($category->fields as $field) {
@@ -242,6 +244,7 @@ class GetProductsFromEWeb extends Command
 
                             if ($product->wasChanged('retail_price') || $product->wasChanged('retail_price2')) {
                                 $newData['price_feed_status'] = 0;
+                                Log::debug("$product->sku retail_price or retail_price2 changed.");
                             }
 
                             if (!empty($newData)) {
