@@ -38,7 +38,7 @@ class ProcessAmzMerchantListingAllData extends Command
 
         if(!$job->isRunning()){
             Log::info("$marketplace $jobType started!");
-            // $job->update(['status' => 1]);
+            $job->update(['status' => 1]);
 
             try {
                 $reportType = 'GET_MERCHANT_LISTINGS_ALL_DATA';
@@ -68,14 +68,14 @@ class ProcessAmzMerchantListingAllData extends Command
                             $product = null;
                             if($skuIndex !== false && $asinIndex !== false && $statusIndex !== false) {
                                 // dd('ok');
-                                // $report->update(['processed' => 3]);
+                                $report->update(['processed' => 3]);
                                 $report = $report->refresh();
                                 // dd(count($list));
                                 for ($i = 1; $i < count($list) - 1; $i++) {
                                     try {
                                         $productArray = array();
                                         $productArray = explode("\t", $list[$i]);
-                                        $this->info('count '. count($productArray));
+                                        // $this->info('count '. count($productArray));
         
                                         $asin = $asinIndex ? $productArray[$asinIndex] : null;
     
