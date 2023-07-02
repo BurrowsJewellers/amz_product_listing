@@ -38,7 +38,7 @@ class ProcessAmzMerchantListingAllData extends Command
 
         if(!$job->isRunning()){
             Log::info("$marketplace $jobType started!");
-            // $job->update(['status' => 1]);
+            $job->update(['status' => 1]);
 
             try {
                 $reportType = 'GET_MERCHANT_LISTINGS_ALL_DATA';
@@ -88,6 +88,7 @@ class ProcessAmzMerchantListingAllData extends Command
                                     $processed = 1;
                                 }
                             } else {
+                                Log::debug('Required fields not found in report. '.$report->file_name);
                                 $processed = 2;
                             }
                         } else {
