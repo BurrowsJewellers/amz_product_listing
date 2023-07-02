@@ -38,7 +38,7 @@ class ProcessAmzMerchantListingAllData extends Command
 
         if(!$job->isRunning()){
             Log::info("$marketplace $jobType started!");
-            $job->update(['status' => 1]);
+            // $job->update(['status' => 1]);
 
             try {
                 $reportType = 'GET_MERCHANT_LISTINGS_ALL_DATA';
@@ -67,26 +67,34 @@ class ProcessAmzMerchantListingAllData extends Command
                             // dd($headings);
                             $product = null;
                             if($skuIndex !== false && $asinIndex !== false && $statusIndex !== false) {
-                                $report->update(['processed' => 3]);
+                                // dd('ok');
+                                // $report->update(['processed' => 3]);
                                 $report = $report->refresh();
+                                // dd(count($list));
                                 for ($i = 1; $i < count($list) - 1; $i++) {
-                                    $productArray = array();
-                                    $productArray = explode("\t", $list[$i]);
+                                    try {
+                                        $productArray = array();
+                                        $productArray = explode("\t", $list[$i]);
+                                        $this->info('count '. count($productArray));
+        
+                                        $asin = $asinIndex ? $productArray[$asinIndex] : null;
     
-                                    $asin = $asinIndex ? $productArray[$asinIndex] : null;
-    
-                                    $product = Product::where(['sku' => $productArray[$skuIndex]])->update([
-                                        'asin' => $asin,
-                                        // 'price_feed_status' => !$productArray[$priceIndex] ? 0 : 1,
-                                        // 'inventory_feed_status' => $productArray[$quantityIndex] == 0 ? 0 : 1,
-                                        'status' => $productArray[$statusIndex],
-                                        'published' => $asin ? 1 : 0,
-                                    ]);
+                                        $this->info('asin '. $productArray[$asinIndex]);
+        
+                                        $product = Product::where(['sku' => $productArray[$skuIndex]])->update([
+                                            'asin' => $asin,
+                                            // 'price_feed_status' => !$productArray[$priceIndex] ? 0 : 1,
+                                            // 'inventory_feed_status' => $productArray[$quantityIndex] == 0 ? 0 : 1,
+                                            'status' => $productArray[$statusIndex],
+                                            'published' => $asin ? 1 : 0,
+                                        ]);
+                                    } catch (\Exception $e) {
+                                        var_dump($e->getMessage());
+                                        Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() .' Line : '. $e->getLine());
+                                    }
                                 }
     
-                                if($product){
-                                    $processed = 1;
-                                }
+                                $processed = 1;
                             } else {
                                 Log::debug('Required fields not found in report. '.$report->file_name);
                                 $processed = 2;
