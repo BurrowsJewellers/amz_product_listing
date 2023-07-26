@@ -157,7 +157,7 @@ class GetProductsFromEWeb extends Command
                             $item->SupplierDeclaredMaterialRegulation = 'not_applicable';
                         // }
 
-                        $item->RingSize = 'Adjustable';
+                        // $item->RingSize = 'Adjustable';
 
                         $categoryFieldValues = [];
                         foreach ($category->fields as $field) {
