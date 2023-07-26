@@ -158,7 +158,6 @@ class GetProductsFromEWeb extends Command
                         // }
 
                         // $item->RingSize = 'Adjustable';
-                        $item->RingSize = $item->RingSize;
 
                         $categoryFieldValues = [];
                         foreach ($category->fields as $field) {
