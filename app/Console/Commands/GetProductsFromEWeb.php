@@ -159,6 +159,11 @@ class GetProductsFromEWeb extends Command
 
                         // $item->RingSize = 'Adjustable';
 
+                        if (property_exists($item, 'Length')) {
+                            $productData['item_length_numeric'] = str_replace('cm', '', $item->Length);
+                            $productData['item_length_numeric_unit'] = 'centimeters';
+                        }
+
                         $categoryFieldValues = [];
                         foreach ($category->fields as $field) {
                             if (property_exists($item, $field->e_web_name)) {

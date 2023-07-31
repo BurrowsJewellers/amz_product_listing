@@ -30,6 +30,8 @@ class Product extends Model
         'retail_price2',
         'real_design_number',
         'e_web_code',
+        'item_length_numeric',
+        'item_length_numeric_unit',
         'xml_generated',
         'price_feed_status',
         'image_feed_status',

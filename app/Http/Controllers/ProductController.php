@@ -24,7 +24,8 @@ class ProductController extends Controller
             ->editColumn('message', function($row){
                 // return $row->message == null ? 'No' : 'Yes';
                 if ($row->message) {
-                    $html = '<button type="button" class="btn btn-secondary" data-coreui-toggle="tooltip" data-coreui-placement="top" title="'. $row->message. '">View Error</button>';
+                    // $html = '<button type="button" class="btn btn-secondary" data-coreui-toggle="tooltip" data-coreui-placement="top" title="'. $row->message. '">View Error</button>';
+                    $html = $row->message;
                 } else {
                     $html = '';
                 }

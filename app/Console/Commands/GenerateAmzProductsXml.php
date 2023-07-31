@@ -213,6 +213,16 @@ class GenerateAmzProductsXml extends Command
                             $elementProductData->appendChild($elementCategoryName);
 
                             $elementProd->appendChild($elementProductData);
+
+                            if ($product->item_length_numeric && $product->item_length_numeric_unit) {
+                                $lengthDimension = $dom->createElement('LengthDimension', $product->item_length_numeric);
+                                $lengthDimension->setAttribute('unitOfMeasure', $product->item_length_numeric_unit);
+
+                                $itemLengthNumeric = $dom->createElement('ItemLengthNumeric');
+                                $itemLengthNumeric->appendChild($lengthDimension);
+
+                                $elementProd->appendChild($itemLengthNumeric);
+                            }
                         }
             
                         $xmlRoot = $dom->appendChild($envelop);

@@ -1,5 +1,27 @@
 @extends('layouts.app')
 
+@section('style')
+<style>
+
+table.dataTable tr.dt-hasChild td.dt-control:before {
+    content: "▼";
+}
+
+table.dataTable td.dt-control:before {
+    display: inline-block;
+    color: rgba(0, 0, 0, 0.5);
+    content: "►";
+}
+
+table.dataTable td.dt-control {
+    text-align: center;
+    cursor: pointer;
+}
+
+</style>
+
+@endsection
+
 @section('content')
 
 <div class="card">
@@ -13,6 +35,7 @@
         <table id="products" class="table table-striped" style="width:100%">
             <thead>
                 <tr>
+                    <th></th>
                     <th>Action</th>
                     <th>ID</th>
                     <th>Title</th>
@@ -21,7 +44,7 @@
                     <th>ASIN</th>
                     <th>Price</th>
                     <th>Inventory</th>
-                    <th>Message</th>
+                    <th>Has Error</th>
                     <!-- <th>Status</th> -->
                 </tr>
             </thead>
@@ -41,6 +64,14 @@
         $(document).ready(function () {
             "use strict"
 
+            function format(d) {
+                return (
+                    '<dl>' +
+                        '<dt>Error:'+ d.message +'</dt>' +
+                    '</dl>'
+                );
+            }
+
             var table = $("#products").DataTable({
                 processing: true,
                 serverSide: true,
@@ -52,6 +83,7 @@
                     },
                 },
                 columns: [
+                    {className: 'dt-control', orderable: false, data: null, defaultContent: ''},                    
                     {data: 'action', name: 'action', orderable: false, searchable: false},
                     {data: 'id', name: 'id'},
                     {data: 'title', name: 'title'},
@@ -60,7 +92,7 @@
                     {data: 'asin', name: 'asin'},
                     {data: 'retail_price', name: 'retail_price'},
                     {data: 'quantity', name: 'quantity'},
-                    {data: 'message', name: 'message'},
+                    {data: 'message', name: 'message', render: function ( data, type, row, meta ) { return data ? 'Yes' : 'No'; }},
                 ],
 
                 columnDefs: [
@@ -91,12 +123,22 @@
                         return;
                     });
                 }
-
-
             });
 
 
-
+            table.on('click', 'td.dt-control', function (e) {
+                let tr = e.target.closest('tr');
+                let row = table.row(tr);
+            
+                if (row.child.isShown()) {
+                    // This row is already open - close it
+                    row.child.hide();
+                }
+                else {
+                    // Open this row
+                    row.child(format(row.data())).show();
+                }
+            });
         });
     </script>
 @endsection
