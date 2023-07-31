@@ -40,6 +40,10 @@ class GenerateAmzImagesXml extends Command
             Log::info("$marketplace $jobType started!");
             $job->update(['status' => 1]);
 
+            if (now()->hour == 23) {
+                Product::where(['published' => 1, 'image_feed_status' => 1])->update(['image_feed_status' => 0]);
+            }
+
             try {
                 // delete the pending feeds
                 // $feeds = AmzFeed::where(['type' => 'POST_PRODUCT_IMAGE_DATA', 'processing_status' => 0])->get();
