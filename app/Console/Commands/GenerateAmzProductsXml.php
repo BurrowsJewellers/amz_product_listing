@@ -215,12 +215,16 @@ class GenerateAmzProductsXml extends Command
                             $elementProd->appendChild($elementProductData);
 
                             if ($product->item_length_numeric && $product->item_length_numeric_unit) {
-                                $lengthDimension = $dom->createElement('LengthDimension', $product->item_length_numeric);
-                                $lengthDimension->setAttribute('unitOfMeasure', $product->item_length_numeric_unit);
+                                // $lengthDimension = $dom->createElement('LengthDimension', $product->item_length_numeric);
+                                // $lengthDimension->setAttribute('unitOfMeasure', $product->item_length_numeric_unit);
 
-                                $itemLengthNumeric = $dom->createElement('ItemLengthNumeric');
-                                $itemLengthNumeric->appendChild($lengthDimension);
+                                // $itemLengthNumeric = $dom->createElement('ItemLengthNumeric');
+                                // $itemLengthNumeric->appendChild($lengthDimension);
 
+                                // $elementProd->appendChild($itemLengthNumeric);
+
+                                $itemLengthNumeric = $dom->createElement('ItemLengthNumeric', $product->item_length_numeric);
+                                $itemLengthNumeric->setAttribute('unitOfMeasure', $product->item_length_numeric_unit);
                                 $elementProd->appendChild($itemLengthNumeric);
                             }
                         }
