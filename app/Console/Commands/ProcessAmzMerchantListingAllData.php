@@ -120,7 +120,7 @@ class ProcessAmzMerchantListingAllData extends Command
                 // exit;
                 // set the published to 0 for the products which does not have ASIN
                 Product::where(function($query) use($skuArray){
-                    $query->whereNull('asin')->whereNotIn('sku', $skuArray);
+                    $query->whereNull('asin')->orWhereNotIn('sku', $skuArray);
                 })->update([
                     'xml_generated' => 0,
                     'submitted' => 0,
