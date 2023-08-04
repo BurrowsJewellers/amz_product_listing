@@ -25,7 +25,7 @@ class AmzReportController extends Controller
             }
 
             $amz = new AmzConfigController();
-            $config = $amz->getConfig($marketplace->region, true);
+            $config = $amz->getConfig($marketplace->region);
 
             $apiInstance = new ReportsV20210630Api($config);
             $response = $apiInstance->createReport($specification);
@@ -57,7 +57,7 @@ class AmzReportController extends Controller
             if ($reports->count()) {
                 foreach ($reports as $report) {
                     $amz = new AmzConfigController();
-                    $config = $amz->getConfig($report->marketplace->region, true);
+                    $config = $amz->getConfig($report->marketplace->region);
         
                     $apiInstance = new ReportsV20210630Api($config);
                     Log::info("Downloading $report->report_type report.");

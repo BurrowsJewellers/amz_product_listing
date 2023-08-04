@@ -123,12 +123,17 @@ class GetProductsFromEWeb extends Command
                             $productData['size_name'] = 'Small';
                         }
 
-                        if ($brandsArray[$item->BrandID]['name'] == 'Thoms Sabo') {
-                            $countryOfOrigin = 'GR';
-                        } elseif ($brandsArray[$item->BrandID]['name'] == 'Ania Haie') {
-                            $countryOfOrigin = 'UK';
+                        $countryOfOrigin = 'AU';
+                        if (isset($brandsArray[$item->BrandID])) {
+                            if ($brandsArray[$item->BrandID]['name'] == 'Thoms Sabo') {
+                                $countryOfOrigin = 'GR';
+                            } elseif ($brandsArray[$item->BrandID]['name'] == 'Ania Haie') {
+                                $countryOfOrigin = 'UK';
+                            } else {
+                                $countryOfOrigin = 'AU';
+                            }
                         } else {
-                            $countryOfOrigin = 'AU';
+                            Log::error("Brand id $item->BrandID not found in brandsArray.");
                         }
 
                         $productData['country_of_origin'] = $countryOfOrigin;

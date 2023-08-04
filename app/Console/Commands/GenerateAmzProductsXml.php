@@ -81,6 +81,7 @@ class GenerateAmzProductsXml extends Command
                         $productIds = [];
                         foreach($products as $product){
                             $this->info('SKU '. $product->sku);
+                            Log::info('SKU '. $product->sku);
 
                             $standardProductIDType = null;
                             $standardProductIDValue = null;
@@ -171,7 +172,8 @@ class GenerateAmzProductsXml extends Command
                             }
 
                             $elementDescriptionData->appendChild($dom->createElement('CountryOfOrigin', $product->country_of_origin));
-                            $elementDescriptionData->appendChild($dom->createElement('ItemTypeName', substr(htmlspecialchars($product->item_type_name), 0, 47) . '...'));
+                            // $elementDescriptionData->appendChild($dom->createElement('ItemTypeName', substr(htmlspecialchars($product->item_type_name), 0, 47) . '...'));
+                            $elementDescriptionData->appendChild($dom->createElement('ItemTypeName', htmlspecialchars(substr($product->title,0,47) . "...")));
 
                             $elementProd->appendChild($elementDescriptionData);
 
