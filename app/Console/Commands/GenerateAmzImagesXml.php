@@ -138,6 +138,9 @@ class GenerateAmzImagesXml extends Command
                             $feedController->createAmzFeed($xml, 'POST_PRODUCT_IMAGE_DATA', $productIds);
                         }
                     }
+
+                    sleep(2);
+
                     $count = Product::where(['image_feed_status' => 0, 'published' => 1])->count();
                 }
 
