@@ -104,6 +104,8 @@ class GenerateAmzInventoryXml extends Command
                         }
                     }
 
+                    sleep(2);
+
                     $count = Product::where(['inventory_feed_status' => 0, 'published' => 1])->count();
                 }
 

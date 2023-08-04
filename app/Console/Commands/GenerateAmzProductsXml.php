@@ -242,6 +242,9 @@ class GenerateAmzProductsXml extends Command
                             $feedController->createAmzFeed($xml, 'POST_PRODUCT_DATA', $productIds);
                         }
                     }
+
+                    sleep(2);
+
                     $count = Product::where(['xml_generated' => 0, 'published' => 0])
                     ->where(function($query){
                         $query->whereNotNull('ean');

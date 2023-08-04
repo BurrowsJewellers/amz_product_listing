@@ -100,6 +100,8 @@ class GenerateAmzPriceXml extends Command
                         }
                     }
 
+                    sleep(2);
+
                     $count = Product::where(['price_feed_status' => 0, 'published' => 1])->count();
                 }
 
