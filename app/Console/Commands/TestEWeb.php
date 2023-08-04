@@ -5,6 +5,8 @@ namespace App\Console\Commands;
 use App\Http\Controllers\ConfigController;
 use App\Http\Controllers\EWebController;
 use Illuminate\Console\Command;
+use App\Http\Controllers\AmzFeedController;
+
 
 class TestEWeb extends Command
 {
@@ -27,6 +29,19 @@ class TestEWeb extends Command
      */
     public function handle()
     {
+        $c = new AmzFeedController();
+
+        $c->updateMessage();
+        exit;
+
+
+
+
+
+
+
+
+
         $eWeb = new EWebController;
         $params = ["SKU" => "001-024-05122"];
         // $resp = $eWeb->call('GetItemImagesBySKU', $params);

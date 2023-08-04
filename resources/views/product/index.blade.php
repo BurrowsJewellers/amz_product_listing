@@ -67,7 +67,7 @@ table.dataTable td.dt-control {
             function format(d) {
                 return (
                     '<dl>' +
-                        '<dt>Error:'+ d.message +'</dt>' +
+                        '<dt>'+ d.message +'</dt>' +
                     '</dl>'
                 );
             }

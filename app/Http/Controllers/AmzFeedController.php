@@ -245,53 +245,66 @@ class AmzFeedController extends Controller
 
     public function updateMessage()
     {
-        $feed = AmzFeed::where(['type' => 'POST_PRODUCT_DATA', 'processing_status' => 'DONE'])->orderBy('id', 'desc')->first();
+        $feed = AmzFeed::where(['type' => 'POST_PRODUCT_DATA', 'processing_status' => 'DONE'])->whereNotNull('response_file_name')->orderBy('id', 'desc')->first();
 
-        if ($feed) {
-            if (Storage::exists($feed->response_file_name)) {
-                $contents = Storage::disk('local')->get($feed->response_file_name);
-                $data = simplexml_load_string($contents);
+        if (!$feed) {
+            return;
+        }
 
-                // dd($data);
-                if ($data) {
-                    try {
-                        echo "Processing $feed->response_file_name\n";
-                        // $feed->update(['processing_status' => 3]);
-                        // $feed = $feed->refresh();
+        if (!Storage::exists($feed->response_file_name)) {
+            echo "$feed->response_file_name not found.\n";
+            return;
+        }
 
-                        Product::where('id', '>', 0)->update(['message' => null]);
+        $contents = Storage::disk('local')->get($feed->response_file_name);
 
-                        $ProcessingReport = $data->Message->ProcessingReport;
+        if (!$contents) {
+            echo "$feed->response_file_name empty.\n";
+            return;
+        }
 
-                        $MessagesWithError      = (int) $ProcessingReport->ProcessingSummary->MessagesWithError;
-                        $MessagesWithWarning    = (int) $ProcessingReport->ProcessingSummary->MessagesWithWarning;
+        $data = simplexml_load_string($contents);
 
-                        if ($MessagesWithError > 0 || $MessagesWithWarning > 0) {
-                            foreach ($ProcessingReport->Result as $r) {
-                                $sku        = $r->AdditionalInfo->SKU;
-                                $message    = html_entity_decode($r->ResultDescription, ENT_QUOTES | ENT_HTML5);
+        if ($data) {
+            try {
+                echo "Processing $feed->response_file_name\n";
 
-                                $product = Product::where('sku', $sku)->first();
+                $messagesArray = [];
 
-                                if ($product) {
-                                    $update = $product->update([
-                                        // 'message'   => "$product->message\n\n $message",
-                                        'message'   => "$message",
-                                    ]);
-                                }
-                            }
-                        }
+                $ProcessingReport = $data->Message->ProcessingReport;
 
-                        $feed->update(['processing_status' => 'FINISHED']);
-                    } catch (\Exception $e) {
-                        Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
+                $MessagesWithError      = (int) $ProcessingReport->ProcessingSummary->MessagesWithError;
+                $MessagesWithWarning    = (int) $ProcessingReport->ProcessingSummary->MessagesWithWarning;
+
+                if ($MessagesWithError > 0 || $MessagesWithWarning > 0) {
+                    foreach ($ProcessingReport->Result as $r) {
+                        $sku = str_replace("%", "", $r->AdditionalInfo->SKU);
+                        $message = html_entity_decode($r->ResultDescription, ENT_QUOTES | ENT_HTML5);
+                        $messagesArray[$sku][] = $message;
                     }
-                } else {
-                    echo "$feed->response_file_name empty.\n";
                 }
-            } else {
-                echo "$feed->response_file_name not found.\n";
+
+                if (!empty($messagesArray)) {
+                    Product::where('id', '>', 0)->update(['message' => null]);
+
+                    foreach ($messagesArray as $sku => $messages) {
+                        $i = 1;
+                        $m = '';
+                        foreach ($messages as $message) {
+                            $m .= "$i: $message <br>";
+                            $i++;
+                        }
+                        // $product = Product::where('sku', $sku)->update(['message' => implode("<br>", $messages)]);
+                        $product = Product::where('sku', $sku)->update(['message' => $m]);
+                    }
+                }
+
+                $feed->update(['processing_status' => 'FINISHED']);
+            } catch (\Exception $e) {
+                Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
             }
+        } else {
+            echo "$feed->response_file_name empty.\n";
         }
     }
 
