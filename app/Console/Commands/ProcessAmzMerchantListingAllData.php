@@ -42,6 +42,7 @@ class ProcessAmzMerchantListingAllData extends Command
 
             try {
                 $reportType = 'GET_MERCHANT_LISTINGS_ALL_DATA';
+                $skuArray = [];
 
                 $reportController = new AmzReportController();
                 $reportController->downloadReports();
@@ -71,6 +72,7 @@ class ProcessAmzMerchantListingAllData extends Command
                                 $report->update(['processed' => 3]);
                                 $report = $report->refresh();
                                 // dd(count($list));
+
                                 for ($i = 1; $i < count($list) - 1; $i++) {
                                     try {
                                         $productArray = array();
@@ -79,8 +81,10 @@ class ProcessAmzMerchantListingAllData extends Command
         
                                         $asin = $asinIndex ? $productArray[$asinIndex] : null;
     
-                                        $this->info('asin '. $productArray[$asinIndex]);
+                                        // $this->info('asin '. $productArray[$asinIndex]);
+                                        $skuArray[] = $productArray[$skuIndex];
         
+                                        /*
                                         $product = Product::where(['sku' => $productArray[$skuIndex]])->update([
                                             'asin' => $asin,
                                             // 'price_feed_status' => !$productArray[$priceIndex] ? 0 : 1,
@@ -88,6 +92,8 @@ class ProcessAmzMerchantListingAllData extends Command
                                             'status' => $productArray[$statusIndex],
                                             'published' => $asin ? 1 : 0,
                                         ]);
+                                        */
+
                                     } catch (\Exception $e) {
                                         var_dump($e->getMessage());
                                         Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() .' Line : '. $e->getLine());
@@ -110,8 +116,12 @@ class ProcessAmzMerchantListingAllData extends Command
                     $report->update(['processed' => $processed]);
                 }
     
+                // echo $skuArray;
+                // exit;
                 // set the published to 0 for the products which does not have ASIN
-                Product::whereNull('asin')->update([
+                Product::where(function($query) use($skuArray){
+                    $query->whereNull('asin')->whereNotIn('sku', $skuArray);
+                })->update([
                     'xml_generated' => 0,
                     'submitted' => 0,
                     'published' => 0,
