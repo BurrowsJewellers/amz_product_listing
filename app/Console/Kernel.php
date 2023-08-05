@@ -15,8 +15,10 @@ class Kernel extends ConsoleKernel
         $schedule->command('getBrandsFromEWeb')->dailyAt('00:05');
         $schedule->command('getProductsFromEWeb')->everyFifteenMinutes();
 
-        $schedule->command('generateAmzProductsXml')->cron('10,25,40,55 * * * *');
-        $schedule->command('submitAmzXmlFeed POST_PRODUCT_DATA')->cron('12,27,42,57 * * * *');
+        // $schedule->command('generateAmzProductsXml')->cron('10,25,40,55 * * * *');
+        $schedule->command('generateAmzProductsXml')->cron('10 * * * *');
+        // $schedule->command('submitAmzXmlFeed POST_PRODUCT_DATA')->cron('12,27,42,57 * * * *');
+        $schedule->command('submitAmzXmlFeed POST_PRODUCT_DATA')->cron('27 */2 * * *');
 
         $schedule->command('generateAmzInventoryXml')->cron('13,28,43,58 * * * *');
         $schedule->command('generateAmzPriceXml')->hourly();

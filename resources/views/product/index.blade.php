@@ -65,11 +65,15 @@ table.dataTable td.dt-control {
             "use strict"
 
             function format(d) {
-                return (
-                    '<dl>' +
-                        '<dt>'+ d.message +'</dt>' +
-                    '</dl>'
-                );
+                if (d.message !== "") {
+                    return (
+                        '<dl>' +
+                            '<dt>'+ d.message +'</dt>' +
+                        '</dl>'
+                    );
+                } else {
+                    return ;
+                }
             }
 
             var table = $("#products").DataTable({
@@ -124,7 +128,6 @@ table.dataTable td.dt-control {
                     });
                 }
             });
-
 
             table.on('click', 'td.dt-control', function (e) {
                 let tr = e.target.closest('tr');
