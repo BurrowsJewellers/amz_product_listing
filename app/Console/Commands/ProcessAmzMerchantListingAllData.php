@@ -84,7 +84,6 @@ class ProcessAmzMerchantListingAllData extends Command
                                         // $this->info('asin '. $productArray[$asinIndex]);
                                         $skuArray[] = $productArray[$skuIndex];
         
-                                        /*
                                         $product = Product::where(['sku' => $productArray[$skuIndex]])->update([
                                             'asin' => $asin,
                                             // 'price_feed_status' => !$productArray[$priceIndex] ? 0 : 1,
@@ -92,8 +91,6 @@ class ProcessAmzMerchantListingAllData extends Command
                                             'status' => $productArray[$statusIndex],
                                             'published' => $asin ? 1 : 0,
                                         ]);
-                                        */
-
                                     } catch (\Exception $e) {
                                         var_dump($e->getMessage());
                                         Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() .' Line : '. $e->getLine());
@@ -116,12 +113,9 @@ class ProcessAmzMerchantListingAllData extends Command
                     $report->update(['processed' => $processed]);
                 }
     
-                // echo $skuArray;
-                // exit;
                 // set the published to 0 for the products which does not have ASIN
-                Product::where(function($query) use($skuArray){
-                    $query->whereNull('asin')->orWhereNotIn('sku', $skuArray);
-                })->update([
+
+                $dataToBeUpdated = [
                     'xml_generated' => 0,
                     'submitted' => 0,
                     'published' => 0,
@@ -130,8 +124,11 @@ class ProcessAmzMerchantListingAllData extends Command
                     'inventory_feed_status' => 0,
                     'status' => null,
                     'message' => null
-                ]);
-    
+                ];
+
+                Product::whereNull('asin')->update($dataToBeUpdated);
+                Product::whereNotIn('sku', $skuArray)->update($dataToBeUpdated);
+
                 $job->update(['status' => 0, 'message' => null]);
             } catch (\Exception $e){
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
