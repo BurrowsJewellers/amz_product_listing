@@ -53,18 +53,18 @@ class ProcessAmzMerchantListingAllData extends Command
                     $processed = 2;
                     if (Storage::exists($report->file_name)) {
                         $contents = Storage::disk('local')->get($report->file_name);
-            
+
                         $list = explode("\n",  $contents);
-            
+
                         if (!empty($list)) {
                             $headings = explode("\t", $list[0]);
-                            
+
                             $asinIndex = array_search('asin1', $headings);
                             $skuIndex = array_search('seller-sku', $headings);
                             $statusIndex = array_search('status', $headings);
                             $priceIndex = array_search('price', $headings);
                             $quantityIndex = array_search('quantity', $headings);
-            
+
                             // dd($headings);
                             $product = null;
                             if($skuIndex !== false && $asinIndex !== false && $statusIndex !== false) {
@@ -78,25 +78,33 @@ class ProcessAmzMerchantListingAllData extends Command
                                         $productArray = array();
                                         $productArray = explode("\t", $list[$i]);
                                         // $this->info('count '. count($productArray));
-        
+
                                         $asin = $asinIndex ? $productArray[$asinIndex] : null;
-    
+
                                         // $this->info('asin '. $productArray[$asinIndex]);
                                         $skuArray[] = $productArray[$skuIndex];
-        
-                                        $product = Product::where(['sku' => $productArray[$skuIndex]])->update([
-                                            'asin' => $asin,
-                                            // 'price_feed_status' => !$productArray[$priceIndex] ? 0 : 1,
-                                            // 'inventory_feed_status' => $productArray[$quantityIndex] == 0 ? 0 : 1,
-                                            'status' => $productArray[$statusIndex],
-                                            'published' => $asin ? 1 : 0,
-                                        ]);
+
+                                        // $product = Product::where(['sku' => $productArray[$skuIndex]])->update([
+                                        //     'asin' => $asin,
+                                        //     'status' => $productArray[$statusIndex],
+                                        //     'published' => $asin ? 1 : 0,
+                                        // ]);
+
+                                        $product = Product::where('sku', $productArray[$skuIndex])->first();
+
+                                        if ($product) {
+                                            $product->update([
+                                                'asin' => $asin,
+                                                'status' => $productArray[$statusIndex],
+                                                'published' => $asin ? 1 : 0,
+                                            ]);
+                                        }
                                     } catch (\Exception $e) {
                                         var_dump($e->getMessage());
                                         Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() .' Line : '. $e->getLine());
                                     }
                                 }
-    
+
                                 $processed = 1;
                             } else {
                                 Log::debug('Required fields not found in report. '.$report->file_name);
@@ -112,7 +120,7 @@ class ProcessAmzMerchantListingAllData extends Command
                     }
                     $report->update(['processed' => $processed]);
                 }
-    
+
                 // set the published to 0 for the products which does not have ASIN
 
                 $dataToBeUpdated = [
@@ -127,7 +135,7 @@ class ProcessAmzMerchantListingAllData extends Command
                 ];
 
                 Product::whereNull('asin')->update($dataToBeUpdated);
-                Product::whereNotIn('sku', $skuArray)->update($dataToBeUpdated);
+                Product::whereNotIn('sku', array_values($skuArray))->update($dataToBeUpdated);
 
                 $job->update(['status' => 0, 'message' => null]);
             } catch (\Exception $e){
@@ -139,6 +147,5 @@ class ProcessAmzMerchantListingAllData extends Command
         } else {
             Log::info("$marketplace $jobType is already running.");
         }
-
     }
 }
