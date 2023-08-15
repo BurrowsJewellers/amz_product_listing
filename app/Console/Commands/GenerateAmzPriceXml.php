@@ -51,7 +51,7 @@ class GenerateAmzPriceXml extends Command
                 $count = Product::where(['price_feed_status' => 0, 'published' => 1])->count();
 
                 while($count){
-                    $limit = 100;
+                    $limit = 1000;
 
                     $products = Product::where(['price_feed_status' => 0, 'published' => 1])->limit($limit)->get();
 

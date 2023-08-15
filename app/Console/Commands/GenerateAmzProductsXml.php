@@ -49,7 +49,7 @@ class GenerateAmzProductsXml extends Command
 
                 $this->info($count);
                 while($count){
-                    $limit = 100;
+                    $limit = 500;
 
                     $products = Product::with(['fields' => function($query) {
                         $query->with(['category', 'productType', 'categoryField', 'productTypeField']);

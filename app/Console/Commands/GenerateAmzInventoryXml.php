@@ -55,7 +55,7 @@ class GenerateAmzInventoryXml extends Command
                 $this->info($count);
 
                 while($count){
-                    $limit = 100;
+                    $limit = 1000;
 
                     $products = Product::where(['inventory_feed_status' => 0, 'published' => 1])->limit($limit)->get();
 
