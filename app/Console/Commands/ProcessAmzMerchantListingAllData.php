@@ -135,7 +135,7 @@ class ProcessAmzMerchantListingAllData extends Command
                 ];
 
                 Product::whereNull('asin')->update($dataToBeUpdated);
-                Product::whereNotIn('sku', array_values($skuArray))->update($dataToBeUpdated);
+                // Product::whereNotIn('sku', array_values($skuArray))->update($dataToBeUpdated);
 
                 $job->update(['status' => 0, 'message' => null]);
             } catch (\Exception $e){
