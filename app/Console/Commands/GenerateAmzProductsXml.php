@@ -39,7 +39,7 @@ class GenerateAmzProductsXml extends Command
             $job->update(['status' => 1]);
 
             try {
-                $count = Product::where(['xml_generated' => 0, 'published' => 0])
+                $count = Product::where(['xml_generated' => 0, 'published' => 0])->whereNotNull('brand_id')
                 ->where(function($query){
                     $query->whereNotNull('ean');
                     $query->orWhereNotNull('upc');
@@ -59,6 +59,7 @@ class GenerateAmzProductsXml extends Command
                         $query->orWhereNotNull('upc');
                         $query->orWhereNotNull('asin');
                     })
+                    ->whereNotNull('brand_id')
                     ->limit($limit)->get();
 
                     if($products->count()) {
@@ -255,7 +256,7 @@ class GenerateAmzProductsXml extends Command
 
                     sleep(2);
 
-                    $count = Product::where(['xml_generated' => 0, 'published' => 0])
+                    $count = Product::where(['xml_generated' => 0, 'published' => 0])->whereNotNull('brand_id')
                     ->where(function($query){
                         $query->whereNotNull('ean');
                         $query->orWhereNotNull('upc');
