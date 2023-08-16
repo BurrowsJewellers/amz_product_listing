@@ -306,6 +306,11 @@ class AmzFeedController extends Controller
                     $m .= "$i: $message <br>";
                     $i++;
                 }
+
+                echo 'SKU : '. $sku ."\n";
+                echo 'Message : '. $m . "\n";
+                echo '==================================='. "\n";
+
                 // $product = Product::where('sku', $sku)->update(['message' => implode("<br>", $messages)]);
                 $product = Product::where('sku', $sku)->update(['message' => $m]);
             }
