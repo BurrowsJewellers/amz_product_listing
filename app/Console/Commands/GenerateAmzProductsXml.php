@@ -83,6 +83,12 @@ class GenerateAmzProductsXml extends Command
                             $this->info('SKU '. $product->sku);
                             Log::info('SKU '. $product->sku);
 
+                            if(!$product->brand) {
+                                $this->error('Brand name is not set. Skipping the record.');
+                                Log::error('Brand name is not set. Skipping the record.');
+                                continue;
+                            }
+
                             $standardProductIDType = null;
                             $standardProductIDValue = null;
 
@@ -150,6 +156,10 @@ class GenerateAmzProductsXml extends Command
                             $elementBulletPoint1 = $dom->createElement('BulletPoint');
                             $elementBulletPoint1->appendChild($dom->createCDATASection($dataBulletPoint1));
                             $elementDescriptionData->appendChild($elementBulletPoint1);
+
+                            $MSRP = $dom->createElement('MSRP', max([$product->retail_price, $product->retail_price2]));
+                            $MSRP->setAttribute('currency', 'AUD');
+                            $elementDescriptionData->appendChild($MSRP);
 
                             $elementDescriptionData->appendChild($dom->createElement('Manufacturer', $product->brand->name));
                             $elementDescriptionData->appendChild($dom->createElement('MfrPartNumber', $product->real_design_number));
