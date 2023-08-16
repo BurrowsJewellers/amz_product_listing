@@ -245,36 +245,40 @@ class AmzFeedController extends Controller
 
     public function updateMessage()
     {
-        $feed = AmzFeed::where(['type' => 'POST_PRODUCT_DATA', 'processing_status' => 'DONE'])->whereNotNull('response_file_name')->orderBy('id', 'desc')->first();
+        $feeds = AmzFeed::where(['type' => 'POST_PRODUCT_DATA', 'processing_status' => 'DONE'])->whereNotNull('response_file_name')->orderBy('id', 'desc')->get();
 
-        if (!$feed) {
-            return;
-        }
+        $messagesArray = [];
 
-        if (!Storage::exists($feed->response_file_name)) {
-            echo "$feed->response_file_name not found.\n";
-            return;
-        }
-
-        $contents = Storage::disk('local')->get($feed->response_file_name);
-
-        if (!$contents) {
-            echo "$feed->response_file_name empty.\n";
-            return;
-        }
-
-        $data = simplexml_load_string($contents);
-
-        if ($data) {
+        foreach ($feeds as $feed) {
             try {
-                echo "Processing $feed->response_file_name\n";
+                if (!Storage::exists($feed->response_file_name)) {
+                    echo "$feed->response_file_name not found.\n";
+                    $feed->update(['processing_status' => 'Response file not found!']);
+                    return;
+                }
 
-                $messagesArray = [];
+                $contents = Storage::disk('local')->get($feed->response_file_name);
+
+                if (!$contents) {
+                    echo "$feed->response_file_name empty.\n";
+                    $feed->update(['processing_status' => 'Response file is empty!']);
+                    return;
+                }
+
+                $data = simplexml_load_string($contents);
+
+                if (!$data) {
+                    echo "$feed->response_file_name empty.\n";
+                    $feed->update(['processing_status' => 'Response file is empty!']);
+                    return;
+                }
+
+                echo "Processing $feed->response_file_name\n";
 
                 $ProcessingReport = $data->Message->ProcessingReport;
 
-                $MessagesWithError      = (int) $ProcessingReport->ProcessingSummary->MessagesWithError;
-                $MessagesWithWarning    = (int) $ProcessingReport->ProcessingSummary->MessagesWithWarning;
+                $MessagesWithError = (int) $ProcessingReport->ProcessingSummary->MessagesWithError;
+                $MessagesWithWarning = (int) $ProcessingReport->ProcessingSummary->MessagesWithWarning;
 
                 if ($MessagesWithError > 0 || $MessagesWithWarning > 0) {
                     foreach ($ProcessingReport->Result as $r) {
@@ -284,27 +288,27 @@ class AmzFeedController extends Controller
                     }
                 }
 
-                if (!empty($messagesArray)) {
-                    Product::where('id', '>', 0)->update(['message' => null]);
-
-                    foreach ($messagesArray as $sku => $messages) {
-                        $i = 1;
-                        $m = '';
-                        foreach ($messages as $message) {
-                            $m .= "$i: $message <br>";
-                            $i++;
-                        }
-                        // $product = Product::where('sku', $sku)->update(['message' => implode("<br>", $messages)]);
-                        $product = Product::where('sku', $sku)->update(['message' => $m]);
-                    }
-                }
-
                 $feed->update(['processing_status' => 'FINISHED']);
             } catch (\Exception $e) {
+                $feed->update(['processing_status' => $e->getMessage()]);
+                $this->error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
                 Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
             }
-        } else {
-            echo "$feed->response_file_name empty.\n";
+        }
+
+        if (!empty($messagesArray)) {
+            Product::where('id', '>', 0)->update(['message' => null]);
+
+            foreach ($messagesArray as $sku => $messages) {
+                $i = 1;
+                $m = '';
+                foreach ($messages as $message) {
+                    $m .= "$i: $message <br>";
+                    $i++;
+                }
+                // $product = Product::where('sku', $sku)->update(['message' => implode("<br>", $messages)]);
+                $product = Product::where('sku', $sku)->update(['message' => $m]);
+            }
         }
     }
 
