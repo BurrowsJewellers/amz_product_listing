@@ -18,7 +18,7 @@ class Kernel extends ConsoleKernel
         // $schedule->command('generateAmzProductsXml')->cron('10,25,40,55 * * * *');
         $schedule->command('generateAmzProductsXml')->cron('10 */2 * * *');
         // $schedule->command('submitAmzXmlFeed POST_PRODUCT_DATA')->cron('12,27,42,57 * * * *');
-        $schedule->command('submitAmzXmlFeed POST_PRODUCT_DATA')->cron('27 */2 * * *');
+        $schedule->command('submitAmzXmlFeed POST_PRODUCT_DATA')->cron('27 */3 * * *');
 
         $schedule->command('generateAmzInventoryXml')->cron('13,28,43,58 * * * *');
         $schedule->command('generateAmzPriceXml')->hourly();

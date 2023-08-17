@@ -41,6 +41,7 @@ class CheckAmzFeedStatus extends Command
             try {
                 $feedController = new AmzFeedController();
                 $feedController->checkFeedStatus();
+                $feedController->updateMessage();
                 $job->update(['status' => 0, 'message' => null]);
             } catch (\Exception $e) {
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);

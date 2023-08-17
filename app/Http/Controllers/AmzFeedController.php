@@ -237,10 +237,10 @@ class AmzFeedController extends Controller
             }
         }
 
-        if ($productDataFeed) {
-            echo "productData\n";
-            $this->updateMessage();
-        }
+        // if ($productDataFeed) {
+        //     echo "productData\n";
+        //     $this->updateMessage();
+        // }
     }
 
     public function updateMessage()
