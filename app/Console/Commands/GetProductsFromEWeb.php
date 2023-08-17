@@ -133,7 +133,7 @@ class GetProductsFromEWeb extends Command
                                 $countryOfOrigin = 'AU';
                             }
                         } else {
-                            Log::error("Brand id $item->BrandID not found in brandsArray.");
+                            Log::error("Brand id : $item->BrandID, for sku: $item->SKU not found in brandsArray.");
                         }
 
                         $productData['country_of_origin'] = $countryOfOrigin;

@@ -13,6 +13,7 @@ class ProductTypeField extends Model
         'product_type_id',
         'amz_name',
         'e_web_name',
+        'sort_order',
     ];
 
     public function productType() {

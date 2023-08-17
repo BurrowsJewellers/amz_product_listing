@@ -7,7 +7,6 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use SellingPartnerApi\Api\ReportsV20210630Api;
 use SellingPartnerApi\Model\ReportsV20210630\CreateReportSpecification;
-use App\Http\Controllers\Amazon\AmazonConfigController;
 use SellingPartnerApi\Document;
 use App\Models\AmzRequestedReport;
 

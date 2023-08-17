@@ -27,11 +27,11 @@ class ProductFieldValue extends Model
     }
 
     public function categoryField() {
-        return $this->belongsTo(CategoryField::class, 'category_field_id', 'id');
+        return $this->belongsTo(CategoryField::class, 'category_field_id', 'id')->orderBy('sort_order', 'asc');
     }
 
     public function productTypeField() {
-        return $this->belongsTo(ProductTypeField::class, 'product_type_field_id', 'id');
+        return $this->belongsTo(ProductTypeField::class, 'product_type_field_id', 'id')->orderBy('sort_order', 'asc');
     }
 
 }

@@ -13,6 +13,7 @@ class CategoryField extends Model
         'category_id',
         'amz_name',
         'e_web_name',
+        'sort_order',
     ];
 
     public function category() {

@@ -17,11 +17,14 @@ class ProductTypeFieldSeeder extends Seeder
     public function run(): void
     {
         $marketplace = Marketplace::where('name', 'Amazon')->first();
+
         $category = Category::where(['name' => 'Jewelry', 'marketplace_id' => $marketplace->id])->first();
+
         $necklace = ProductType::where(['name' => 'Necklace', 'category_id' => $category->id])->first();
         $earring = ProductType::where(['name' => 'Earring', 'category_id' => $category->id])->first();
         $ring = ProductType::where(['name' => 'Ring', 'category_id' => $category->id])->first();
         $bracelet = ProductType::where(['name' => 'Bracelet', 'category_id' => $category->id])->first();
+        $watch = ProductType::where(['name' => 'Watch', 'category_id' => $category->id])->first();
 
         $fields = [
             [
@@ -92,7 +95,31 @@ class ProductTypeFieldSeeder extends Seeder
                 'amz_name' => 'TargetGender',
                 'e_web_name' => 'TargetGender',
             ],
-
+            [
+                'product_type_id' => $watch->id,
+                'amz_name' => 'MovementType',
+                'e_web_name' => 'MovementType',
+            ],
+            [
+                'product_type_id' => $watch->id,
+                'amz_name' => 'TargetGender',
+                'e_web_name' => 'TargetGender',
+            ],
+            [
+                'product_type_id' => $watch->id,
+                'amz_name' => 'AgeRangeDescription',
+                'e_web_name' => 'AgeRangeDescription',
+            ],
+            [
+                'product_type_id' => $watch->id,
+                'amz_name' => 'SupplierDeclaredMaterialRegulation',
+                'e_web_name' => 'SupplierDeclaredMaterialRegulation',
+            ],
+            [
+                'product_type_id' => $watch->id,
+                'amz_name' => 'WaterResistanceLevel',
+                'e_web_name' => 'WaterResistanceLevel',
+            ],
 
         ];
 

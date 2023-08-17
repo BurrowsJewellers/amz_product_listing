@@ -53,7 +53,7 @@ class Product extends Model
     }
 
     public function categoryFields() {
-        return $this->hasMany(CategoryField::class, 'category_id', 'category_id');
+        return $this->hasMany(CategoryField::class, 'category_id', 'category_id')->orderBy('sort_order', 'asc');
     }
 
     public function productType() {
@@ -61,7 +61,7 @@ class Product extends Model
     }
 
     public function productTypeFields() {
-        return $this->hasMany(ProductTypeField::class, 'product_type_id', 'product_type_id');
+        return $this->hasMany(ProductTypeField::class, 'product_type_id', 'product_type_id')->orderBy('sort_order', 'asc');
     }
 
     public function brand() {
