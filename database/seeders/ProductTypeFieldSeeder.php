@@ -143,7 +143,7 @@ class ProductTypeFieldSeeder extends Seeder
             [
                 'product_type_id' => $watch->id,
                 'amz_name' => 'WaterResistanceLevel',
-                'e_web_name' => 'WaterResistanceLevel',
+                'e_web_name' => 'WaterResist',
             ],
         ];
 
