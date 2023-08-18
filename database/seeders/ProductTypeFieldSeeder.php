@@ -97,8 +97,28 @@ class ProductTypeFieldSeeder extends Seeder
             ],
             [
                 'product_type_id' => $watch->id,
+                'amz_name' => 'DialColor',
+                'e_web_name' => 'DialColour',
+            ],
+            [
+                'product_type_id' => $watch->id,
                 'amz_name' => 'MovementType',
                 'e_web_name' => 'MovementType',
+            ],
+            [
+                'product_type_id' => $watch->id,
+                'amz_name' => 'WarrantyType',
+                'e_web_name' => 'WarrantyType',
+            ],
+            [
+                'product_type_id' => $watch->id,
+                'amz_name' => 'ItemShape',
+                'e_web_name' => 'DialShape',
+            ],
+            [
+                'product_type_id' => $watch->id,
+                'amz_name' => 'DisplayType',
+                'e_web_name' => 'DialType',
             ],
             [
                 'product_type_id' => $watch->id,
@@ -117,10 +137,14 @@ class ProductTypeFieldSeeder extends Seeder
             ],
             [
                 'product_type_id' => $watch->id,
+                'amz_name' => 'TargetAudienceBase',
+                'e_web_name' => 'TargetAudienceBase',
+            ],
+            [
+                'product_type_id' => $watch->id,
                 'amz_name' => 'WaterResistanceLevel',
                 'e_web_name' => 'WaterResistanceLevel',
             ],
-
         ];
 
         foreach ($fields as $field) {

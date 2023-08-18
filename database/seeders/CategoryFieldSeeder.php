@@ -21,11 +21,6 @@ class CategoryFieldSeeder extends Seeder
         $fields = [
             [
                 'category_id' => $category->id,
-                'amz_name' => 'WarrantyType',
-                'e_web_name' => 'WarrantyType',
-            ],
-            [
-                'category_id' => $category->id,
                 'amz_name' => 'ModelNumber',
                 'e_web_name' => 'RealDesignNum',
             ],
