@@ -30,7 +30,7 @@ class Kernel extends ConsoleKernel
         $schedule->command('checkAmzFeedStatus')->everyFifteenMinutes();
 
         $schedule->command('getAmzMerchantListingAllData')->everyThreeHours();
-        $schedule->command('processAmzMerchantListingAllData')->hourly();
+        $schedule->command('processAmzMerchantListingAllData')->cron('35 */3 * * *');
     }
 
     /**
