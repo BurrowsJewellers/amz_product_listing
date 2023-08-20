@@ -246,6 +246,7 @@ class AmzFeedController extends Controller
     public function updateMessage()
     {
         $feeds = AmzFeed::where(['type' => 'POST_PRODUCT_DATA', 'processing_status' => 'DONE'])->whereNotNull('response_file_name')->get();
+        Log::debug('Found ' . $feeds->count() . ' feeds for updating error messages from feeds.');
 
         $messagesArray = [];
 
