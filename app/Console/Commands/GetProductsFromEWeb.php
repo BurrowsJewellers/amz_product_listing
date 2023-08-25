@@ -167,7 +167,7 @@ class GetProductsFromEWeb extends Command
                         $item->MovementType = 'Quartz';
                         $item->AgeRangeDescription = 'Adult';
                         $item->WarrantyType = 'Manufacturer';
-                        $item->TargetAudienceBase = $productData['department_name'];
+                        $item->TargetAudienceBase = strtolower($productData['department_name']);
 
                         if (property_exists($item, 'Length')) {
                             $productData['item_length_numeric'] = str_replace('cm', '', $item->Length);
