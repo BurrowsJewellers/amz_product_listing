@@ -165,8 +165,8 @@ class GenerateAmzProductsXml extends Command
                             $elementDescriptionData->appendChild($dom->createElement('Manufacturer', $product->brand->name));
                             $elementDescriptionData->appendChild($dom->createElement('MfrPartNumber', $product->real_design_number));
 
-
-                            // $elementDescriptionData->appendChild($dom->createElement('TargetAudience', ""));
+                            $targetAudience = $product->eWebCode->code[1] == 'W' ? 'women' : 'men';
+                            $elementDescriptionData->appendChild($dom->createElement('TargetAudience', $targetAudience));
 
                             $elementDescriptionData->appendChild($dom->createElement('IsGiftWrapAvailable', "true"));
                             $elementDescriptionData->appendChild($dom->createElement('RecommendedBrowseNode', $product->eWebCode->amz_recommended_browse_node));
