@@ -66,10 +66,18 @@ class GetProductsFromEWeb extends Command
 
                 foreach ($activeItems as $item) {
                     try {
-                        $this->info('SKU ' . $item->SKU);
+                        $skuParts = explode('-', $item->SKU);
+                        if (!count($skuParts) === 3){
+                            continue;
+                        }
+
+                        $sku = $skuParts[1]. "-" .$skuParts[2];
+
+                        $this->info('Retail Edge SKU ' . $item->SKU);
+                        $this->info('Formatted SKU ' . $sku);
 
                         if ($item->WebOptionBoolean7 !== true ) {
-                            $webOptionBoolean7FalseSkuArray[] = $item->SKU;
+                            $webOptionBoolean7FalseSkuArray[] = $sku;
                             continue;
                         }
 
@@ -133,7 +141,7 @@ class GetProductsFromEWeb extends Command
                                 $countryOfOrigin = 'AU';
                             }
                         } else {
-                            Log::error("Brand id : $item->BrandID, for sku: $item->SKU not found in brandsArray.");
+                            Log::error("Brand id : $item->BrandID, for sku: $sku not found in brandsArray.");
                         }
 
                         $productData['country_of_origin'] = $countryOfOrigin;
@@ -246,7 +254,7 @@ class GetProductsFromEWeb extends Command
                         try {
                             $product = Product::updateOrCreate(
                                 [
-                                    'sku' => $item->SKU,
+                                    'sku' => $sku,
                                     'marketplace_id' => $marketplaceObj->id,
                                 ],
                                 $productData
@@ -306,7 +314,7 @@ class GetProductsFromEWeb extends Command
                             DB::rollBack();
                         }
                     } catch (\Exception $e) {
-                        Log::error("SKU : $item->SKU Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
+                        Log::error("SKU : $sku Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
                     }
                 }
 
