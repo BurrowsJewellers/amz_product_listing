@@ -14,5 +14,6 @@ class MarketplaceSeeder extends Seeder
     public function run(): void
     {
         Marketplace::updateOrCreate(['name' => 'Amazon']);
+        Marketplace::updateOrCreate(['name' => 'Catch']);
     }
 }

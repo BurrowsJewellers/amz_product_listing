@@ -75,17 +75,50 @@ class EWebShortCodeSeeder extends Seeder
                 'button_cell' => 0,
                 'classification_path' => 'Clothing, Shoes & Accessories/Women/Jewellery/Charms/Clasp Charms',
             ],
+
+            [
+                'code' => 'CWEA',
+                'marketplace_id' => 2, // Catch
+                'product_type_id' => null,
+                'amz_recommended_browse_node' => null,
+                'button_cell' => 0,
+                'classification_path' => 'Jewellery & Accessories/Women\'s/Jewellery/Earrings',
+            ],
+            [
+                'code' => 'CWEA',
+                'marketplace_id' => 2, // Catch
+                'product_type_id' => null,
+                'amz_recommended_browse_node' => null,
+                'button_cell' => 0,
+                'classification_path' => "Jewellery & Accessories/Women's/Jewellery/Earrings",
+            ],
+            [
+                'code' => 'CWBR',
+                'marketplace_id' => 2, // Catch
+                'product_type_id' => null,
+                'amz_recommended_browse_node' => null,
+                'button_cell' => 0,
+                'classification_path' => "Jewellery & Accessories/Women's/Jewellery/Bracelets & Charms",
+            ],
+            [
+                'code' => 'CWRI',
+                'marketplace_id' => 2, // Catch
+                'product_type_id' => null,
+                'amz_recommended_browse_node' => null,
+                'button_cell' => 0,
+                'classification_path' => "Jewellery & Accessories/Women's/Jewellery/Rings",
+            ],
         ];
 
         foreach($codes as $code) {
             EWebShortCode::updateOrCreate(
                 [
                     'code' => $code['code'],
+                ],
+                [
                     'marketplace_id' => $code['marketplace_id'],
                     'product_type_id' => $code['product_type_id'],
                     'amz_recommended_browse_node' => $code['amz_recommended_browse_node'],
-                ],
-                [
                     'button_cell' => $code['button_cell'],
                     'classification_path' => $code['classification_path'],
                 ]

@@ -12,6 +12,7 @@
         "laravel/framework": "^10.10",
         "laravel/sanctum": "^3.2",
         "laravel/tinker": "^2.8",
+        "mirakl/sdk-php-shop": "^1.18",
         "yajra/laravel-datatables-oracle": "^10.0"
     },
     "require-dev": {

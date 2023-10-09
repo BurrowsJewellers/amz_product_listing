@@ -16,5 +16,9 @@ class CategorySeeder extends Seeder
     {
         $marketplace = Marketplace::where('name', 'Amazon')->first();
         Category::updateOrCreate(['name' => 'Jewelry', 'marketplace_id' => $marketplace->id]);
+
+        $marketplace = Marketplace::where('name', 'Catch')->first();
+        Category::updateOrCreate(['name' => 'Jewelry', 'marketplace_id' => $marketplace->id]);
+
     }
 }

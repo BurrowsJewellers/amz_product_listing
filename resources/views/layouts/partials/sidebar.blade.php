@@ -28,7 +28,7 @@
                     Dashboard<span class="badge badge-sm bg-info ms-auto">NEW</span></a>
             </li>
 
-            <li class="nav-title">eWeb</li>
+            <li class="nav-title">Amazon</li>
             <!-- <li class="nav-title"></li> -->
 
             <li class="nav-item">
@@ -53,6 +53,17 @@
                         <use xlink:href="{{ asset('vendors/@coreui/icons/svg/free.svg#cil-applications') }}"></use>
                     </svg>
                     Amazon Reports</a>
+            </li>
+
+
+            <li class="nav-title">Catch</li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="{{ route('catch.products') }}">
+                    <svg class="nav-icon">
+                        <use xlink:href="{{ asset('vendors/@coreui/icons/svg/free.svg#cil-list') }}"></use>
+                    </svg>
+                    Products</a>
             </li>
 
             <!-- <li class="nav-item">
