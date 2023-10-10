@@ -9,14 +9,14 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
-class GenerateProductsCsv extends Command
+class GenerateOffersCsv extends Command
 {
     /**
      * The name and signature of the console command.
      *
      * @var string
      */
-    protected $signature = 'catchGenerateProductsCsv';
+    protected $signature = 'catchGenerateOffersCsv';
 
     /**
      * The console command description.
@@ -31,7 +31,7 @@ class GenerateProductsCsv extends Command
     public function handle()
     {
         $marketplace = 'Catch';
-        $jobType = 'catchGenerateProductsCsv';
+        $jobType = 'catchGenerateOffersCsv';
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
@@ -40,80 +40,16 @@ class GenerateProductsCsv extends Command
             $job->update(['status' => 1]);
 
             try {
-                $count = CatchProduct::where(['published' => 0, 'exists_on_catch' => 0, 'product_csv_generated' => 0])->count();
+                $count = CatchProduct::where(['published' => 0, 'exists_on_catch' => 1, 'offer_csv_generated' => 0])->count();
 
                 while($count){
                     $limit = 500;
 
-                    $products = CatchProduct::with(['eWebCode', 'brand'])->where(['published' => 0, 'exists_on_catch' => 0, 'product_csv_generated' => 0])->limit($limit)->get();
+                    $products = CatchProduct::with(['eWebCode', 'brand'])->where(['published' => 0, 'exists_on_catch' => 1, 'offer_csv_generated' => 0])->limit($limit)->get();
 
                     $row = $rows = $productIds = [];
 
                     $rows[] = [
-                        'category',
-                        'internal-sku',
-                        'title',
-                        'product-reference-value',
-                        'product-reference-type',
-                        'product-description',
-                        'brand',
-                        'condition',
-                        'product-quantity-multiplier',
-                        'colour',
-                        'keywords',
-                        'gender',
-                        'material',
-                        'variant-id',
-                        'variant-colour-value',
-                        'variant-size-value',
-                        'image-size-chart',
-                        'image-1',
-                        'image-2',
-                        'image-3',
-                        'image-4',
-                        'image-5',
-                        'image-6',
-                        'image-7',
-                        'image-8',
-                        'image-9',
-                        'image-10',
-                        'variant-image-1',
-                        'variant-image-2',
-                        'variant-image-3',
-                        'variant-image-4',
-                        'variant-image-5',
-                        'variant-image-6',
-                        'variant-image-7',
-                        'variant-image-8',
-                        'variant-image-9',
-                        'variant-image-10',
-                        'weight',
-                        'weight-unit',
-                        'width',
-                        'width-unit',
-                        'length',
-                        'length-unit',
-                        'height',
-                        'height-unit',
-                        'model-number',
-                        'season',
-                        'adult',
-                        'restriction',
-                        'gift-type',
-                        'accessories-material',
-                        'apparel-type',
-                        'contains-button-cell-batteries',
-                        'clearance',
-                        'clearance-stream',
-                        'metal-type',
-                        'stone-type',
-                        'display-type',
-                        'watch-case-diameter',
-                        'watch-shape',
-                        'water-resistance',
-                        'watch-case-diameter-unit',
-                        'bracelet-type',
-                        'earring-style',
                         'sku',
                         'product-id',
                         'product-id-type',
@@ -147,74 +83,10 @@ class GenerateProductsCsv extends Command
                             $row = [];
 
                             $row = [
-                                $product->eWebCode->classification_path, // category
-                                $product->sku, // internal_sku
-                                $product->title, // title
-                                $product->product_reference_value, // product_reference_value
-                                $product->product_reference_type, // product_reference_type
-                                $product->product_description, // product_description
-                                $product->brand?->name, // brand
-                                $product->condition, // condition
-                                $product->product_quantity_multiplier, // product_quantity_multiplier
-                                $product->colour, // colour
-                                $product->keywords, // keywords
-                                $product->gender, // gender
-                                $product->material, // material
-                                $product->variant_id, // variant_id
-                                $product->variant_colour_value, // variant_colour_value
-                                $product->variant_size_value, // variant_size_value
-                                null, // image_size_chart
-                                'image_1', // image_1
-                                'image_2', // image_2
-                                'image_3', // image_3
-                                'image_4', // image_4
-                                'image_5', // image_5
-                                'image_6', // image_6
-                                'image_7', // image_7
-                                'image_8', // image_8
-                                'image_9', // image_9
-                                'image_10', // image_10
-                                null, // variant_image_1
-                                null, // variant_image_2
-                                null, // variant_image_3
-                                null, // variant_image_4
-                                null, // variant_image_5
-                                null, // variant_image_6
-                                null, // variant_image_7
-                                null, // variant_image_8
-                                null, // variant_image_9
-                                null, // variant_image_10
-                                null, // weight
-                                null, // weight_unit
-                                null, // width
-                                null, // width_unit
-                                null, // length
-                                null, // length_unit
-                                null, // height
-                                null, // height_unit
-                                $product->model_number, // model_number
-                                $product->season, // season
-                                $product->adult, // adult
-                                $product->restriction, // restriction
-                                $product->gift_type, // gift_type
-                                $product->accessories_material, // accessories_material
-                                $product->apparel_type, // apparel_type
-                                $product->contains_button_cell_batteries, // contains_button_cell_batteries
-                                $product->clearance, // clearance
-                                $product->clearance_stream, // clearance_stream
-                                $product->metal_type, // metal_type
-                                $product->stone_type, // stone_type
-                                $product->display_type, // display_type
-                                $product->watch_case_diameter, // watch_case_diameter
-                                $product->watch_shape, // watch_shape
-                                $product->water_resistance, // water_resistance
-                                $product->watch_case_diameter_unit, // watch_case_diameter_unit
-                                $product->bracelet_type, // bracelet_type
-                                $product->earring_style, // earring_style
                                 $product->sku, // sku
                                 $product->product_reference_value, // product_id
                                 $product->product_reference_type, // product_id_type
-                                $product->product_description, // description
+                                "", // description
                                 $product->title, // internal_description
                                 $product->price, // price
                                 $product->price_additional_info, // price_additional_info
@@ -243,12 +115,12 @@ class GenerateProductsCsv extends Command
                     }
 
                     if (!empty($productIds)) {
-                        $filename = 'catch_products_' . time() . '.csv';
+                        $filename = 'catch_offers_' . time() . '.csv';
 
                         $stream = fopen('php://temp', 'w');
 
                         foreach ($rows as $row) {
-                            fputcsv($stream, $row, ';');
+                            fputcsv($stream, $row, ";");
                         }
 
                         rewind($stream);
@@ -260,10 +132,10 @@ class GenerateProductsCsv extends Command
                             fclose($stream);
                             Log::info("CSV file saved to $disk/$filename");
 
-                            $update = CatchProduct::whereIn('id', $productIds)->update(['product_csv_generated' => 1]);
+                            $update = CatchProduct::whereIn('id', $productIds)->update(['published' => 1, 'offer_csv_generated' => 1]);
 
                             $import = CatchImport::create([
-                                'import_type' => 'product',
+                                'import_type' => 'offer',
                                 'file_name' => $filename,
                             ]);
                         } else {
@@ -272,7 +144,7 @@ class GenerateProductsCsv extends Command
                         }
                     }
 
-                    $count = CatchProduct::where(['published' => 0, 'exists_on_catch' => 0, 'product_csv_generated' => 0])->count();
+                    $count = CatchProduct::where(['published' => 0, 'exists_on_catch' => 1, 'offer_csv_generated' => 0])->count();
                 }
 
                 $job->update(['status' => 0, 'message' => null]);

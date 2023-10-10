@@ -46,6 +46,8 @@ class CheckIfExists extends Command
 
                 $count = CatchProduct::whereNull('exists_on_catch')->count();
 
+                $productReferenceTypes = ['EAN', 'UPC'];
+
                 while($count){
                     $limit = 10;
 
@@ -56,20 +58,27 @@ class CheckIfExists extends Command
                     foreach($products as $product){
                         try {
                             $this->info($product->id);
-                            $request = new GetProductsRequest([new ProductReference('UPC', $product->product_reference_value)]);
-                            $result = $api->getProducts($request);
 
-                            if (count($result->getItems()) > 0) {
-                                $product->update(['exists_on_catch' => 1]);
-                            } else {
-                                $product->update(['exists_on_catch' => 0]);
+                            $existsOnCatch = 0;
+                            $referenceType = $product->product_reference_type;
+
+                            foreach ($productReferenceTypes as $productReferenceType) {
+                                $request = new GetProductsRequest([new ProductReference($productReferenceType, $product->product_reference_value)]);
+                                $result = $api->getProducts($request);
+    
+                                if (count($result->getItems()) > 0) {
+                                    $existsOnCatch = 1;
+                                    $referenceType = $productReferenceType;
+                                }
                             }
+
+                            $product->update(['product_reference_type' => $referenceType, 'exists_on_catch' => $existsOnCatch]);
                         } catch (\Exception $e) {
                             report($e);
                         }
                     }
 
-                    sleep(10);
+                    sleep(5);
 
                     $count = CatchProduct::whereNull('exists_on_catch')->count();
                 }

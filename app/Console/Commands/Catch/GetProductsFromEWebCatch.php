@@ -12,6 +12,7 @@ use App\Models\Category;
 use App\Models\EWebShortCode;
 use App\Models\Marketplace;
 use App\Models\Catch\CatchProduct;
+use App\Models\Catch\CatchProductImage;
 
 class GetProductsFromEWebCatch extends Command
 {
@@ -138,6 +139,28 @@ class GetProductsFromEWebCatch extends Command
                         $productData['club_catch_eligible'] = 0;
                         $productData['click_and_collect_eligible'] = 0;
 
+                        $productImages = [];
+
+                        if (isset($item->Images) && isset($item->Images->ItemImage) && !empty($item->Images->ItemImage)) {
+                            if (is_object($item->Images->ItemImage)) {
+                                $productImages[] = [
+                                    'e_web_index' => $item->Images->ItemImage->Index,
+                                    'width' => $item->Images->ItemImage->Width,
+                                    'height' => $item->Images->ItemImage->Height,
+                                    'url' => htmlspecialchars_decode($item->Images->ItemImage->URL),
+                                ];
+                            } elseif (is_array($item->Images->ItemImage)) {
+                                foreach ($item->Images->ItemImage as $image) {
+                                    $productImages[] = [
+                                        'e_web_index' => $image->Index,
+                                        'width' => $image->Width,
+                                        'height' => $image->Height,
+                                        'url' => htmlspecialchars_decode($image->URL),
+                                    ];
+                                }
+                            }
+                        }
+
                         DB::beginTransaction();
 
                         try {
@@ -160,6 +183,22 @@ class GetProductsFromEWebCatch extends Command
                             if (!empty($newData)) {
                                 $product->update($newData);
                                 $product = $product->refresh();
+                            }
+
+                            if (!empty($productImages)) {
+                                foreach ($productImages as $productImage) {
+                                    CatchProductImage::updateOrCreate(
+                                        [
+                                            'catch_product_id' => $product->id,
+                                            'e_web_index' => $productImage['e_web_index']
+                                        ],
+                                        [
+                                            'width' => $productImage['width'],
+                                            'height' => $productImage['height'],
+                                            'url' => $productImage['url'],
+                                        ]
+                                    );
+                                }
                             }
 
                             DB::commit();

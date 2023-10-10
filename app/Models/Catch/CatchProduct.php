@@ -4,6 +4,9 @@ namespace App\Models\Catch;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\EWebShortCode;
+use App\Models\Category;
+use App\Models\Brand;
 
 class CatchProduct extends Model
 {
@@ -72,12 +75,11 @@ class CatchProduct extends Model
         'club_catch_eligible',
         'tax_au',
         'click_and_collect_eligible',
-        'csv_generated',
-        'price_feed_status',
-        'image_feed_status',
-        'inventory_feed_status',
+        'product_csv_generated',
+        'product_csv_submitted',
+        'offer_csv_generated',
+        'offer_csv_submitted',
         'exists_on_catch',
-        'submitted',
         'published',
         'update',
         'status',
@@ -93,7 +95,7 @@ class CatchProduct extends Model
     }
 
     public function images() {
-        return $this->hasMany(ProductImage::class);
+        return $this->hasMany(CatchProductImage::class);
     }
 
     public function eWebCode() {

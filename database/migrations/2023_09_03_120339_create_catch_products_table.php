@@ -75,12 +75,11 @@ return new class extends Migration
             $table->boolean('club_catch_eligible')->default(false);
             $table->decimal('tax_au', 5, 2)->default(0);
             $table->boolean('click_and_collect_eligible')->default(false);
-            $table->boolean('csv_generated')->default(false);
-            $table->boolean('price_feed_status')->default(false);
-            $table->boolean('image_feed_status')->default(false);
-            $table->boolean('inventory_feed_status')->default(false);
+            $table->boolean('product_csv_generated')->default(false);
+            $table->boolean('product_csv_submitted')->default(false);
+            $table->boolean('offer_csv_generated')->default(false);
+            $table->boolean('offer_csv_submitted')->default(false);
             $table->boolean('exists_on_catch')->nullable();
-            $table->boolean('submitted')->default(false);
             $table->boolean('published')->default(false);
             $table->boolean('update')->default(false);
             $table->string('status')->nullable();
