@@ -12,6 +12,9 @@ class Kernel extends ConsoleKernel
      */
     protected function schedule(Schedule $schedule): void
     {
+        /**
+         * Amazon Crons
+         */
         $schedule->command('getBrandsFromEWeb')->dailyAt('00:05');
         $schedule->command('getProductsFromEWeb')->everyFifteenMinutes();
 
@@ -31,6 +34,18 @@ class Kernel extends ConsoleKernel
 
         $schedule->command('getAmzMerchantListingAllData')->everyThreeHours();
         $schedule->command('processAmzMerchantListingAllData')->cron('32 */3 * * *');
+
+
+        /**
+         * Catch Crons
+         */
+
+        $schedule->command('getProductsFromEWebCatch')->everyFifteenMinutes();
+        $schedule->command('catchCheckIfExists')->dailyAt('00:18');
+
+
+
+
     }
 
     /**

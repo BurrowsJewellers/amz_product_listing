@@ -7,7 +7,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProductTypeController;
 use App\Http\Controllers\AmzFeedController;
 use App\Http\Controllers\AmzReportController;
-use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\Catch\ProductController as CatchProductController;
 
 /*
 |--------------------------------------------------------------------------
@@ -40,4 +40,11 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/amazon/report/download', [AmzReportController::class, 'downloadReport'])->name('amazon.report.download');
 
     Route::get('/get/producttypes', [ProductTypeController::class, 'getProductTypes'])->name('get.productTypes');
+
+    Route::prefix('/catch')->name('catch.')->group(function(){
+        Route::get('/products', [CatchProductController::class, 'index'])->name('products');
+        Route::get('/product/edit/{id}', [CatchProductController::class, 'edit'])->name('product.edit');
+        Route::post('/product/save', [CatchProductController::class, 'save'])->name('product.save');
+    });
+
 });
