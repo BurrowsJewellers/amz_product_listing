@@ -15,6 +15,7 @@ class CatchImport extends Model
         'product_import_id',
         'file_name',
         'response_file_name',
+        'submitted',
         'processed',
     ];
 }

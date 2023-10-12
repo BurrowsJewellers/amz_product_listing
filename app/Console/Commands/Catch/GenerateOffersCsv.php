@@ -251,11 +251,4 @@ class GenerateOffersCsv extends Command
             'click_and_collect_eligible',
         ];
     }
-
-
-
-
-
-
-
 }

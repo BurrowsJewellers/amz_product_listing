@@ -45,7 +45,10 @@ class GenerateProductsCsv extends Command
                 while($count){
                     $limit = 500;
 
-                    $products = CatchProduct::with(['eWebCode', 'brand'])->where(['published' => 0, 'exists_on_catch' => 0, 'product_csv_generated' => 0])->limit($limit)->get();
+                    $products = CatchProduct::with(['eWebCode', 'brand', 'images' => function($images){
+                        $images->limit(10);
+                    }])->where(['published' => 0, 'exists_on_catch' => 0, 'product_csv_generated' => 0])
+                    ->limit($limit)->get();
 
                     $row = $rows = $productIds = [];
 
@@ -144,6 +147,8 @@ class GenerateProductsCsv extends Command
                             $this->info($product->id);
                             array_push($productIds, $product->id);
 
+                            $imagesArray = $product->images->toArray();
+
                             $row = [];
 
                             $row = [
@@ -164,16 +169,16 @@ class GenerateProductsCsv extends Command
                                 $product->variant_colour_value, // variant_colour_value
                                 $product->variant_size_value, // variant_size_value
                                 null, // image_size_chart
-                                'image_1', // image_1
-                                'image_2', // image_2
-                                'image_3', // image_3
-                                'image_4', // image_4
-                                'image_5', // image_5
-                                'image_6', // image_6
-                                'image_7', // image_7
-                                'image_8', // image_8
-                                'image_9', // image_9
-                                'image_10', // image_10
+                                isset($imagesArray[0]) ? $imagesArray[0]['url'] : '', // image_1
+                                isset($imagesArray[1]) ? $imagesArray[1]['url'] : '', // image_2
+                                isset($imagesArray[2]) ? $imagesArray[2]['url'] : '', // image_3
+                                isset($imagesArray[3]) ? $imagesArray[3]['url'] : '', // image_4
+                                isset($imagesArray[4]) ? $imagesArray[4]['url'] : '', // image_5
+                                isset($imagesArray[5]) ? $imagesArray[5]['url'] : '', // image_6
+                                isset($imagesArray[6]) ? $imagesArray[6]['url'] : '', // image_7
+                                isset($imagesArray[7]) ? $imagesArray[7]['url'] : '', // image_8
+                                isset($imagesArray[8]) ? $imagesArray[8]['url'] : '', // image_9
+                                isset($imagesArray[9]) ? $imagesArray[9]['url'] : '', // image_10
                                 null, // variant_image_1
                                 null, // variant_image_2
                                 null, // variant_image_3
@@ -379,11 +384,5 @@ class GenerateProductsCsv extends Command
             'click_and_collect_eligible',
         ];
     }
-
-
-
-
-
-
 
 }

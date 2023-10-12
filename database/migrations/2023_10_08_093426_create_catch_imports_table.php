@@ -18,6 +18,7 @@ return new class extends Migration
             $table->integer('product_import_id')->nullable();
             $table->string('file_name')->nullable();
             $table->string('response_file_name')->nullable();
+            $table->boolean('submitted')->default(false);
             $table->boolean('processed')->default(false);
             $table->timestamps();
         });

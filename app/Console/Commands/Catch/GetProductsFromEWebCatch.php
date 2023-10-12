@@ -137,6 +137,7 @@ class GetProductsFromEWebCatch extends Command
                         $productData['leadtime_to_ship'] = 2;
                         $productData['update_delete'] = 'UPDATE';
                         $productData['club_catch_eligible'] = 0;
+                        $productData['tax_au'] = 10;
                         $productData['click_and_collect_eligible'] = 0;
 
                         $productImages = [];
