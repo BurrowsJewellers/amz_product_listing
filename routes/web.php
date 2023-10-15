@@ -7,6 +7,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\ProductTypeController;
 use App\Http\Controllers\AmzFeedController;
 use App\Http\Controllers\AmzReportController;
+use App\Http\Controllers\Catch\ImportController;
 use App\Http\Controllers\Catch\ProductController as CatchProductController;
 
 /*
@@ -45,6 +46,9 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/products', [CatchProductController::class, 'index'])->name('products');
         Route::get('/product/edit/{id}', [CatchProductController::class, 'edit'])->name('product.edit');
         Route::post('/product/save', [CatchProductController::class, 'save'])->name('product.save');
+
+        Route::get('/imports', [ImportController::class, 'index'])->name('imports.index');
+        Route::get('/import/download', [ImportController::class, 'downloadCsv'])->name('import.download');
     });
 
 });

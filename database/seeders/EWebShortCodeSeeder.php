@@ -75,15 +75,6 @@ class EWebShortCodeSeeder extends Seeder
                 'button_cell' => 0,
                 'classification_path' => 'Clothing, Shoes & Accessories/Women/Jewellery/Charms/Clasp Charms',
             ],
-
-            [
-                'code' => 'CWEA',
-                'marketplace_id' => 2, // Catch
-                'product_type_id' => null,
-                'amz_recommended_browse_node' => null,
-                'button_cell' => 0,
-                'classification_path' => 'Jewellery & Accessories/Women\'s/Jewellery/Earrings',
-            ],
             [
                 'code' => 'CWEA',
                 'marketplace_id' => 2, // Catch
@@ -107,6 +98,14 @@ class EWebShortCodeSeeder extends Seeder
                 'amz_recommended_browse_node' => null,
                 'button_cell' => 0,
                 'classification_path' => "Jewellery & Accessories/Women's/Jewellery/Rings",
+            ],
+            [
+                'code' => 'CWNE',
+                'marketplace_id' => 2, // Catch
+                'product_type_id' => null,
+                'amz_recommended_browse_node' => null,
+                'button_cell' => 0,
+                'classification_path' => "Jewellery & Accessories/Women's/Jewellery/Necklaces & Pendants",
             ],
         ];
 

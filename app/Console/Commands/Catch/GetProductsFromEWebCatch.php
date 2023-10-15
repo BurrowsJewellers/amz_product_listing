@@ -120,8 +120,13 @@ class GetProductsFromEWebCatch extends Command
                         $productData['category_id'] = $category->id;
                         $productData['e_web_code'] = $shortCode->code;
 
-                        $productData['condition'] = 'New';
+                        /**
+                         * - New (or 11)
+                         * Refurbished - Grade A (or 13)
+                         * Refurbished - Grade B (or 14)
+                         */
 
+                        $productData['condition'] = 11;
                         $productData['keywords'] = $item->RealDesignNum;
                         $productData['gender'] = $shortCode->code[1] == 'W' ? 'Female' : 'Male';
                         $productData['model_number'] = $item->RealDesignNum;
@@ -173,12 +178,9 @@ class GetProductsFromEWebCatch extends Command
                             );
 
                             $newData = [];
-                            if ($product->wasChanged('quantity')) {
-                                $newData['inventory_feed_status'] = 0;
-                            }
-
-                            if ($product->wasChanged('price') || $product->wasChanged('discount_price')) {
-                                $newData['price_feed_status'] = 0;
+                            if ($product->wasChanged('quantity') || $product->wasChanged('price') || $product->wasChanged('discount_price')) {
+                                $newData['offer_csv_generated'] = 0;
+                                $newData['offer_csv_submitted'] = 0;
                             }
 
                             if (!empty($newData)) {
@@ -218,7 +220,8 @@ class GetProductsFromEWebCatch extends Command
                             if ($product->quantity > 0) {
                                 $product->update([
                                     'quantity' => 0,
-                                    'inventory_feed_status' => 0
+                                    'offer_csv_generated' => 0,
+                                    'offer_csv_submitted' => 0,
                                 ]);
                             }
                         }
