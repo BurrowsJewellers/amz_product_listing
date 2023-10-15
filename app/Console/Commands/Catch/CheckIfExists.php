@@ -78,7 +78,7 @@ class CheckIfExists extends Command
                         }
                     }
 
-                    sleep(5);
+                    sleep(10);
 
                     $count = CatchProduct::whereNull('exists_on_catch')->count();
                 }

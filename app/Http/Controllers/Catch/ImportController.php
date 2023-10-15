@@ -2,11 +2,10 @@
 
 namespace App\Http\Controllers\Catch;
 
-use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
-use GuzzleHttp\Client;
-use GuzzleHttp\Psr7\Utils;
+use App\Http\Controllers\Controller;
 use App\Models\Catch\CatchImport;
+use Illuminate\Support\Facades\Storage;
 use Mirakl\MMP\Shop\Request\Offer\Importer\OfferImportRequest;
 
 class ImportController extends Controller
@@ -17,6 +16,63 @@ class ImportController extends Controller
     {
         $this->api = MiraklShopApiClient::getShopApiClient();
     }
+
+    public function index()
+    {
+        if (request()->ajax()) {
+            $imports = CatchImport::query();
+            return datatables()->of($imports)
+                ->addColumn('import_csv', function ($import) {
+                    $link = route('catch.import.download', ['id' => $import->id, 'type' => 'import']);
+                    return '<a href="' . $link . '">Download</a>';
+                })
+                ->addColumn('response_csv', function ($import) {
+                    if ($import->response_file_name) {
+                        $link = route('catch.import.download', ['id' => $import->id, 'type' => 'response']);
+                        return '<a href="' . $link . '">Download</a>';
+                    } else {
+                        return '';
+                    }
+                })
+                ->editColumn('created_at', function ($import) {
+                    return $import->created_at->format('Y-m-d H:i:s');
+                })
+                ->editColumn('updated_at', function ($import) {
+                    return $import->updated_at->format('Y-m-d H:i:s');
+                })
+
+                ->rawColumns(['import_csv', 'response_csv'])
+                ->toJson();
+        }
+        return view('catch.imports.index');
+    }
+
+    public function downloadCsv(Request $request)
+    {
+        if ($request->filled('id') && $request->filled('type')) {
+            $import = CatchImport::where('id', $request->id)->first();
+
+            $file = null;
+            if ($request->type == 'import') {
+                $file = $import->file_name;
+            } elseif ($request->type == 'response') {
+                $file = $import->response_file_name;
+            }
+
+            if (!Storage::disk('local')->exists($file)) {
+                return 'Report not found!';
+            }
+
+            if ($file) {
+                return response()->download(storage_path('/app/' . $file));
+            } else {
+                return 'Report not found!';
+            }
+        } else {
+            return 'Report not found!';
+        }
+    }
+
 
     public function uploadImport($importType = 'product')
     {

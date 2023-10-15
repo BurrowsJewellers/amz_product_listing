@@ -40,12 +40,15 @@ class Kernel extends ConsoleKernel
          * Catch Crons
          */
 
-        $schedule->command('getProductsFromEWebCatch')->everyFifteenMinutes();
-        $schedule->command('catchCheckIfExists')->dailyAt('00:18');
-
-
-
-
+        // The following three cron jobs must run in the same sequence.
+        $schedule->command('getProductsFromEWebCatch')->dailyAt('00:20');
+        $schedule->command('catchCheckIfExists')->dailyAt('00:35');
+        $schedule->command('catchListOffersOfShop')->dailyAt('01:10');
+        
+        $schedule->command('getProductsFromEWebCatch')->everyFifteenMinutes()->between('02:00','23:59');
+        $schedule->command('catchGenerateProductsCsv')->everyFifteenMinutes()->between('02:00','23:59');
+        $schedule->command('catchGenerateOffersCsv')->everyFifteenMinutes()->between('02:00','23:59');
+        // $schedule->command('catchSubmitImports')->everyFifteenMinutes()->between('02:00','23:59');
     }
 
     /**

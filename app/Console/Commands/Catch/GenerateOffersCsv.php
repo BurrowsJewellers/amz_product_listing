@@ -40,12 +40,12 @@ class GenerateOffersCsv extends Command
             $job->update(['status' => 1]);
 
             try {
-                $count = CatchProduct::where(['published' => 0, 'exists_on_catch' => 1, 'offer_csv_generated' => 0])->count();
+                $count = CatchProduct::where(['exists_on_catch' => 1, 'offer_csv_generated' => 0])->count();
 
                 while($count){
                     $limit = 500;
 
-                    $products = CatchProduct::with(['eWebCode', 'brand'])->where(['published' => 0, 'exists_on_catch' => 1, 'offer_csv_generated' => 0])->limit($limit)->get();
+                    $products = CatchProduct::with(['eWebCode', 'brand'])->where(['exists_on_catch' => 1, 'offer_csv_generated' => 0])->limit($limit)->get();
 
                     $row = $rows = $productIds = [];
 
@@ -144,7 +144,7 @@ class GenerateOffersCsv extends Command
                         }
                     }
 
-                    $count = CatchProduct::where(['published' => 0, 'exists_on_catch' => 1, 'offer_csv_generated' => 0])->count();
+                    $count = CatchProduct::where(['exists_on_catch' => 1, 'offer_csv_generated' => 0])->count();
                 }
 
                 $job->update(['status' => 0, 'message' => null]);
