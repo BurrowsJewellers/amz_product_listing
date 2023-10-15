@@ -69,17 +69,16 @@ class CheckIfExists extends Command
                                 if (count($result->getItems()) > 0) {
                                     $existsOnCatch = 1;
                                     $referenceType = $productReferenceType;
-                                    $this->info("Found with $productReferenceType");
                                 }
                             }
 
                             $product->update(['product_reference_type' => $referenceType, 'exists_on_catch' => $existsOnCatch]);
                         } catch (\Exception $e) {
                             report($e);
+                            $this->error('Error : ' . $e->getMessage());
                         }
+                        sleep(10);
                     }
-
-                    sleep(10);
 
                     $count = CatchProduct::whereNull('exists_on_catch')->count();
                 }
