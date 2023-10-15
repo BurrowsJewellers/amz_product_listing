@@ -5,6 +5,7 @@ namespace App\Console\Commands\Catch;
 use App\Http\Controllers\SyncJobController;
 use App\Models\Catch\CatchImport;
 use App\Models\Catch\CatchProduct;
+use App\Models\Catch\CatchProductImage;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -45,9 +46,7 @@ class GenerateProductsCsv extends Command
                 while($count){
                     $limit = 500;
 
-                    $products = CatchProduct::with(['eWebCode', 'brand', 'images' => function($images){
-                        $images->limit(10);
-                    }])->where(['published' => 0, 'exists_on_catch' => 0, 'product_csv_generated' => 0])
+                    $products = CatchProduct::with(['eWebCode', 'brand'])->where(['published' => 0, 'exists_on_catch' => 0, 'product_csv_generated' => 0])
                     ->limit($limit)->get();
 
                     $row = $rows = $productIds = [];
@@ -147,7 +146,8 @@ class GenerateProductsCsv extends Command
                             $this->info($product->id);
                             array_push($productIds, $product->id);
 
-                            $imagesArray = $product->images->toArray();
+                            $imagesArray = [];
+                            $imagesArray = CatchProductImage::where('catch_product_id', $product->id)->limit(10)->get()->toArray();
 
                             $row = [];
 
