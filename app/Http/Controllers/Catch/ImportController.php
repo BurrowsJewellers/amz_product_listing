@@ -74,7 +74,7 @@ class ImportController extends Controller
     }
 
 
-    public function uploadImport($importType = 'product')
+    public function uploadImport($importType = 'offer')
     {
         try {
             $imports = CatchImport::where(['import_type' => $importType, 'submitted' => 0])->get();
