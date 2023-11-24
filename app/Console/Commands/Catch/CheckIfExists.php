@@ -42,7 +42,7 @@ class CheckIfExists extends Command
 
             try {
                 // important line
-                CatchProduct::where('published', 0)->update(['exists_on_catch' => null]);
+                CatchProduct::where('id', '>', 0)->update(['exists_on_catch' => null]);
 
                 $count = CatchProduct::whereNull('exists_on_catch')->count();
 
@@ -77,7 +77,7 @@ class CheckIfExists extends Command
                             report($e);
                             $this->error('Error : ' . $e->getMessage());
                         }
-                        sleep(10);
+                        sleep(7);
                     }
 
                     $count = CatchProduct::whereNull('exists_on_catch')->count();
