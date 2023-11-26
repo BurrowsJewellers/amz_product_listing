@@ -10,7 +10,7 @@ class MiraklShopApiClient extends Controller
 {
 
     public static function getShopApiClient() {
-        return (new ShopApiClient(config('catch.api_url'), config('catch.api_key')))->addOption('debug', true);
-        // return (new ShopApiClient(config('catch.api_url'), config('catch.api_key')));
+        // return (new ShopApiClient(config('catch.api_url'), config('catch.api_key')))->addOption('debug', true);
+        return (new ShopApiClient(config('catch.api_url'), config('catch.api_key')));
     }
 }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Catch\MiraklShopApiClient;
 use App\Http\Controllers\SyncJobController;
 use App\Models\Catch\CatchProduct;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Mirakl\MMP\Common\Domain\Product\Offer\ProductReference;
 use Mirakl\MMP\Shop\Request\Product\GetProductsRequest;
@@ -36,7 +37,7 @@ class CheckIfExists extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if(!$job->isRunning()){
+        if (!$job->isRunning()) {
             Log::info("$marketplace $jobType started!");
             $job->update(['status' => 1]);
 
@@ -48,43 +49,60 @@ class CheckIfExists extends Command
 
                 $productReferenceTypes = ['EAN', 'UPC'];
 
-                while($count){
-                    $limit = 10;
+                $retry = 0;
 
-                    $api = MiraklShopApiClient::getShopApiClient();        
+                while ($count && $retry <= 5) {
+                    $limit = 20;
+
+                    $productReferenceRequest = $productIds = [];
+
+                    $api = MiraklShopApiClient::getShopApiClient();
 
                     $products = CatchProduct::select('id', 'product_reference_type', 'product_reference_value')->whereNull('exists_on_catch')->limit($limit)->get();
 
-                    foreach($products as $product){
-                        try {
-                            $this->info($product->id);
+                    foreach ($products as $product) {
+                        $this->info($product->id);
+                        $productIds[] = $product->id;
 
-                            $existsOnCatch = 0;
-                            $referenceType = $product->product_reference_type;
+                        foreach ($productReferenceTypes as $productReferenceType) {
+                            $productReferenceRequest[] = new ProductReference($productReferenceType, $product->product_reference_value);
+                        }
+                    }
 
-                            foreach ($productReferenceTypes as $productReferenceType) {
-                                $request = new GetProductsRequest([new ProductReference($productReferenceType, $product->product_reference_value)]);
-                                $result = $api->getProducts($request);
+                    try {
+                        $request = new GetProductsRequest($productReferenceRequest);
+
+                        $result = $api->getProducts($request);
     
-                                if (count($result->getItems()) > 0) {
-                                    $existsOnCatch = 1;
-                                    $referenceType = $productReferenceType;
-                                }
+
+                        DB::beginTransaction();
+
+                        CatchProduct::whereIn('id', $productIds)->update(['exists_on_catch' => 0]);
+
+                        if (count($result->getItems()) > 0) {
+                            foreach ($result->getItems() as $p) {
+                                $this->info('Id : '. $p->getId());
+                                $this->info('Type : '. $p->getIdType());
+                                CatchProduct::where('product_reference_value', $p->getId())->update(['product_reference_type' => $p->getIdType(), 'exists_on_catch' => 1]);
                             }
 
-                            $product->update(['product_reference_type' => $referenceType, 'exists_on_catch' => $existsOnCatch]);
-                        } catch (\Exception $e) {
-                            report($e);
-                            $this->error('Error : ' . $e->getMessage());
+                            DB::commit();
                         }
-                        sleep(7);
+    
+                    } catch (\Exception $e) {
+                        report($e);
+                        DB::rollBack();
+                        $this->info('Retry : '. $retry);
+                        $retry++;
                     }
+
+                    sleep(10);
 
                     $count = CatchProduct::whereNull('exists_on_catch')->count();
                 }
 
                 $job->update(['status' => 0, 'message' => null]);
-            } catch (\Exception $e){
+            } catch (\Exception $e) {
                 report($e);
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
             }
@@ -94,5 +112,4 @@ class CheckIfExists extends Command
             Log::info("$marketplace $jobType is already running.");
         }
     }
-
 }
