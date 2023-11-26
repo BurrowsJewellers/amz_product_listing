@@ -51,7 +51,7 @@ class ListOffersOfShop extends Command
                 ]);
 
                 $max = 50;
-                $offset = 10;
+                $offset = 0;
 
                 $result = $this->getOffers($max, $offset);
                 $totalCount = $result->getTotalCount();

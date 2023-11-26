@@ -92,8 +92,8 @@ class CheckIfExists extends Command
                     } catch (\Exception $e) {
                         report($e);
                         DB::rollBack();
-                        $this->info('Retry : '. $retry);
                         $retry++;
+                        $this->info('Retry : '. $retry);
                     }
 
                     sleep(10);
