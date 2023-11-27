@@ -114,7 +114,7 @@ class GetProductsFromEWebCatch extends Command
                         $productData['title'] = $item->ShortMarketingDescription;
                         $productData['product_description'] = $item->MarketingDescription;
                         $productData['product_reference_value'] = $barcode;
-                        $productData['product_reference_type'] = strlen($barcode) == 11 || strlen($barcode) == 12 ? 'UPC' : 'EAN';
+                        // $productData['product_reference_type'] = strlen($barcode) == 11 || strlen($barcode) == 12 ? 'UPC' : 'EAN';
                         $productData['brand_id'] = isset($brandsArray[$item->BrandID]['id']) ? $brandsArray[$item->BrandID]['id'] : null;
                         $productData['marketplace_id'] = $marketplaceObj->id;
                         $productData['category_id'] = $category->id;
@@ -134,11 +134,14 @@ class GetProductsFromEWebCatch extends Command
                         $productData['metal_type'] = $item->SMetalType;
                         $productData['stone_type'] = $item->SMetalType;
                         $productData['earring_style'] = $item->SSubCat;
-                        $productData['price'] = $item->SSubCat;
                         $productData['quantity'] = intval($item->TotalAvailQOH);
                         $productData['price'] = number_format($item->RetailPrice, 2);
                         $productData['logistic_class'] = 'FREE';
                         $productData['discount_price'] = number_format($item->RetailPrice2, 2);
+/**
+ * TODO check the lower price here
+ */
+
                         $productData['leadtime_to_ship'] = 2;
                         $productData['update_delete'] = 'UPDATE';
                         $productData['club_catch_eligible'] = 0;
