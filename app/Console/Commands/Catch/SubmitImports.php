@@ -39,7 +39,7 @@ class SubmitImports extends Command
 
             try {
                 $importController = new ImportController();
-                $importController->uploadImport();
+                $importController->uploadImport(['offer', 'product']);
 
                 $job->update(['status' => 0, 'message' => null]);
             } catch (\Exception $e) {

@@ -114,7 +114,6 @@ class GetProductsFromEWebCatch extends Command
                         $productData['title'] = $item->ShortMarketingDescription;
                         $productData['product_description'] = $item->MarketingDescription;
                         $productData['product_reference_value'] = $barcode;
-                        // $productData['product_reference_type'] = strlen($barcode) == 11 || strlen($barcode) == 12 ? 'UPC' : 'EAN';
                         $productData['brand_id'] = isset($brandsArray[$item->BrandID]['id']) ? $brandsArray[$item->BrandID]['id'] : null;
                         $productData['marketplace_id'] = $marketplaceObj->id;
                         $productData['category_id'] = $category->id;
@@ -139,10 +138,13 @@ class GetProductsFromEWebCatch extends Command
                         $retailPrice = number_format($item->RetailPrice, 2);
                         $retailPrice2 = number_format($item->RetailPrice2, 2);
 
-                        $productData['price'] = max($retailPrice, $retailPrice2);
-                        $productData['logistic_class'] = 'FREE';
-                        $productData['discount_price'] = min($retailPrice, $retailPrice2);
+                        $price = max($retailPrice, $retailPrice2);
+                        $discountPrice = min($retailPrice, $retailPrice2);
 
+                        $productData['price'] = $price > 0 ? $price : null;
+                        $productData['discount_price'] = $discountPrice > 0 ? $discountPrice : null;
+                        
+                        $productData['logistic_class'] = 'FREE';
                         $productData['leadtime_to_ship'] = 2;
                         $productData['update_delete'] = 'UPDATE';
                         $productData['club_catch_eligible'] = 0;
@@ -181,6 +183,8 @@ class GetProductsFromEWebCatch extends Command
                                 $productData
                             );
 
+                            $wasRecentlyCreated = $product->wasRecentlyCreated;
+                            
                             $newData = [];
                             if ($product->wasChanged('quantity') || $product->wasChanged('price') || $product->wasChanged('discount_price')) {
                                 $newData['offer_csv_generated'] = 0;
@@ -189,6 +193,12 @@ class GetProductsFromEWebCatch extends Command
 
                             if (!empty($newData)) {
                                 $product->update($newData);
+                                $product = $product->refresh();
+                            }
+
+                            if ($wasRecentlyCreated) {
+                                $productReferenceType = strlen($barcode) == 11 || strlen($barcode) == 12 ? 'UPC' : 'EAN';
+                                $product->update(['product_reference_type' => $productReferenceType]);
                                 $product = $product->refresh();
                             }
 

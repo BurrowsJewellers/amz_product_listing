@@ -74,10 +74,10 @@ class ImportController extends Controller
     }
 
 
-    public function uploadImport($importType = 'offer')
+    public function uploadImport($importTypes)
     {
         try {
-            $imports = CatchImport::where(['import_type' => $importType, 'submitted' => 0])->get();
+            $imports = CatchImport::whereIn('import_type', $importTypes)->where(['submitted' => 0])->get();
 
             $api = MiraklShopApiClient::getShopApiClient();        
             foreach ($imports as $import) {
