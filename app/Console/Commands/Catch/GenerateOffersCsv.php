@@ -82,6 +82,12 @@ class GenerateOffersCsv extends Command
 
                             $row = [];
 
+                            $discountPrice = '';
+
+                            if ($product->discount_price > 0) {
+                                $discountPrice = $product->discount_price;
+                            }
+
                             $row = [
                                 $product->sku, // sku
                                 $product->product_reference_value, // product_id
@@ -96,7 +102,7 @@ class GenerateOffersCsv extends Command
                                 $product->available_start_date, // available_start_date
                                 $product->available_end_date, // available_end_date
                                 $product->logistic_class, // logistic_class
-                                $product->discount_price < $product->price ? $product->discount_price : "", // discount_price
+                                $discountPrice,
                                 $product->discount_start_date, // discount_start_date
                                 $product->discount_end_date, // discount_end_date
                                 $product->leadtime_to_ship, // leadtime_to_ship

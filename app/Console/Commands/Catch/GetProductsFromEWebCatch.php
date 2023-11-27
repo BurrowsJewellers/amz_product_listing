@@ -135,12 +135,13 @@ class GetProductsFromEWebCatch extends Command
                         $productData['stone_type'] = $item->SMetalType;
                         $productData['earring_style'] = $item->SSubCat;
                         $productData['quantity'] = intval($item->TotalAvailQOH);
-                        $productData['price'] = number_format($item->RetailPrice, 2);
+
+                        $retailPrice = number_format($item->RetailPrice, 2);
+                        $retailPrice2 = number_format($item->RetailPrice2, 2);
+
+                        $productData['price'] = max($retailPrice, $retailPrice2);
                         $productData['logistic_class'] = 'FREE';
-                        $productData['discount_price'] = number_format($item->RetailPrice2, 2);
-/**
- * TODO check the lower price here
- */
+                        $productData['discount_price'] = min($retailPrice, $retailPrice2);
 
                         $productData['leadtime_to_ship'] = 2;
                         $productData['update_delete'] = 'UPDATE';
