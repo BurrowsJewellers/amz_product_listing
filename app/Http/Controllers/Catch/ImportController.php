@@ -91,9 +91,10 @@ class ImportController extends Controller
                         $request->setWithProducts(true); // Optional
                     }
 
-                    if ($import->import_type == 'offer') {
+                    // if ($import->import_type == 'offer') {
                         $request->setImportMode('NORMAL');
-                    }
+                    // }
+
                     // $request->setImportMode(\Mirakl\MMP\OperatorShop\Domain\Offer\Importer\ImportMode::PARTIAL_UPDATE); // Optional
 
                     $result = $api->importOffers($request);
