@@ -133,7 +133,7 @@ class GetProductsFromEWebCatch extends Command
                         $productData['metal_type'] = $item->SMetalType;
                         $productData['stone_type'] = $item->SMetalType;
                         $productData['earring_style'] = $item->SSubCat;
-                        $productData['quantity'] = intval($item->TotalAvailQOH);
+                        $productData['quantity'] = intval($item->TotalAvailQOH) > 0 ? intval($item->TotalAvailQOH) : 0;
 
                         $retailPrice = number_format($item->RetailPrice, 2);
                         $retailPrice2 = number_format($item->RetailPrice2, 2);
