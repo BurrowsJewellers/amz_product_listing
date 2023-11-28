@@ -58,7 +58,6 @@ class ListOffersOfShop extends Command
 
                 while($totalCount > $offset){
                     try {
-                        $offset += $max;
                         $shopOfferCollection = $this->getOffers($max, $offset);
                         // $totalCount = $result->getTotalCount();
 
@@ -74,6 +73,9 @@ class ListOffersOfShop extends Command
                                 'offer_csv_submitted' => 1,
                             ]);
                         }
+
+                        $offset += $max;
+
                         sleep(60);
                     } catch (\Exception $e) {
                         $job->update(['status' => 0, 'message' => $e->getMessage()]);

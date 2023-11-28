@@ -74,15 +74,13 @@ class CheckIfExists extends Command
 
                         $result = $api->getProducts($request);
     
-
                         DB::beginTransaction();
 
                         CatchProduct::whereIn('id', $productIds)->update(['exists_on_catch' => 0]);
 
                         if (count($result->getItems()) > 0) {
                             foreach ($result->getItems() as $p) {
-                                $this->info('Id : '. $p->getId());
-                                $this->info('Type : '. $p->getIdType());
+                                $this->info($p->getId() .' is listed with '. $p->getIdType());
                                 CatchProduct::where('product_reference_value', $p->getId())->update(['product_reference_type' => $p->getIdType(), 'exists_on_catch' => 1]);
                             }
 
