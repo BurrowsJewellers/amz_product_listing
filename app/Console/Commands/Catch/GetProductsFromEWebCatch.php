@@ -242,6 +242,8 @@ class GetProductsFromEWebCatch extends Command
                     }
                 }
 
+                CatchProduct::where('discount_price', 0)->update(['discount_price' => null]);
+
                 $job->update(['status' => 0, 'message' => null]);
             } catch (\Exception $e) {
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
