@@ -142,7 +142,7 @@ class GetProductsFromEWebCatch extends Command
                         $discountPrice = min($retailPrice, $retailPrice2);
 
                         $productData['price'] = $price > 0 ? $price : null;
-                        $productData['discount_price'] = $discountPrice > 0 ? $discountPrice : null;
+                        $productData['discount_price'] = $discountPrice < $price ? $discountPrice : null;
                         
                         $productData['logistic_class'] = 'FREE';
                         $productData['leadtime_to_ship'] = 2;
