@@ -74,7 +74,7 @@ class CheckIfExists extends Command
 
                         $result = $api->getProducts($request);
     
-                        DB::beginTransaction();
+                        // DB::beginTransaction();
 
                         CatchProduct::whereIn('id', $productIds)->update(['exists_on_catch' => 0]);
 
@@ -84,12 +84,12 @@ class CheckIfExists extends Command
                                 CatchProduct::where('product_reference_value', $p->getId())->update(['product_reference_type' => $p->getIdType(), 'exists_on_catch' => 1]);
                             }
 
-                            DB::commit();
+                            // DB::commit();
                         }
     
                     } catch (\Exception $e) {
                         report($e);
-                        DB::rollBack();
+                        // DB::rollBack();
                         $retry++;
                         $this->info('Retry : '. $retry);
                     }
