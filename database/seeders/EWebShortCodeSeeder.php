@@ -81,7 +81,8 @@ class EWebShortCodeSeeder extends Seeder
                 'product_type_id' => null,
                 'amz_recommended_browse_node' => null,
                 'button_cell' => 0,
-                'classification_path' => "Jewellery & Accessories/Women's/Jewellery/Earrings",
+                // 'classification_path' => "Jewellery & Accessories/Women's/Jewellery/Earrings",
+                'classification_path' => "jewellery & accessories > women's > jewellery > earrings",
             ],
             [
                 'code' => 'CWBR',
@@ -89,7 +90,8 @@ class EWebShortCodeSeeder extends Seeder
                 'product_type_id' => null,
                 'amz_recommended_browse_node' => null,
                 'button_cell' => 0,
-                'classification_path' => "Jewellery & Accessories/Women's/Jewellery/Bracelets & Charms",
+                // 'classification_path' => "Jewellery & Accessories/Women's/Jewellery/Bracelets & Charms",
+                'classification_path' => "jewellery & accessories > women's > jewellery > bracelets & charms",
             ],
             [
                 'code' => 'CWRI',
@@ -97,7 +99,8 @@ class EWebShortCodeSeeder extends Seeder
                 'product_type_id' => null,
                 'amz_recommended_browse_node' => null,
                 'button_cell' => 0,
-                'classification_path' => "Jewellery & Accessories/Women's/Jewellery/Rings",
+                // 'classification_path' => "Jewellery & Accessories/Women's/Jewellery/Rings",
+                'classification_path' => "jewellery & accessories > women's > jewellery > rings",
             ],
             [
                 'code' => 'CWNE',
@@ -105,7 +108,8 @@ class EWebShortCodeSeeder extends Seeder
                 'product_type_id' => null,
                 'amz_recommended_browse_node' => null,
                 'button_cell' => 0,
-                'classification_path' => "Jewellery & Accessories/Women's/Jewellery/Necklaces & Pendants",
+                // 'classification_path' => "Jewellery & Accessories/Women's/Jewellery/Necklaces & Pendants",
+                'classification_path' => "jewellery & accessories > women's > jewellery > necklaces & pendants",
             ],
         ];
 
