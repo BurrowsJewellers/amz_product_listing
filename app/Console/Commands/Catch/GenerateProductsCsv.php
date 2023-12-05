@@ -204,16 +204,16 @@ class GenerateProductsCsv extends Command
                                 $product->gift_type, // gift_type
                                 $product->accessories_material, // accessories_material
                                 $product->apparel_type, // apparel_type
-                                $product->contains_button_cell_batteries, // contains_button_cell_batteries
-                                $product->clearance, // clearance
+                                $product->contains_button_cell_batteries === 1 ? 'Yes' : 'No', // contains_button_cell_batteries
+                                $product->clearance === 1 ? 'Yes' : 'No', // clearance
                                 $product->clearance_stream, // clearance_stream
                                 $product->metal_type, // metal_type
                                 $product->stone_type, // stone_type
                                 $product->display_type, // display_type
                                 $product->watch_case_diameter, // watch_case_diameter
                                 $product->watch_shape, // watch_shape
-                                $product->water_resistance, // water_resistance
-                                $product->watch_case_diameter_unit, // watch_case_diameter_unit
+                                $product->water_resistance === 1 ? 'Yes' : 'No', // water_resistance
+                                strtoupper($product->watch_case_diameter_unit), // watch_case_diameter_unit
                                 $product->bracelet_type, // bracelet_type
                                 $product->earring_style, // earring_style
                                 $product->sku, // sku
