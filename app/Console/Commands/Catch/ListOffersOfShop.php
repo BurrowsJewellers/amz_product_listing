@@ -42,7 +42,7 @@ class ListOffersOfShop extends Command
 
             try {
                 // important line
-                CatchProduct::where('published', 1)->update([
+                CatchProduct::query()->update([
                     'published' => 0,
                     'product_csv_generated' => 0,
                     'product_csv_submitted' => 0,
