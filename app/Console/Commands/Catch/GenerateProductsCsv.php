@@ -156,7 +156,7 @@ class GenerateProductsCsv extends Command
                                 $product->sku, // internal_sku
                                 $product->title, // title
                                 $product->product_reference_value, // product_reference_value
-                                $product->product_reference_type, // product_reference_type
+                                strtolower($product->product_reference_type), // product_reference_type
                                 $product->product_description, // product_description
                                 $product->brand?->name, // brand
                                 $product->condition, // condition
