@@ -141,8 +141,20 @@ class GetProductsFromEWebCatch extends Command
                         $price = max($retailPrice, $retailPrice2);
                         $discountPrice = min($retailPrice, $retailPrice2);
 
+                        if ($discountPrice > $price) {
+                            $price = $discountPrice;
+                        }
+
+                        if(abs($discountPrice) === abs($price)) {
+                            $discountPrice = null;
+                        }
+
+                        if ($discountPrice <= 0) {
+                            $discountPrice = null;
+                        }
+
                         $productData['price'] = $price > 0 ? $price : null;
-                        $productData['discount_price'] = $discountPrice < $price ? $discountPrice : null;
+                        $productData['discount_price'] = $discountPrice;
                         
                         $productData['logistic_class'] = 'FREE';
                         $productData['leadtime_to_ship'] = 2;
@@ -187,6 +199,8 @@ class GetProductsFromEWebCatch extends Command
                             
                             $newData = [];
                             if ($product->wasChanged('quantity') || $product->wasChanged('price') || $product->wasChanged('discount_price')) {
+                                Log::debug("Values changed for : " . $product->sku);
+                                Log::debug($product->getChanges());
                                 $newData['offer_csv_generated'] = 0;
                                 $newData['offer_csv_submitted'] = 0;
                             }
