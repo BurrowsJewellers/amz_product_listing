@@ -73,6 +73,8 @@ class GenerateOffersCsv extends Command
                         'club-catch-eligible',
                         'tax-au',
                         'click-and-collect-eligible',
+                        'location-country',
+                        'location-postcode',
                     ];
 
                     foreach($products as $product){
@@ -111,7 +113,9 @@ class GenerateOffersCsv extends Command
                                 $product->purchase_limit, // purchase_limit
                                 $product->club_catch_eligible ? 'true' : 'false', // club_catch_eligible
                                 $product->tax_au, // tax_au
-                                $product->click_and_collect_eligible ? 'true' : 'false', // click_and_collect_eligible
+                                $product->click_and_collect_eligible ? 'true' : 'false', // click_and_collect_eligible,
+                                'AU', // location-country
+                                '3500', // location-postcode
                             ];
 
                             $rows[] = $row;
