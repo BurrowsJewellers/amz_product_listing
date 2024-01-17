@@ -6,8 +6,9 @@
     "license": "MIT",
     "require": {
         "php": "^8.1",
+        "aws/aws-sdk-php": "^3.296",
         "guzzlehttp/guzzle": "^7.2",
-        "jlevers/selling-partner-api": "^5.8",
+        "jlevers/selling-partner-api": "^5.10",
         "laravel/fortify": "^1.17",
         "laravel/framework": "^10.10",
         "laravel/sanctum": "^3.2",
