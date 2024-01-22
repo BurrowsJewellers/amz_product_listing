@@ -18,7 +18,7 @@ return new class extends Migration
             $table->string('vendor')->nullable();
             $table->string('product_type')->nullable();
             $table->string('handle')->nullable();
-            $table->string('tags')->nullable();
+            $table->string('tags', 800)->nullable();
             $table->string('status')->nullable();
             $table->timestamps();
         });

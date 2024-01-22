@@ -10,12 +10,12 @@ class ShopifyProduct extends Model
     use HasFactory;
 
     protected $fillable = [
+        'product_id',
         'title',
         'vendor',
-        'product',
+        'product_type',
         'handle',
         'tags',
         'status',
     ];
-
 }
