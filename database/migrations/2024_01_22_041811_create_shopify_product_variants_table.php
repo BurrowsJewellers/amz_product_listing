@@ -13,11 +13,12 @@ return new class extends Migration
     {
         Schema::create('shopify_product_variants', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('product_id')->references('product_id')->on('shopify_products')->cascadeOnDelete();
-            $table->unsignedBigInteger('variant_id')->index();
-            $table->string('title');
+            $table->foreignId('shopify_product_table_id')->references('id')->on('shopify_products')->cascadeOnDelete();
+            $table->unsignedBigInteger('product_id')->nullable();
+            $table->unsignedBigInteger('variant_id')->nullable()->unique();
+            $table->string('title')->nullable();
             $table->decimal('price')->default(0);
-            $table->string('sku')->nullable();
+            $table->string('sku')->unique();
             $table->smallInteger('position')->default(1);
             $table->string('inventory_policy')->nullable();
             $table->string('fulfillment_service')->nullable();
@@ -33,6 +34,7 @@ return new class extends Migration
             $table->smallInteger('inventory_quantity')->default(0);
             $table->smallInteger('old_inventory_quantity')->default(0);
             $table->boolean('requires_shipping')->default(true);
+            $table->boolean('requires_update')->default(false);
             $table->timestamps();
         });
     }

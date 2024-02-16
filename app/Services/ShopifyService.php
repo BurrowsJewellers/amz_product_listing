@@ -16,49 +16,95 @@ class ShopifyService extends ShopifyConnectionService
         try {
             DB::beginTransaction();
 
-            ShopifyProduct::updateOrCreate(
-                [
-                    'product_id' => $productData['id'],
-                ],
-                [
-                    'title' => $productData['title'],
-                    'vendor' => $productData['vendor'],
-                    'product_type' => $productData['product_type'],
-                    'handle' => $productData['handle'],
-                    'tags' => $productData['tags'],
-                    'status' => $productData['status'],
-
-                ]
-            );
+            $shopifyProduct = null;
 
             if (isset($productData['variants']) && count($productData['variants']) > 0) {
                 foreach ($productData['variants'] as $variant) {
-                    ShopifyProductVariant::updateOrCreate(
-                        [
-                            'variant_id' => $variant['id'],
-                        ],
-                        [
-                            'product_id' => $variant['product_id'],
-                            'title' => $variant['title'],
-                            'price' => $variant['price'],
-                            'sku' => $variant['sku'],
-                            'position' => $variant['position'],
-                            'inventory_policy' => $variant['inventory_policy'],
-                            'fulfillment_service' => $variant['fulfillment_service'],
-                            'inventory_management' => $variant['inventory_management'],
-                            'option1' => $variant['option1'],
-                            'option2' => $variant['option2'],
-                            'option3' => $variant['option3'],
-                            'taxable' => $variant['taxable'],
-                            'barcode' => $variant['barcode'],
-                            'grams' => $variant['grams'],
-                            'weight' => $variant['weight'],
-                            'inventory_item_id' => $variant['inventory_item_id'],
-                            'inventory_quantity' => $variant['inventory_quantity'],
-                            'old_inventory_quantity' => $variant['old_inventory_quantity'],
-                            'requires_shipping' => $variant['requires_shipping'],
-                        ]
-                    );
+
+                    $shopifyProductVariant = ShopifyProductVariant::where('sku', $variant['sku'])->first();
+
+                    if ($shopifyProductVariant) {
+                        if ($shopifyProductVariant->product_id === null || $shopifyProduct === null) {
+                            $shopifyProduct = ShopifyProduct::updateOrCreate(
+                                [
+                                    'id' => $shopifyProductVariant->shopify_product_table_id,
+                                ],
+                                [
+                                    'product_id' => $productData['id'],
+                                    'title' => $productData['title'],
+                                    'vendor' => $productData['vendor'],
+                                    'product_type' => $productData['product_type'],
+                                    'handle' => $productData['handle'],
+                                    'tags' => $productData['tags'],
+                                    'status' => $productData['status'],
+                                ]
+                            );
+                        }
+
+                        $shopifyProductVariant->update(
+                            [
+                                'shopify_product_table_id' => $shopifyProduct->id,
+                                // 'sku' => $variant['sku'],
+                                'variant_id' => $variant['id'],
+                                'product_id' => $variant['product_id'],
+                                'title' => $variant['title'],
+                                'price' => $variant['price'],
+                                'position' => $variant['position'],
+                                'inventory_policy' => $variant['inventory_policy'],
+                                'fulfillment_service' => $variant['fulfillment_service'],
+                                'inventory_management' => $variant['inventory_management'],
+                                'option1' => $variant['option1'],
+                                'option2' => $variant['option2'],
+                                'option3' => $variant['option3'],
+                                'taxable' => $variant['taxable'],
+                                'barcode' => $variant['barcode'],
+                                'grams' => $variant['grams'],
+                                'weight' => $variant['weight'],
+                                'inventory_item_id' => $variant['inventory_item_id'],
+                                'inventory_quantity' => $variant['inventory_quantity'],
+                                'old_inventory_quantity' => $variant['old_inventory_quantity'],
+                                'requires_shipping' => $variant['requires_shipping'],
+                            ]
+                        );
+                    } else {
+                        $shopifyProduct = ShopifyProduct::create(
+                            [
+                                'product_id' => $productData['id'],
+                                'title' => $productData['title'],
+                                'vendor' => $productData['vendor'],
+                                'product_type' => $productData['product_type'],
+                                'handle' => $productData['handle'],
+                                'tags' => $productData['tags'],
+                                'status' => $productData['status'],
+                            ]
+                        );
+
+                        $shopifyProductVariant = ShopifyProductVariant::create(
+                            [
+                                'shopify_product_table_id' => $shopifyProduct->id,
+                                'sku' => $variant['sku'],
+                                'variant_id' => $variant['id'],
+                                'product_id' => $variant['product_id'],
+                                'title' => $variant['title'],
+                                'price' => $variant['price'],
+                                'position' => $variant['position'],
+                                'inventory_policy' => $variant['inventory_policy'],
+                                'fulfillment_service' => $variant['fulfillment_service'],
+                                'inventory_management' => $variant['inventory_management'],
+                                'option1' => $variant['option1'],
+                                'option2' => $variant['option2'],
+                                'option3' => $variant['option3'],
+                                'taxable' => $variant['taxable'],
+                                'barcode' => $variant['barcode'],
+                                'grams' => $variant['grams'],
+                                'weight' => $variant['weight'],
+                                'inventory_item_id' => $variant['inventory_item_id'],
+                                'inventory_quantity' => $variant['inventory_quantity'],
+                                'old_inventory_quantity' => $variant['old_inventory_quantity'],
+                                'requires_shipping' => $variant['requires_shipping'],
+                            ]
+                        );
+                    }
                 }
             }
 

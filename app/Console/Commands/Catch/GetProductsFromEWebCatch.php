@@ -64,28 +64,28 @@ class GetProductsFromEWebCatch extends Command
                 foreach ($activeItems as $item) {
                     try {
                         $skuParts = explode('-', $item->SKU);
-                        if (!count($skuParts) === 3){
+                        if (!count($skuParts) === 3) {
                             continue;
                         }
 
-                        $sku = $skuParts[1]. "-" .$skuParts[2];
+                        $sku = $skuParts[1] . "-" . $skuParts[2];
 
                         $this->info('Retail Edge SKU ' . $item->SKU);
                         $this->info('Formatted SKU ' . $sku);
 
-                        if ($item->WebOptionBoolean5 !== true ) {
+                        if ($item->WebOptionBoolean5 !== true) {
                             $webOptionBoolean5FalseSkuArray[] = $sku;
                             continue;
                         }
 
-                        if(trim($item->ID1) == '') {
+                        if (trim($item->ID1) == '') {
                             $this->info('ID1 field is empty.');
                             continue;
                         }
 
                         $eWebCodes = explode(" ", $item->ID1);
 
-                        if(!isset($eWebCodes[0])) {
+                        if (!isset($eWebCodes[0])) {
                             $this->info('Short code for Catch not found.');
                             continue;
                         }
@@ -94,8 +94,8 @@ class GetProductsFromEWebCatch extends Command
 
                         $shortCode = EWebShortCode::where('code', $eWebCode)->first();
 
-                        if(!$shortCode) {
-                            $this->info('Short code '. $eWebCodes[0] .' not found in EWebShortCode.');
+                        if (!$shortCode) {
+                            $this->info('Short code ' . $eWebCodes[0] . ' not found in EWebShortCode.');
                             continue;
                         }
 
@@ -105,11 +105,11 @@ class GetProductsFromEWebCatch extends Command
                             $otherFields[] = $keyName;
                             $item->{$keyName} = $other->Value;
                         }
-                        
+
                         $productData = [];
-                        
+
                         $barcode = trim($item->Barcode);
-                        
+
                         $productData['sku'] = $sku;
                         $productData['title'] = $item->ShortMarketingDescription;
                         $productData['product_description'] = $item->MarketingDescription;
@@ -145,7 +145,7 @@ class GetProductsFromEWebCatch extends Command
                             $price = $discountPrice;
                         }
 
-                        if(abs($discountPrice) === abs($price)) {
+                        if (abs($discountPrice) === abs($price)) {
                             $discountPrice = null;
                         }
 
@@ -155,7 +155,7 @@ class GetProductsFromEWebCatch extends Command
 
                         $productData['price'] = $price > 0 ? $price : null;
                         $productData['discount_price'] = $discountPrice;
-                        
+
                         $productData['logistic_class'] = 'FREE';
                         $productData['leadtime_to_ship'] = 2;
                         $productData['update_delete'] = 'UPDATE';
@@ -196,7 +196,7 @@ class GetProductsFromEWebCatch extends Command
                             );
 
                             $wasRecentlyCreated = $product->wasRecentlyCreated;
-                            
+
                             $newData = [];
                             if ($product->wasChanged('quantity') || $product->wasChanged('price') || $product->wasChanged('discount_price')) {
                                 Log::debug("Values changed for : " . $product->sku);
@@ -244,7 +244,7 @@ class GetProductsFromEWebCatch extends Command
 
                 if (!empty($webOptionBoolean5FalseSkuArray)) {
                     foreach ($webOptionBoolean5FalseSkuArray as $sku) {
-                        if($product = CatchProduct::where('sku', $sku)->first()) {
+                        if ($product = CatchProduct::where('sku', $sku)->first()) {
                             if ($product->quantity > 0) {
                                 $product->update([
                                     'quantity' => 0,

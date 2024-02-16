@@ -13,12 +13,12 @@ return new class extends Migration
     {
         Schema::create('shopify_products', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('product_id')->index();
+            $table->unsignedBigInteger('product_id')->nullable()->unique();
             $table->string('title');
             $table->string('vendor')->nullable();
             $table->string('product_type')->nullable();
             $table->string('handle')->nullable();
-            $table->string('tags', 800)->nullable();
+            $table->text('tags')->nullable();
             $table->string('status')->nullable();
             $table->timestamps();
         });

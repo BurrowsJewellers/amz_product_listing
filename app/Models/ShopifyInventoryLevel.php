@@ -14,6 +14,6 @@ class ShopifyInventoryLevel extends Model
         'inventory_item_id',
         'available',
         'inventory_updated_at',
+        'requires_update',
     ];
-
 }

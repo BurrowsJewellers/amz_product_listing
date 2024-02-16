@@ -67,28 +67,28 @@ class GetProductsFromEWeb extends Command
                 foreach ($activeItems as $item) {
                     try {
                         $skuParts = explode('-', $item->SKU);
-                        if (!count($skuParts) === 3){
+                        if (!count($skuParts) === 3) {
                             continue;
                         }
 
-                        $sku = $skuParts[1]. "-" .$skuParts[2];
+                        $sku = $skuParts[1] . "-" . $skuParts[2];
 
                         $this->info('Retail Edge SKU ' . $item->SKU);
                         $this->info('Formatted SKU ' . $sku);
 
-                        if ($item->WebOptionBoolean7 !== true ) {
+                        if ($item->WebOptionBoolean7 !== true) {
                             $webOptionBoolean7FalseSkuArray[] = $sku;
                             continue;
                         }
 
-                        if(trim($item->ID1) == '') {
+                        if (trim($item->ID1) == '') {
                             $this->info('ID1 field is empty.');
                             continue;
                         }
 
                         $eWebCodes = explode(" ", $item->ID1);
 
-                        if(!isset($eWebCodes[1])) {
+                        if (!isset($eWebCodes[1])) {
                             $this->info('Short code for Amazon not found.');
                             continue;
                         }
@@ -97,7 +97,7 @@ class GetProductsFromEWeb extends Command
 
                         $shortCode = EWebShortCode::where('code', $eWebCode)->with('productType.fields')->first();
 
-                        if(!$shortCode) {
+                        if (!$shortCode) {
                             $this->info('Short code not found in EWebShortCode.');
                             continue;
                         }
@@ -127,7 +127,7 @@ class GetProductsFromEWeb extends Command
 
                         if ($shortCode->code == 'AWNE') {
                             $productData['size_name'] = 'Standard';
-                        } elseif($shortCode->code == 'AWEA') {
+                        } elseif ($shortCode->code == 'AWEA') {
                             $productData['size_name'] = 'Small';
                         }
 
@@ -163,11 +163,11 @@ class GetProductsFromEWeb extends Command
 
                         /** Add the required field which are missing in eWeb API */
                         // if (!property_exists($item, 'TargetGender')) {
-                            $item->TargetGender = $shortCode->code[1] == 'W' ? 'female' : 'male';
+                        $item->TargetGender = $shortCode->code[1] == 'W' ? 'female' : 'male';
                         // }
 
                         // if (!property_exists($item, 'SupplierDeclaredMaterialRegulation')) {
-                            $item->SupplierDeclaredMaterialRegulation = 'not_applicable';
+                        $item->SupplierDeclaredMaterialRegulation = 'not_applicable';
                         // }
 
                         // $item->RingSize = 'Adjustable';
@@ -320,7 +320,7 @@ class GetProductsFromEWeb extends Command
 
                 if (!empty($webOptionBoolean7FalseSkuArray)) {
                     foreach ($webOptionBoolean7FalseSkuArray as $sku) {
-                        if($product = Product::where('sku', $sku)->first()) {
+                        if ($product = Product::where('sku', $sku)->first()) {
                             if ($product->quantity > 0) {
                                 $product->update([
                                     'quantity' => 0,

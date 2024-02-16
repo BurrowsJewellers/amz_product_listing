@@ -10,6 +10,7 @@ class ShopifyProductVariant extends Model
     use HasFactory;
 
     protected $fillable = [
+        'shopify_product_table_id',
         'product_id',
         'variant_id',
         'title',
@@ -30,6 +31,6 @@ class ShopifyProductVariant extends Model
         'inventory_quantity',
         'old_inventory_quantity',
         'requires_shipping',
+        'requires_update',
     ];
-
 }

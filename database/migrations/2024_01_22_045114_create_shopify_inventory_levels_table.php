@@ -17,6 +17,7 @@ return new class extends Migration
             $table->foreignId('inventory_item_id')->references('inventory_item_id')->on('shopify_product_variants');
             $table->smallInteger('available')->default(0);
             $table->timestamp('inventory_updated_at')->nullable();
+            $table->boolean('requires_update')->default(false);
             $table->timestamps();
         });
     }
