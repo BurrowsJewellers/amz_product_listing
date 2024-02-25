@@ -2,11 +2,11 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\DB;
+use Carbon\Carbon;
 use App\Models\ShopifyInventoryLevel;
 use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
-use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
 
 class ShopifyService extends ShopifyConnectionService
 {
@@ -27,7 +27,7 @@ class ShopifyService extends ShopifyConnectionService
                         if ($shopifyProductVariant->product_id === null || $shopifyProduct === null) {
                             $shopifyProduct = ShopifyProduct::updateOrCreate(
                                 [
-                                    'id' => $shopifyProductVariant->shopify_product_table_id,
+                                    'id' => $shopifyProductVariant->shopify_product_id,
                                 ],
                                 [
                                     'product_id' => $productData['id'],
@@ -43,7 +43,7 @@ class ShopifyService extends ShopifyConnectionService
 
                         $shopifyProductVariant->update(
                             [
-                                'shopify_product_table_id' => $shopifyProduct->id,
+                                'shopify_product_id' => $shopifyProduct->id,
                                 // 'sku' => $variant['sku'],
                                 'variant_id' => $variant['id'],
                                 'product_id' => $variant['product_id'],
@@ -67,9 +67,11 @@ class ShopifyService extends ShopifyConnectionService
                             ]
                         );
                     } else {
-                        $shopifyProduct = ShopifyProduct::create(
+                        $shopifyProduct = ShopifyProduct::updateOrCreate(
                             [
                                 'product_id' => $productData['id'],
+                            ],
+                            [
                                 'title' => $productData['title'],
                                 'vendor' => $productData['vendor'],
                                 'product_type' => $productData['product_type'],
@@ -81,7 +83,7 @@ class ShopifyService extends ShopifyConnectionService
 
                         $shopifyProductVariant = ShopifyProductVariant::create(
                             [
-                                'shopify_product_table_id' => $shopifyProduct->id,
+                                'shopify_product_id' => $shopifyProduct->id,
                                 'sku' => $variant['sku'],
                                 'variant_id' => $variant['id'],
                                 'product_id' => $variant['product_id'],
@@ -145,5 +147,10 @@ class ShopifyService extends ShopifyConnectionService
             report($e);
             return false;
         }
+    }
+
+    public function saveRetailEdgeProductToDb($productData): bool
+    {
+        return true;
     }
 }

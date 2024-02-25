@@ -35,7 +35,7 @@ class GetImagesFromEWeb extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if(!$job->isRunning()){
+        if (!$job->isRunning()) {
             Log::info("$marketplace $jobType started!");
             $job->update(['status' => 1]);
 
@@ -94,16 +94,15 @@ class GetImagesFromEWeb extends Command
                                 );
                             }
                         }
-
                     } catch (\Exception $e) {
-                        Log::error("SKU : $product->sku Error : " . $e->getFile() . ' : ' . $e->getMessage() .' Line : '. $e->getLine());
+                        Log::error("SKU : $product->sku Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
                     }
                 }
 
                 $job->update(['status' => 0, 'message' => null]);
-            } catch (\Exception $e){
+            } catch (\Exception $e) {
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
-                Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() .' Line : '. $e->getLine());
+                Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
             }
 
             Log::info("$marketplace $jobType finished!");

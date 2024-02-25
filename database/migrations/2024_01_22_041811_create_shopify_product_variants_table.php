@@ -13,18 +13,23 @@ return new class extends Migration
     {
         Schema::create('shopify_product_variants', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('shopify_product_table_id')->references('id')->on('shopify_products')->cascadeOnDelete();
+            $table->foreignId('shopify_product_id')->references('id')->on('shopify_products')->cascadeOnDelete();
             $table->unsignedBigInteger('product_id')->nullable();
             $table->unsignedBigInteger('variant_id')->nullable()->unique();
             $table->string('title')->nullable();
             $table->decimal('price')->default(0);
+            $table->decimal('compare_at_price')->default(0);
             $table->string('sku')->unique();
+            $table->string('old_key')->nullable();
             $table->smallInteger('position')->default(1);
             $table->string('inventory_policy')->nullable();
             $table->string('fulfillment_service')->nullable();
             $table->string('inventory_management')->nullable();
+            $table->string('option1_type')->nullable();
             $table->string('option1')->nullable();
+            $table->string('option2_type')->nullable();
             $table->string('option2')->nullable();
+            $table->string('option3_type')->nullable();
             $table->string('option3')->nullable();
             $table->boolean('taxable')->default(true);
             $table->string('barcode')->nullable();

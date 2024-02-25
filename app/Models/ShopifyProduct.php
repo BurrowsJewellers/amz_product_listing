@@ -18,4 +18,9 @@ class ShopifyProduct extends Model
         'tags',
         'status',
     ];
+
+    public function variants()
+    {
+        return $this->hasMany(ShopifyProductVariant::class);
+    }
 }

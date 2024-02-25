@@ -10,18 +10,23 @@ class ShopifyProductVariant extends Model
     use HasFactory;
 
     protected $fillable = [
-        'shopify_product_table_id',
+        'shopify_product_id',
         'product_id',
         'variant_id',
         'title',
         'price',
+        'compare_at_price',
         'sku',
+        'old_key',
         'position',
         'inventory_policy',
         'fulfillment_service',
         'inventory_management',
+        'option1_type',
         'option1',
+        'option2_type',
         'option2',
+        'option3_type',
         'option3',
         'taxable',
         'barcode',
@@ -33,4 +38,14 @@ class ShopifyProductVariant extends Model
         'requires_shipping',
         'requires_update',
     ];
+
+    public function product()
+    {
+        return $this->belongsTo(ShopifyProduct::class);
+    }
+
+    public function images()
+    {
+        return $this->hasMany(RetailEdgeProductImage::class, 'sku', 'sku');
+    }
 }
