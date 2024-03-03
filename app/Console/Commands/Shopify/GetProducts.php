@@ -16,7 +16,7 @@ class GetProducts extends Command
      *
      * @var string
      */
-    protected $signature = 'getProducts';
+    protected $signature = 'shopifyGetProducts';
 
     /**
      * The console command description.
@@ -31,14 +31,14 @@ class GetProducts extends Command
     public function handle()
     {
         $marketplace = 'Shopify';
-        $jobType = 'getProducts';
+        $jobType = 'shopifyGetProducts';
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
         if (!$job->isRunning()) {
             try {
                 Log::info("$marketplace $jobType started!");
-                // $job->update(['status' => 1]);
+                $job->update(['status' => 1]);
 
                 /**
                  * Get Shopify locations
@@ -62,13 +62,13 @@ class GetProducts extends Command
 
                 Log::info("$marketplace $jobType finished!");
             } catch (\Exception $e) {
+                $job->update(['status' => 0]);
                 report($e);
             }
         } else {
             Log::info("$marketplace $jobType is already running.");
         }
     }
-
 
     public function getLocations()
     {
@@ -131,9 +131,9 @@ class GetProducts extends Command
                     foreach ($body['products'] as $productData) {
                         try {
                             $this->info('product id : ' . $productData['id']);
-                            if ($productData['status'] !== 'archived') {
-                                (new ShopifyService)->saveProductToDb($productData);
-                            }
+                            // if ($productData['status'] !== 'archived') {
+                            (new ShopifyService)->saveProductToDb($productData);
+                            // }
                         } catch (\Exception $e) {
                             $this->error($e->getMessage());
                         }

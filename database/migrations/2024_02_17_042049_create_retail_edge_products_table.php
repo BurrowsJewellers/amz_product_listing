@@ -41,6 +41,9 @@ return new class extends Migration
             $table->boolean('web_option_boolean6')->default(false);
             $table->boolean('web_option_boolean7')->default(false);
             $table->boolean('web_option_boolean8')->default(false);
+            $table->boolean('uploaded_to_shopify')->default(false);
+            $table->boolean('uploaded_to_catch')->default(false);
+            $table->boolean('uploaded_to_amazon')->default(false);
             $table->timestamps();
         });
     }

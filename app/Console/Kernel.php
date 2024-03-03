@@ -13,6 +13,11 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule): void
     {
         /**
+         * Main job to fetch products from eWeb
+         */
+        $schedule->command('getProductsFromEWebMain')->everyTenMinutes();
+
+        /**
          * Amazon Crons
          */
         $schedule->command('getBrandsFromEWeb')->dailyAt('00:05');
@@ -45,11 +50,21 @@ class Kernel extends ConsoleKernel
         $schedule->command('catchCheckIfExists')->dailyAt('00:50');
         $schedule->command('catchListOffersOfShop')->dailyAt('01:20');
 
-        $schedule->command('getProductsFromEWebCatch')->everyFifteenMinutes()->between('02:00','23:59');
+        $schedule->command('getProductsFromEWebCatch')->everyFifteenMinutes()->between('02:00', '23:59');
         // $schedule->command('catchGenerateProductsCsv')->everyTwoHours()->between('02:00','23:59');
         $schedule->command('catchGenerateProductsCsv')->cron('18 2 */4 * *');
-        $schedule->command('catchGenerateOffersCsv')->everyFifteenMinutes()->between('02:00','23:59');
-        $schedule->command('catchSubmitImports')->everyThirtyMinutes()->between('02:00','23:59');
+        $schedule->command('catchGenerateOffersCsv')->everyFifteenMinutes()->between('02:00', '23:59');
+        $schedule->command('catchSubmitImports')->everyThirtyMinutes()->between('02:00', '23:59');
+
+
+        /**
+         * Shopify Crons
+         */
+
+        $schedule->command('shopifyGetProducts')->dailyAt('02:40');
+        $schedule->command('shopifyCreateProduct')->everyThreeHours();
+        $schedule->command('shopifyUpdateInventory')->everyFifteenMinutes();
+        $schedule->command('shopifyUpdatePrice')->everyFifteenMinutes();
     }
 
     /**
@@ -57,7 +72,7 @@ class Kernel extends ConsoleKernel
      */
     protected function commands(): void
     {
-        $this->load(__DIR__.'/Commands');
+        $this->load(__DIR__ . '/Commands');
 
         require base_path('routes/console.php');
     }

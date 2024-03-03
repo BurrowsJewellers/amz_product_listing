@@ -8,6 +8,7 @@ use App\Http\Controllers\SyncJobController;
 use App\Models\RetailEdgeProduct;
 use App\Models\RetailEdgeProductImage;
 use App\Services\RetailEdgeService;
+use Illuminate\Support\Facades\DB;
 
 class GetProductsFromEWeb extends Command
 {
@@ -42,8 +43,15 @@ class GetProductsFromEWeb extends Command
             try {
                 $activeItems = (new RetailEdgeService)->getAllActiveItems();
 
-                RetailEdgeProduct::truncate();
-                RetailEdgeProductImage::truncate();
+                try {
+                    $shopifySkus = RetailEdgeProduct::where('uploaded_to_shopify', 1)->pluck('sku')->toArray();
+
+                    RetailEdgeProduct::truncate();
+                    RetailEdgeProductImage::truncate();
+                } catch (\Exception $e) {
+                    report($e);
+                }
+
                 foreach ($activeItems as $item) {
                     try {
                         if (!preg_match('/^\d{3}-\d{3}-\d{5}$/', $item->SKU)) {
@@ -95,7 +103,6 @@ class GetProductsFromEWeb extends Command
                             ]
                         );
 
-
                         $productImages = [];
 
                         if (isset($item->Images) && isset($item->Images->ItemImage) && !empty($item->Images->ItemImage)) {
@@ -141,6 +148,33 @@ class GetProductsFromEWeb extends Command
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
                 report($e);
             }
+
+            RetailEdgeProduct::whereIn('sku', $shopifySkus)->update(['uploaded_to_shopify' => 1]);
+
+            $sql = "UPDATE retail_edge_products
+                SET uploaded_to_shopify = 1
+                WHERE sku IN (SELECT sku FROM shopify_product_variants);
+            ";
+            DB::update($sql);
+
+
+            $sql = "UPDATE shopify_product_variants
+                JOIN retail_edge_products ON shopify_product_variants.sku = retail_edge_products.sku
+                SET
+                    shopify_product_variants.inventory_quantity = retail_edge_products.quantity,
+                    shopify_product_variants.inventory_requires_update = CASE
+                        WHEN shopify_product_variants.inventory_quantity <> retail_edge_products.quantity THEN 1
+                        ELSE shopify_product_variants.inventory_requires_update
+                    END,
+                    shopify_product_variants.price_requires_update = CASE
+                        WHEN retail_edge_products.retail_price1 <> shopify_product_variants.price THEN 1
+                        ELSE shopify_product_variants.price_requires_update
+                    END
+                WHERE
+                    shopify_product_variants.inventory_quantity <> retail_edge_products.quantity
+                    OR retail_edge_products.retail_price1 <> shopify_product_variants.price;
+            ";
+            DB::update($sql);
             Log::info("$marketplace $jobType finished!");
         } else {
             Log::info("$marketplace $jobType is already running.");

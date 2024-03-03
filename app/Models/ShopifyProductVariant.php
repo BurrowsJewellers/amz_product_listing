@@ -37,6 +37,8 @@ class ShopifyProductVariant extends Model
         'old_inventory_quantity',
         'requires_shipping',
         'requires_update',
+        'price_requires_update',
+        'inventory_requires_update',
     ];
 
     public function product()

@@ -39,6 +39,9 @@ class RetailEdgeProduct extends Model
         'web_option_boolean6',
         'web_option_boolean7',
         'web_option_boolean8',
+        'uploaded_to_shopify',
+        'uploaded_to_catch',
+        'uploaded_to_amazon',
     ];
 
     public function children(): HasMany

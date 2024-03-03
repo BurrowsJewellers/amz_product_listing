@@ -64,18 +64,14 @@ class GetProductsFromEWeb extends Command
                     $brandsArray[$brand->brand_id]['name'] = $brand->name;
                 }
 
-                $products = RetailEdgeProduct::with('children')->where('sku', '008-00504')->get();
+                // $products = RetailEdgeProduct::with('children')->where('sku', '008-00504')->get();
+                $products = RetailEdgeProduct::with('children')->where('uploaded_to_shopify', 0)->get();
 
                 foreach ($products as $product) {
-                    // $client = new Rest($session->getShop(), $session->getAccessToken());
-                    // $sp = new Product($session);
-
                     $variants = [];
                     $variantOptions = [];
                     if ($product->children->count()) {
-
                         $optionIndex = 1;
-
                         foreach ($product->children as $child) {
                             $variant = [];
                             $variant['sku'] = $child->sku;
@@ -100,7 +96,7 @@ class GetProductsFromEWeb extends Command
                             $variant['price'] = $price;
                             $variant['compare_at_price'] = ($price == $compareAtPrice) ? 0 : $compareAtPrice;
 
-                            $vts = array_map('strtolower', explode("-", $child->id3));
+                            $vts = array_filter(array_map('trim', array_map('strtolower', explode("-", $child->id3))));
 
                             foreach ($vts as $vt) {
                                 $vt = trim($vt);
@@ -157,24 +153,26 @@ class GetProductsFromEWeb extends Command
                     ];
 
                     $data = json_encode($productData);
-                    echo $data;
+
+                    try {
+                        $client = new Rest($session->getShop(), $session->getAccessToken());
+
+                        /** @var RestResponse */
+                        $response = $client->post(path: 'products', body: $data);
+                        $body = $response->getDecodedBody();
+
+                        if (isset($body['product'])) {
+                            (new ShopifyService)->saveProductToDb($body['product']);
+                            $this->info($body['product']['title'] . ' - saved to database');
+                        }
+                    } catch (\Exception $e) {
+                        report($e);
+                    }
                 }
-
-                $client = new Rest($session->getShop(), $session->getAccessToken());
-
-                /** @var RestResponse */
-                $response = $client->post(path: 'products', body: $data);
-
-                $body = $response->getDecodedBody();
-
-                if (isset($body['product'])) {
-                    (new ShopifyService)->saveProductToDb($body['product']);
-                }
-
                 Log::info("$marketplace $jobType finished!");
             } catch (\Exception $e) {
                 report($e);
-                dd($e);
+                $this->error($e->getMessage());
             }
         } else {
             Log::info("$marketplace $jobType is already running.");

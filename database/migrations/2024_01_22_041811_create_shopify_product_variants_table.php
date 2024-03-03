@@ -40,6 +40,8 @@ return new class extends Migration
             $table->smallInteger('old_inventory_quantity')->default(0);
             $table->boolean('requires_shipping')->default(true);
             $table->boolean('requires_update')->default(false);
+            $table->boolean('price_requires_update')->default(false);
+            $table->boolean('inventory_requires_update')->default(false);
             $table->timestamps();
         });
     }
