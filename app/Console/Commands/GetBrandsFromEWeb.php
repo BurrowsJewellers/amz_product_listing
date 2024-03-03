@@ -34,7 +34,7 @@ class GetBrandsFromEWeb extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if(!$job->isRunning()){
+        if (!$job->isRunning()) {
             Log::info("$marketplace $jobType started!");
             $job->update(['status' => 1]);
 
@@ -42,13 +42,13 @@ class GetBrandsFromEWeb extends Command
                 $eWeb = new EWebController;
                 $resp = $eWeb->call('GetAllBrands');
 
-                foreach ($resp->GetAllBrandsResult->Brand as $brand){
+                foreach ($resp->GetAllBrandsResult->Brand as $brand) {
                     Brand::firstOrCreate(['name' => $brand->Name, 'brand_id' => $brand->ID]);
                     $this->info($brand->Name);
                 }
                 $job->update(['status' => 0, 'message' => null]);
             } catch (\Exception $e) {
-                Log::debug('getBrandsFromEWeb : '. $e->getMessage());
+                Log::debug('getBrandsFromEWeb : ' . $e->getMessage());
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
             }
 
@@ -56,6 +56,5 @@ class GetBrandsFromEWeb extends Command
         } else {
             Log::info("$marketplace $jobType is already running.");
         }
-
     }
 }
