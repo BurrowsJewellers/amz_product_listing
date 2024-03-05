@@ -37,6 +37,7 @@ class GetProductsFromEWeb extends Command
         $job = SyncJobController::getJob($jobType, $marketplace);
 
         if (!$job->isRunning()) {
+            $shopifySkus = [];
             Log::info("$marketplace $jobType started!");
             $job->update(['status' => 1]);
 
@@ -76,6 +77,7 @@ class GetProductsFromEWeb extends Command
                                 'title' => trim($item->ShortMarketingDescription),
                                 'marketing_description' => $item->MarketingDescription,
                                 'brand_id' => trim($item->BrandID),
+                                'barcode' => trim($item->Barcode),
                                 'retail_price1' => $item->RetailPrice,
                                 'retail_price2' => $item->RetailPrice2,
                                 'quantity' => intval($item->TotalAvailQOH),
@@ -149,7 +151,9 @@ class GetProductsFromEWeb extends Command
                 report($e);
             }
 
-            RetailEdgeProduct::whereIn('sku', $shopifySkus)->update(['uploaded_to_shopify' => 1]);
+            if (is_array($shopifySkus) && count($shopifySkus) > 0) {
+                RetailEdgeProduct::whereIn('sku', $shopifySkus)->update(['uploaded_to_shopify' => 1]);
+            }
 
             $sql = "UPDATE retail_edge_products
                 SET uploaded_to_shopify = 1

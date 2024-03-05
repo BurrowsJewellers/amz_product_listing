@@ -62,8 +62,9 @@ class GetProducts extends Command
 
                 Log::info("$marketplace $jobType finished!");
             } catch (\Exception $e) {
-                $job->update(['status' => 0]);
+                $job->update(['status' => 0, 'message' => $e->getMessage()]);
                 report($e);
+                $this->error($e->getMessage());
             }
         } else {
             Log::info("$marketplace $jobType is already running.");
@@ -145,7 +146,7 @@ class GetProducts extends Command
                 /** @var \Shopify\Clients\PageInfo */
                 $pageInfo = unserialize($serializedPageInfo);
 
-                if ($pageInfo->hasNextPage()) {
+                if ($pageInfo && $pageInfo->hasNextPage()) {
                     $getNextPageQuery = $pageInfo->getNextPageQuery();
                     $this->info('getNextPageQuery');
                     sleep(1);

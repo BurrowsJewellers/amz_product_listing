@@ -44,7 +44,6 @@ class ShopifyService extends ShopifyConnectionService
                         $shopifyProductVariant->update(
                             [
                                 'shopify_product_id' => $shopifyProduct->id,
-                                // 'sku' => $variant['sku'],
                                 'variant_id' => $variant['id'],
                                 'product_id' => $variant['product_id'],
                                 'title' => $variant['title'],
@@ -104,9 +103,13 @@ class ShopifyService extends ShopifyConnectionService
                                 'inventory_quantity' => $variant['inventory_quantity'],
                                 'old_inventory_quantity' => $variant['old_inventory_quantity'],
                                 'requires_shipping' => $variant['requires_shipping'],
+                                // 'price_requires_update' => 1,
+                                'inventory_requires_update' => 1,
                             ]
                         );
                     }
+
+                    // if ()
                 }
             }
 

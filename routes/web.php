@@ -9,6 +9,7 @@ use App\Http\Controllers\AmzFeedController;
 use App\Http\Controllers\AmzReportController;
 use App\Http\Controllers\Catch\ImportController;
 use App\Http\Controllers\Catch\ProductController as CatchProductController;
+use App\Http\Controllers\Shopify\WebhookController;
 
 /*
 |--------------------------------------------------------------------------
@@ -36,13 +37,13 @@ Route::middleware(['auth'])->group(function () {
 
     Route::get('/amazon/feeds', [AmzFeedController::class, 'amazonFeeds'])->name('amazon.feeds');
     Route::get('/amazon/feed/download', [AmzFeedController::class, 'downloadFile'])->name('amazon.feed.download');
-    
+
     Route::get('/amazon/reports', [AmzReportController::class, 'amazonReports'])->name('amazon.reports');
     Route::get('/amazon/report/download', [AmzReportController::class, 'downloadReport'])->name('amazon.report.download');
 
     Route::get('/get/producttypes', [ProductTypeController::class, 'getProductTypes'])->name('get.productTypes');
 
-    Route::prefix('/catch')->name('catch.')->group(function(){
+    Route::prefix('/catch')->name('catch.')->group(function () {
         Route::get('/products', [CatchProductController::class, 'index'])->name('products');
         Route::get('/product/edit/{id}', [CatchProductController::class, 'edit'])->name('product.edit');
         Route::post('/product/save', [CatchProductController::class, 'save'])->name('product.save');
@@ -51,4 +52,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/import/download', [ImportController::class, 'downloadCsv'])->name('import.download');
     });
 
+
+    Route::prefix('/shopify')->name('shopify.')->group(function () {
+        Route::post('webhooks/orders/create', [WebhookController::class, 'ordersCreate']);
+    });
 });

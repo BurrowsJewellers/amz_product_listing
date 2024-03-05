@@ -15,6 +15,7 @@ class RetailEdgeProduct extends Model
         'title',
         'marketing_description',
         'brand_id',
+        'barcode',
         'retail_price1',
         'retail_price2',
         'quantity',
