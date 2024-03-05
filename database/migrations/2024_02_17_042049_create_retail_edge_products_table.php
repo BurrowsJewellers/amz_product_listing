@@ -17,6 +17,7 @@ return new class extends Migration
             $table->string('title');
             $table->text('marketing_description')->nullable();
             $table->string('brand_id')->nullable();
+            $table->string('barcode')->nullable();
             $table->decimal('retail_price1', 10, 2)->default(0);
             $table->decimal('retail_price2', 10, 2)->default(0);
             $table->integer('quantity')->default(0);

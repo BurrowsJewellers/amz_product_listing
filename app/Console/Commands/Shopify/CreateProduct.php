@@ -56,7 +56,7 @@ class CreateProduct extends Command
                 $count = RetailEdgeProduct::where('uploaded_to_shopify', 0)->count();
 
                 while ($count) {
-                    $product = RetailEdgeProduct::with('children')->where('uploaded_to_shopify', 0)->first();
+                    $product = RetailEdgeProduct::with('children')->where('sku', '008-00504')->where('uploaded_to_shopify', 0)->first();
 
                     if ($product) {
                         $variants = [];
@@ -85,7 +85,9 @@ class CreateProduct extends Command
                                 }
 
                                 $variant['price'] = $price;
+                                $variant['barcode'] = $child->barcode;
                                 $variant['compare_at_price'] = ($price == $compareAtPrice) ? 0 : $compareAtPrice;
+                                $variant['inventory_management'] = 'shopify';
 
                                 $vts = array_filter(array_map('trim', array_map('strtolower', explode("-", $child->id3))));
 
@@ -145,6 +147,7 @@ class CreateProduct extends Command
 
                         $data = json_encode($productData);
 
+                        echo $data;
                         try {
                             $client = new Rest($session->getShop(), $session->getAccessToken());
 
@@ -163,9 +166,14 @@ class CreateProduct extends Command
                     }
 
                     $count = RetailEdgeProduct::where('uploaded_to_shopify', 0)->count();
+                    $count = 0;
                 }
+
+                $job->update(['status' => 0, 'message' => null]);
+
                 Log::info("$marketplace $jobType finished!");
             } catch (\Exception $e) {
+                $job->update(['status' => 0, 'message' => $e->getMessage()]);
                 report($e);
                 $this->error($e->getMessage());
             }

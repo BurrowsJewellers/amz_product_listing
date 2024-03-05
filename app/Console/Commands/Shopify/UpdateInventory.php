@@ -61,7 +61,8 @@ class UpdateInventory extends Command
                                 ],
                             );
 
-                            $product->update(['price_inventory_requires_update' => 0]);
+                            $product->update(['inventory_requires_update' => 0]);
+                            $this->info('Inventory updated');
                         } catch (\Exception $e) {
                             report($e);
                         }
@@ -70,9 +71,11 @@ class UpdateInventory extends Command
 
                     $count = ShopifyProductVariant::whereNotNull('inventory_item_id')->where('inventory_requires_update', 1)->count();
                 }
+                $job->update(['status' => 0, 'message' => null]);
+
                 Log::info("$marketplace $jobType finished!");
             } catch (\Exception $e) {
-                $job->update(['status' => 0]);
+                $job->update(['status' => 0, 'message' => $e->getMessage()]);
                 report($e);
                 $this->error($e->getMessage());
             }

@@ -62,7 +62,7 @@ class Kernel extends ConsoleKernel
          */
 
         $schedule->command('shopifyGetProducts')->dailyAt('02:40');
-        $schedule->command('shopifyCreateProduct')->everyThreeHours();
+        // $schedule->command('shopifyCreateProduct')->everyThreeHours();
         $schedule->command('shopifyUpdateInventory')->everyFifteenMinutes();
         $schedule->command('shopifyUpdatePrice')->everyFifteenMinutes();
     }

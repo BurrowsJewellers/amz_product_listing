@@ -60,6 +60,7 @@ class UpdatePrice extends Command
                             $product->update(['price_requires_update' => 0]);
                         } catch (\Exception $e) {
                             report($e);
+                            $this->error($e->getMessage());
                         }
                         usleep(1500000);
                     }
