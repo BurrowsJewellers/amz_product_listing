@@ -7,12 +7,14 @@ use Shopify\Auth\Session;
 use Shopify\Context;
 use Shopify\Auth\FileSessionStorage;
 
-class ShopifyConnectionService {
+class ShopifyConnectionService
+{
 
-    public function getSession(): Session {
+    public function getSession(): Session
+    {
         Context::initialize(
-            apiKey: 'NA',
-            apiSecretKey: 'NA',
+            apiKey: config('shopify.api_key'),
+            apiSecretKey: config('shopify.api_secret_key'),
             scopes: ['NA'],
             hostName: config('shopify.store_name'),
             sessionStorage: new FileSessionStorage(storage_path()),
@@ -21,10 +23,10 @@ class ShopifyConnectionService {
         );
 
         $session = new Session(
-            id:'NA',
+            id: 'NA',
             shop: config('shopify.store_name'),
             isOnline: false,
-            state:'NA'
+            state: 'NA'
         );
 
         $session->setAccessToken(config('shopify.access_token'));
