@@ -91,7 +91,7 @@ class ShopifyService extends ShopifyConnectionService
             DB::commit();
         } catch (\Exception $e) {
             DB::rollBack();
-            report($e);
+            throw $e;
         }
     }
 
@@ -110,8 +110,7 @@ class ShopifyService extends ShopifyConnectionService
                 ]
             );
         } catch (\Exception $e) {
-            report($e);
-            return false;
+            throw $e;
         }
     }
 }
