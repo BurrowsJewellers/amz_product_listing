@@ -59,8 +59,9 @@ class UpdatePrice extends Command
 
                             $product->update(['price_requires_update' => 0]);
                         } catch (\Exception $e) {
-                            report($e);
-                            $this->error($e->getMessage());
+                            Log::debug("There was an error while updating the price to {$product->price} for {$product->sku}. Error message : {$e->getMessage()}");
+                            // report($e);
+                            // $this->error($e->getMessage());
                         }
                         usleep(1500000);
                     }

@@ -39,7 +39,7 @@ class UpdateInventory extends Command
         if (!$job->isRunning()) {
             try {
                 Log::info("$marketplace $jobType started!");
-                $job->update(['status' => 1]);
+                // $job->update(['status' => 1]);
 
                 $location = ShopifyLocation::first();
                 $session = (new ShopifyService)->getSession();
@@ -47,7 +47,7 @@ class UpdateInventory extends Command
                 $count = ShopifyProductVariant::whereNotNull('inventory_item_id')->where('inventory_requires_update', 1)->count();
 
                 while ($count) {
-                    $product = ShopifyProductVariant::whereNotNull('inventory_item_id')->where('inventory_requires_update', 1)->first();
+                    $product = ShopifyProductVariant::with('retailEdgeProduct')->whereNotNull('inventory_item_id')->where('inventory_requires_update', 1)->first();
 
                     if ($product) {
                         try {
@@ -57,14 +57,16 @@ class UpdateInventory extends Command
                                 [
                                     'location_id' => $location->location_id,
                                     'inventory_item_id' => $product->inventory_item_id,
-                                    'available' => $product->inventory_quantity
+                                    'available' => $product->retailEdgeProduct->quantity
                                 ],
                             );
 
-                            $product->update(['inventory_requires_update' => 0]);
+                            $product->update(['inventory_quantity' => $product->retailEdgeProduct->quantity, 'inventory_requires_update' => 0]);
                             $this->info('Inventory updated');
                         } catch (\Exception $e) {
-                            report($e);
+                            Log::debug("There was an error while updating the inventory to {$product->retailEdgeProduct->quantity} for {$product->sku}. Error message : {$e->getMessage()}");
+                            $product->update(['inventory_requires_update' => 2]);
+                            // report($e);
                         }
                         usleep(1500000);
                     }
