@@ -50,4 +50,9 @@ class ShopifyProductVariant extends Model
     {
         return $this->hasMany(RetailEdgeProductImage::class, 'sku', 'sku');
     }
+
+    public function retailEdgeProduct()
+    {
+        return $this->belongsTo(RetailEdgeProduct::class, 'sku', 'sku');
+    }
 }
