@@ -61,6 +61,7 @@ class UploadImages extends Command
                         }
                     }
                     $variant->update(['images_requires_update' => 0]);
+                    $count = ShopifyProductVariant::where('images_requires_update', 1)->with('images')->count();
                 }
 
                 $job->update(['status' => 0]);

@@ -65,6 +65,7 @@ class Kernel extends ConsoleKernel
         // $schedule->command('shopifyCreateProduct')->everyThreeHours();
         $schedule->command('shopifyUpdateInventory')->everyFifteenMinutes();
         $schedule->command('shopifyUpdatePrice')->everyFifteenMinutes();
+        $schedule->command('shopifyUploadImages')->everyThreeHours();
     }
 
     /**
