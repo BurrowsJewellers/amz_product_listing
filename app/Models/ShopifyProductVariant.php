@@ -39,6 +39,7 @@ class ShopifyProductVariant extends Model
         'requires_update',
         'price_requires_update',
         'inventory_requires_update',
+        'images_requires_update',
     ];
 
     public function product()
