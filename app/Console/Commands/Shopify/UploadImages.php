@@ -41,9 +41,10 @@ class UploadImages extends Command
                 $job->update(['status' => 1]);
                 $session = (new ShopifyService)->getSession();
 
-                $variants = ShopifyProductVariant::with('images')->get();
+                $count = ShopifyProductVariant::where('images_requires_update', 1)->with('images')->count();
 
-                foreach ($variants as $variant) {
+                while ($count) {
+                    $variant = ShopifyProductVariant::where('images_requires_update', 1)->with('images')->first();
                     if ($variant->images) {
                         foreach ($variant->images as $i) {
                             $image = new Image($session);
@@ -56,17 +57,19 @@ class UploadImages extends Command
                             $image->save(
                                 true, // Update Object
                             );
-                            $this->info('Image uploaded.');
+                            $this->info("Image uploaded for variant {$variant->variant_id}");
                         }
                     }
+                    $variant->update(['images_requires_update' => 0]);
                 }
 
                 $job->update(['status' => 0]);
 
                 Log::info("$marketplace $jobType finished!");
             } catch (\Exception $e) {
-                $job->update(['status' => 0]);
+                $job->update(['status' => 0, 'message' => $e->getMessage()]);
                 report($e);
+                $this->error($e->getMessage());
             }
         } else {
             Log::info("$marketplace $jobType is already running.");

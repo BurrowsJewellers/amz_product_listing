@@ -70,7 +70,7 @@ class UpdatePrice extends Command
                 }
                 Log::info("$marketplace $jobType finished!");
             } catch (\Exception $e) {
-                $job->update(['status' => 0]);
+                $job->update(['status' => 0, 'message' => $e->getMessage()]);
                 report($e);
                 $this->error($e->getMessage());
             }
