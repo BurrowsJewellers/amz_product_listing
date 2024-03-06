@@ -41,7 +41,19 @@ class ShopifyService extends ShopifyConnectionService
                         ]
                     );
                 } else {
-                    $shopifyProduct = ShopifyProduct::where(['product_id' => $productData['id']])->first();
+                    $shopifyProduct = ShopifyProduct::updateOrCreate(
+                        [
+                            'product_id' => $productData['id']
+                        ],
+                        [
+                            'title' => $productData['title'],
+                            'vendor' => $productData['vendor'],
+                            'product_type' => $productData['product_type'],
+                            'handle' => $productData['handle'],
+                            'tags' => $productData['tags'],
+                            'status' => $productData['status'],
+                        ]
+                    );
 
                     $shopifyProductVariant = ShopifyProductVariant::create(
                         [
