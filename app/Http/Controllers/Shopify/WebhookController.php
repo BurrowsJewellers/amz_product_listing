@@ -22,6 +22,11 @@ class WebhookController extends Controller
     public function ordersCreate(Request $request)
     {
         try {
+            Log::info('Request Headers: ', $request->header());
+
+            // Log request body
+            Log::info('Request Body: ', $request->all());
+
             Registry::addHandler(Topics::ORDERS_CREATE, new OrderCreated());
             $response = Registry::process($request->header(), $request->getContent());
 
