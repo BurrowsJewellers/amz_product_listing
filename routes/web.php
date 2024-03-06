@@ -22,6 +22,10 @@ use App\Http\Controllers\Shopify\WebhookController;
 |
 */
 
+Route::prefix('/shopify')->name('shopify.')->group(function () {
+    Route::post('webhooks/orders/create', [WebhookController::class, 'ordersCreate']);
+});
+
 
 Route::middleware(['auth'])->group(function () {
     Route::get('/', function () {
@@ -50,10 +54,5 @@ Route::middleware(['auth'])->group(function () {
 
         Route::get('/imports', [ImportController::class, 'index'])->name('imports.index');
         Route::get('/import/download', [ImportController::class, 'downloadCsv'])->name('import.download');
-    });
-
-
-    Route::prefix('/shopify')->name('shopify.')->group(function () {
-        Route::post('webhooks/orders/create', [WebhookController::class, 'ordersCreate']);
     });
 });
