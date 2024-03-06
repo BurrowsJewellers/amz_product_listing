@@ -68,6 +68,7 @@ class UpdatePrice extends Command
                     }
 
                     $count = ShopifyProductVariant::whereNotNull('variant_id')->where('price_requires_update', 1)->count();
+                    $this->info("Remaining {$count}");
                 }
                 Log::info("$marketplace $jobType finished!");
             } catch (\Exception $e) {

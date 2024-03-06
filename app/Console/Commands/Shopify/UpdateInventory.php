@@ -72,7 +72,9 @@ class UpdateInventory extends Command
                     }
 
                     $count = ShopifyProductVariant::whereNotNull('inventory_item_id')->where('inventory_requires_update', 1)->count();
+                    $this->info("Remaining {$count}");
                 }
+
                 $job->update(['status' => 0, 'message' => null]);
 
                 Log::info("$marketplace $jobType finished!");
