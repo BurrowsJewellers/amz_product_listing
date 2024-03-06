@@ -19,7 +19,7 @@ return new class extends Migration
             $table->string('title')->nullable();
             $table->decimal('price')->default(0);
             $table->decimal('compare_at_price')->default(0);
-            $table->string('sku')->unique();
+            $table->string('sku')->nullable();
             $table->string('old_key')->nullable();
             $table->smallInteger('position')->default(1);
             $table->string('inventory_policy')->nullable();
