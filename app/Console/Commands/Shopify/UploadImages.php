@@ -42,22 +42,29 @@ class UploadImages extends Command
                 $session = (new ShopifyService)->getSession();
 
                 $count = ShopifyProductVariant::where('images_requires_update', 1)->with('images')->count();
+                $this->info("Remaining {$count}");
 
                 while ($count) {
                     $variant = ShopifyProductVariant::where('images_requires_update', 1)->with('images')->first();
                     if ($variant->images) {
                         foreach ($variant->images as $i) {
-                            $image = new Image($session);
-                            $image->product_id = $variant->product_id;
-                            $image->src = $i->url;
-                            $image->variant_ids = [
-                                $variant->variant_id
-                            ];
+                            try {
+                                $image = new Image($session);
+                                $image->product_id = $variant->product_id;
+                                $image->src = $i->url;
+                                $image->variant_ids = [
+                                    $variant->variant_id
+                                ];
 
-                            $image->save(
-                                true, // Update Object
-                            );
-                            $this->info("Image uploaded for variant {$variant->variant_id}");
+                                $image->save(
+                                    true, // Update Object
+                                );
+                                $this->info("Image uploaded for variant {$variant->variant_id}");
+                                $variant->update(['images_requires_update' => 0]);
+                            } catch (\Exception $e) {
+                                Log::debug("There was an error while uploading the images for {$variant->sku}. Error message : {$e->getMessage()}");
+                                $variant->update(['images_requires_update' => 2]);
+                            }
                         }
                     }
                     $variant->update(['images_requires_update' => 0]);

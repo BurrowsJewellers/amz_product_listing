@@ -43,6 +43,7 @@ class UpdatePrice extends Command
                 $session = (new ShopifyService)->getSession();
 
                 $count = ShopifyProductVariant::whereNotNull('variant_id')->where('price_requires_update', 1)->count();
+                $this->info("Remaining {$count}");
 
                 while ($count) {
                     $product = ShopifyProductVariant::whereNotNull('variant_id')->where('price_requires_update', 1)->first();
@@ -58,10 +59,10 @@ class UpdatePrice extends Command
                             );
 
                             $product->update(['price_requires_update' => 0]);
+                            $this->info("Price updated for variant {$variant->variant_id}");
                         } catch (\Exception $e) {
                             Log::debug("There was an error while updating the price to {$product->price} for {$product->sku}. Error message : {$e->getMessage()}");
-                            // report($e);
-                            // $this->error($e->getMessage());
+                            $product->update(['price_requires_update' => 2]);
                         }
                         usleep(1500000);
                     }
