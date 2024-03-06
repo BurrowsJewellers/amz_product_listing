@@ -4,6 +4,7 @@ namespace App\Console\Commands\Shopify;
 
 use App\Http\Controllers\SyncJobController;
 use App\Models\ShopifyLocation;
+use App\Models\ShopifyProduct;
 use App\Services\ShopifyService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -118,6 +119,7 @@ class GetProducts extends Command
         try {
             $nextPage = true;
             $getNextPageQuery = [];
+            $productIds = [];
 
             while ($nextPage) {
                 $session = (new ShopifyService)->getSession();
@@ -132,6 +134,7 @@ class GetProducts extends Command
                     foreach ($body['products'] as $productData) {
                         try {
                             $this->info('product id : ' . $productData['id']);
+                            $productIds[] = $productData['id'];
                             // if ($productData['status'] !== 'archived') {
                             (new ShopifyService)->saveProductToDb($productData);
                             // }
@@ -154,6 +157,8 @@ class GetProducts extends Command
                     $nextPage = false;
                 }
             }
+
+            ShopifyProduct::whereNotIn('product_id', $productIds)->delete();
         } catch (\Exception $e) {
             throw $e;
         }
