@@ -95,7 +95,7 @@ class ShopifyService extends ShopifyConnectionService
         }
     }
 
-    public function saveInventoryLevelToDb($inventoryLevelData): bool
+    public function saveInventoryLevelToDb($inventoryLevelData)
     {
         try {
             return ShopifyInventoryLevel::updateOrCreate(
