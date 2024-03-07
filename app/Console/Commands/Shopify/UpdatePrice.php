@@ -67,19 +67,25 @@ class UpdatePrice extends Command
                                 $compareAtPrice = max($prices);
                             }
 
+                            $compareAtPrice = ($price == $compareAtPrice) ? 0 : $compareAtPrice;
+
+                            $update = [];
                             if ($price > 0) {
                                 $v = new Variant($session);
                                 $v->id = $variant->variant_id;
                                 $v->price = $price;
-                                $v->compare_at_price = ($price == $compareAtPrice) ? 0 : $compareAtPrice;
+                                $v->compare_at_price = $compareAtPrice;
                                 $v->save(
                                     true, // Update Object
                                 );
 
+                                $update['price'] = $v->price;
+                                $update['compare_at_price'] = $v->compare_at_price;
+
                                 $this->info("Price updated for variant {$variant->variant_id}");
                             }
 
-                            $variant->update(['price_requires_update' => 0]);
+                            $variant->update(array_merge($update, ['price_requires_update' => 0]));
                         } catch (\Exception $e) {
                             Log::debug("There was an error while updating the price to {$variant->price} for {$variant->sku}. Error message : {$e->getMessage()}");
                             $variant->update(['price_requires_update' => 2]);
