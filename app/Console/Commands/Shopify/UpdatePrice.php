@@ -82,7 +82,7 @@ class UpdatePrice extends Command
                                 $update['price'] = $v->price;
                                 $update['compare_at_price'] = $v->compare_at_price;
 
-                                $this->info("Price updated for variant {$variant->variant_id}");
+                                $this->info("Price updated for sku {$variant->sku}, variant id {$variant->variant_id}");
                             }
 
                             $variant->update(array_merge($update, ['price_requires_update' => 0]));

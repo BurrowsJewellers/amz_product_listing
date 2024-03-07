@@ -63,7 +63,7 @@ class UpdateInventory extends Command
                             );
 
                             $variant->update(['inventory_quantity' => $variant->retailEdgeProduct->quantity, 'inventory_requires_update' => 0]);
-                            $this->info("Inventory updated for variant {$variant->variant_id}");
+                            $this->info("Inventory updated for sku {$variant->sku}, variant id {$variant->variant_id}");
                         } catch (\Exception $e) {
                             Log::debug("There was an error while updating the inventory to {$variant->retailEdgeProduct->quantity} for {$variant->sku}. Error message : {$e->getMessage()}");
                             $variant->update(['inventory_requires_update' => 2]);

@@ -59,7 +59,7 @@ class UploadImages extends Command
                                 $image->save(
                                     true, // Update Object
                                 );
-                                $this->info("Image uploaded for variant {$variant->variant_id}");
+                                $this->info("Image uploaded for sku {$variant->sku}, variant id  {$variant->variant_id}");
                                 $variant->update(['images_requires_update' => 0]);
                             } catch (\Exception $e) {
                                 Log::debug("There was an error while uploading the images for {$variant->sku}. Error message : {$e->getMessage()}");
