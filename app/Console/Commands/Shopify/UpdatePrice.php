@@ -46,23 +46,43 @@ class UpdatePrice extends Command
                 $this->info("Remaining {$count}");
 
                 while ($count) {
-                    $product = ShopifyProductVariant::whereNotNull('variant_id')->where('price_requires_update', 1)->first();
+                    $variant = ShopifyProductVariant::with('retailEdgeProduct')->whereNotNull('variant_id')->where('price_requires_update', 1)->first();
 
-                    if ($product) {
+                    if ($variant) {
                         try {
-                            $variant = new Variant($session);
-                            $variant->id = $product->variant_id;
-                            $variant->price = $product->price;
-                            $variant->compare_at_price = $product->compare_at_price;
-                            $variant->save(
-                                true, // Update Object
-                            );
+                            $retailPrices = [$variant->retailEdgeProduct->retail_price1, $variant->retailEdgeProduct->retail_price2];
 
-                            $product->update(['price_requires_update' => 0]);
-                            $this->info("Price updated for variant {$variant->variant_id}");
+                            // Convert all prices to float and filter out non-positive values
+                            $prices = array_filter(array_map('floatval', $retailPrices), function ($price) {
+                                return $price > 0;
+                            });
+
+                            // Set default values
+                            $price = 0;
+                            $compareAtPrice = 0;
+
+                            // Find the lower price and higher compare_at_price
+                            if (!empty($prices)) {
+                                $price = min($prices);
+                                $compareAtPrice = max($prices);
+                            }
+
+                            if ($price > 0) {
+                                $v = new Variant($session);
+                                $v->id = $variant->variant_id;
+                                $v->price = $price;
+                                $v->compare_at_price = ($price == $compareAtPrice) ? 0 : $compareAtPrice;
+                                $v->save(
+                                    true, // Update Object
+                                );
+
+                                $this->info("Price updated for variant {$variant->variant_id}");
+                            }
+
+                            $variant->update(['price_requires_update' => 0]);
                         } catch (\Exception $e) {
-                            Log::debug("There was an error while updating the price to {$product->price} for {$product->sku}. Error message : {$e->getMessage()}");
-                            $product->update(['price_requires_update' => 2]);
+                            Log::debug("There was an error while updating the price to {$variant->price} for {$variant->sku}. Error message : {$e->getMessage()}");
+                            $variant->update(['price_requires_update' => 2]);
                         }
                         usleep(1500000);
                     }
