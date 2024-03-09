@@ -42,6 +42,7 @@ return new class extends Migration
             $table->boolean('requires_update')->default(false);
             $table->boolean('price_requires_update')->default(false);
             $table->boolean('inventory_requires_update')->default(false);
+            $table->boolean('images_requires_update')->default(false);
             $table->timestamps();
         });
     }
