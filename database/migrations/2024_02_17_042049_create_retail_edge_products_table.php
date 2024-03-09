@@ -20,6 +20,8 @@ return new class extends Migration
             $table->string('barcode')->nullable();
             $table->decimal('retail_price1', 10, 2)->default(0);
             $table->decimal('retail_price2', 10, 2)->default(0);
+            $table->decimal('price', 10, 2)->default(0);
+            $table->decimal('compare_at_price', 10, 2)->default(0);
             $table->integer('quantity')->default(0);
             $table->string('id1')->nullable();
             $table->string('id2')->nullable();

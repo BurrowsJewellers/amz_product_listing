@@ -50,42 +50,17 @@ class UpdatePrice extends Command
 
                     if ($variant) {
                         try {
-                            $retailPrices = [$variant->retailEdgeProduct->retail_price1, $variant->retailEdgeProduct->retail_price2];
+                            $v = new Variant($session);
+                            $v->id = $variant->variant_id;
+                            $v->price = $variant->price;
+                            $v->compare_at_price = $variant->compare_at_price;
+                            $v->save(
+                                true, // Update Object
+                            );
 
-                            // Convert all prices to float and filter out non-positive values
-                            $prices = array_filter(array_map('floatval', $retailPrices), function ($price) {
-                                return $price > 0;
-                            });
+                            $this->info("Price updated for sku {$variant->sku}, variant id {$variant->variant_id}");
 
-                            // Set default values
-                            $price = 0;
-                            $compareAtPrice = 0;
-
-                            // Find the lower price and higher compare_at_price
-                            if (!empty($prices)) {
-                                $price = min($prices);
-                                $compareAtPrice = max($prices);
-                            }
-
-                            $compareAtPrice = ($price == $compareAtPrice) ? 0 : $compareAtPrice;
-
-                            $update = [];
-                            if ($price > 0) {
-                                $v = new Variant($session);
-                                $v->id = $variant->variant_id;
-                                $v->price = $price;
-                                $v->compare_at_price = $compareAtPrice;
-                                $v->save(
-                                    true, // Update Object
-                                );
-
-                                $update['price'] = $v->price;
-                                $update['compare_at_price'] = $v->compare_at_price;
-
-                                $this->info("Price updated for sku {$variant->sku}, variant id {$variant->variant_id}");
-                            }
-
-                            $variant->update(array_merge($update, ['price_requires_update' => 0]));
+                            $variant->update(['price' => $variant->price, 'compare_at_price' => $variant->compare_at_price, 'price_requires_update' => 0]);
                         } catch (\Exception $e) {
                             Log::debug("There was an error while updating the price to {$variant->price} for {$variant->sku}. Error message : {$e->getMessage()}");
                             $variant->update(['price_requires_update' => 2]);

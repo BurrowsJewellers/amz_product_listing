@@ -71,6 +71,26 @@ class GetProductsFromEWeb extends Command
                             $item->{$keyName} = trim($other->Value);
                         }
 
+
+                        $retailPrices = [$item->RetailPrice, $item->RetailPrice2];
+
+                        // Convert all prices to float and filter out non-positive values
+                        $prices = array_filter(array_map('floatval', $retailPrices), function ($price) {
+                            return $price > 0;
+                        });
+
+                        // Set default values
+                        $price = 0;
+                        $compareAtPrice = 0;
+
+                        // Find the lower price and higher compare_at_price
+                        if (!empty($prices)) {
+                            $price = min($prices);
+                            $compareAtPrice = max($prices);
+                        }
+
+                        $compareAtPrice = ($price == $compareAtPrice) ? 0 : $compareAtPrice;
+
                         RetailEdgeProduct::create(
                             [
                                 'sku' => $sku,
@@ -80,6 +100,8 @@ class GetProductsFromEWeb extends Command
                                 'barcode' => trim($item->Barcode),
                                 'retail_price1' => $item->RetailPrice,
                                 'retail_price2' => $item->RetailPrice2,
+                                'price' => $price,
+                                'compare_at_price' => $compareAtPrice,
                                 'quantity' => intval($item->TotalAvailQOH),
                                 'id1' => trim($item->ID1),
                                 'id2' => trim($item->ID2),
@@ -165,18 +187,21 @@ class GetProductsFromEWeb extends Command
             $sql = "UPDATE shopify_product_variants
                 JOIN retail_edge_products ON shopify_product_variants.sku = retail_edge_products.sku
                 SET
+                    shopify_product_variants.price = retail_edge_products.price,
+                    shopify_product_variants.compare_at_price = retail_edge_products.compare_at_price,
                     shopify_product_variants.inventory_quantity = retail_edge_products.quantity,
                     shopify_product_variants.inventory_requires_update = CASE
                         WHEN shopify_product_variants.inventory_quantity <> retail_edge_products.quantity THEN 1
                         ELSE shopify_product_variants.inventory_requires_update
                     END,
                     shopify_product_variants.price_requires_update = CASE
-                        WHEN retail_edge_products.retail_price1 <> shopify_product_variants.price THEN 1
+                        WHEN shopify_product_variants.price <> retail_edge_products.price OR shopify_product_variants.compare_at_price <> retail_edge_products.compare_at_price THEN 1
                         ELSE shopify_product_variants.price_requires_update
                     END
                 WHERE
                     shopify_product_variants.inventory_quantity <> retail_edge_products.quantity
-                    OR retail_edge_products.retail_price1 <> shopify_product_variants.price;
+                    OR shopify_product_variants.price <> retail_edge_products.price 
+                    OR shopify_product_variants.compare_at_price <> retail_edge_products.compare_at_price;
             ";
             DB::update($sql);
             Log::info("$marketplace $jobType finished!");

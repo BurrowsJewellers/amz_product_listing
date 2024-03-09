@@ -18,6 +18,8 @@ class RetailEdgeProduct extends Model
         'barcode',
         'retail_price1',
         'retail_price2',
+        'price',
+        'compare_at_price',
         'quantity',
         'id1',
         'id2',
