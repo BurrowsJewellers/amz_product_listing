@@ -3,8 +3,6 @@
 namespace App\Console\Commands\Shopify;
 
 use App\Http\Controllers\SyncJobController;
-use App\Models\ShopifyLocation;
-use App\Models\ShopifyProduct;
 use App\Models\ShopifyWebhook;
 use App\Services\ShopifyService;
 use Carbon\Carbon;

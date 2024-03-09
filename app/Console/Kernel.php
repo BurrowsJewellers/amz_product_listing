@@ -66,6 +66,7 @@ class Kernel extends ConsoleKernel
         $schedule->command('shopifyUpdateInventory')->everyFifteenMinutes();
         $schedule->command('shopifyUpdatePrice')->everyFifteenMinutes();
         $schedule->command('shopifyUploadImages')->everyThreeHours();
+        $schedule->command('shopifyArchiveProducts')->cron('20 */3 * * *');
     }
 
     /**

@@ -39,7 +39,7 @@ class UpdateInventory extends Command
         if (!$job->isRunning()) {
             try {
                 Log::info("$marketplace $jobType started!");
-                // $job->update(['status' => 1]);
+                $job->update(['status' => 1]);
 
                 $location = ShopifyLocation::first();
                 $session = (new ShopifyService)->getSession();
