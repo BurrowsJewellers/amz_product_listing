@@ -70,7 +70,7 @@ class ArchiveProducts extends Command
                         try {
                             $status = 'archived';
                             $product = new Product($session);
-                            $product->id = $p['product_id'];
+                            $product->id = $p->product_id;
                             $product->status = $status;
                             $product->save(
                                 true,

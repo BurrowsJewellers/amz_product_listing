@@ -12,12 +12,14 @@ class ShopifyProduct extends Model
 
     protected $fillable = [
         'product_id',
+        'sku',
         'title',
         'vendor',
         'product_type',
         'handle',
         'tags',
         'status',
+        'requires_update',
     ];
 
     public function variants()

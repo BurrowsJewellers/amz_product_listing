@@ -9,6 +9,7 @@ use Shopify\Clients\Rest;
 use App\Models\Brand;
 use App\Models\RetailEdgeProduct;
 use App\Services\ShopifyService;
+use Illuminate\Support\Facades\DB;
 
 class CreateProduct extends Command
 {
@@ -41,6 +42,18 @@ class CreateProduct extends Command
                 Log::info("$marketplace $jobType started!");
                 $job->update(['status' => 1]);
 
+                $pendingProducts = DB::select("SELECT rep.id, rep.sku
+                    FROM retail_edge_products rep
+                    LEFT JOIN shopify_product_variants spv ON rep.sku = spv.sku
+                    WHERE spv.id IS NULL;
+                ");
+
+                $pendingProductIds = [];
+
+                foreach ($pendingProducts as $p) {
+                    $pendingProductIds[] = $p->id;
+                }
+
                 $session = (new ShopifyService)->getSession();
                 $variantTypes = ['vt1' => 'Size', 'vt2' => 'Color', 'vt3' => 'Material', 'vt4' => 'Style'];
 
@@ -53,10 +66,16 @@ class CreateProduct extends Command
                     $brandsArray[$brand->brand_id]['name'] = $brand->name;
                 }
 
-                $count = RetailEdgeProduct::where('uploaded_to_shopify', 0)->count();
+                $countQuery = RetailEdgeProduct::whereIn('id', $pendingProductIds)->whereHas('children', function ($children) {
+                    $children->where('uploaded_to_shopify', 0);
+                });
+
+                $count = $countQuery->count();
 
                 while ($count) {
-                    $product = RetailEdgeProduct::with('children')->where('sku', '008-00504')->where('uploaded_to_shopify', 0)->first();
+                    $product = RetailEdgeProduct::withWhereHas('children', function ($children) {
+                        $children->where('uploaded_to_shopify', 0);
+                    })->first();
 
                     if ($product) {
                         $variants = [];
@@ -158,6 +177,10 @@ class CreateProduct extends Command
                             if (isset($body['product'])) {
                                 (new ShopifyService)->saveProductToDb($body['product']);
                                 $this->info($body['product']['title'] . ' - saved to database');
+
+                                foreach ($product->children as $child) {
+                                    $child->update(['uploaded_to_shopify' => 1]);
+                                }
                             }
                         } catch (\Exception $e) {
                             report($e);
@@ -165,8 +188,7 @@ class CreateProduct extends Command
                         usleep(1500000);
                     }
 
-                    $count = RetailEdgeProduct::where('uploaded_to_shopify', 0)->count();
-                    $count = 0;
+                    $count = $countQuery->count();
                 }
 
                 $job->update(['status' => 0, 'message' => null]);

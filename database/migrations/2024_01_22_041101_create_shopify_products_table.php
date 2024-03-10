@@ -14,12 +14,14 @@ return new class extends Migration
         Schema::create('shopify_products', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('product_id')->nullable()->unique();
+            $table->string('sku')->nullable();
             $table->string('title');
             $table->string('vendor')->nullable();
             $table->string('product_type')->nullable();
             $table->string('handle')->nullable();
             $table->text('tags')->nullable();
             $table->string('status')->nullable();
+            $table->boolean('requires_update')->default(false);
             $table->timestamps();
             $table->softDeletes();
         });

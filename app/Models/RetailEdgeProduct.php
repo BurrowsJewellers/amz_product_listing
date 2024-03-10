@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class RetailEdgeProduct extends Model
@@ -50,6 +51,11 @@ class RetailEdgeProduct extends Model
     public function children(): HasMany
     {
         return $this->hasMany(RetailEdgeProduct::class, 'old_key', 'sku');
+    }
+
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(RetailEdgeProduct::class, 'old_key', 'sku');
     }
 
     public function images(): HasMany
