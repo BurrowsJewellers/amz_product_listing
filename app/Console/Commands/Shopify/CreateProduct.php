@@ -163,6 +163,7 @@ class CreateProduct extends Command
                             'body_html' => $product->marketing_description,
                             'variants' => $variants,
                             'options' => $options,
+                            'product_type' => $product->s_cat,
                         ];
 
                         $data = json_encode($productData);
