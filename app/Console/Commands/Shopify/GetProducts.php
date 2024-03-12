@@ -138,7 +138,7 @@ class GetProducts extends Command
                             $this->info('product id : ' . $productData['id']);
                             $productIds[] = $productData['id'];
                             // if ($productData['status'] !== 'archived') {
-                            (new ShopifyService)->saveProductToDb($productData);
+                            (new ShopifyService)->saveProductToDb(array_values($productData));
                             // }
                         } catch (\Exception $e) {
                             $this->error($e->getMessage());
@@ -225,20 +225,23 @@ class GetProducts extends Command
 
     public function deleteShopifyProductFromDb($productIds)
     {
-        DB::statement('SET FOREIGN_KEY_CHECKS = 0;');
+        // DB::statement('SET FOREIGN_KEY_CHECKS = 0;');
         $shopifyProducts = ShopifyProduct::whereNotIn('product_id', $productIds)->with('variants')->get();
 
         foreach ($shopifyProducts as $shopifyProduct) {
             try {
-                ShopifyInventoryLevel::where('inventory_item_id', $shopifyProduct->variant->inventory_item_id)->delete();
-                $shopifyProduct->variant->delete();
+                foreach ($shopifyProduct->variants as $variant) {
+                    ShopifyInventoryLevel::where('inventory_item_id', $variant->inventory_item_id)->delete();
+                    $variant->delete();
+                }
                 $shopifyProduct->forceDelete();
             } catch (\Exception $e) {
+                DB::statement('SET FOREIGN_KEY_CHECKS = 1;');
                 $message = 'Error while deleting shopify product. ' . $e->getMessage();
                 $this->info($message);
                 Log::debug($message);
             }
         }
-        DB::statement('SET FOREIGN_KEY_CHECKS = 1;');
+        // DB::statement('SET FOREIGN_KEY_CHECKS = 1;');
     }
 }
