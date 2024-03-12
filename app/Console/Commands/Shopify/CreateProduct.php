@@ -79,6 +79,7 @@ class CreateProduct extends Command
                     })->first();
 
                     if ($product) {
+                        $this->info('======================================');
                         $variants = [];
                         $variantOptions = [];
                         if ($product->children->count()) {
@@ -170,7 +171,6 @@ class CreateProduct extends Command
 
 
                         $this->info($data);
-                        $this->info('======================================');
                         try {
                             $client = new Rest($session->getShop(), $session->getAccessToken());
 

@@ -79,6 +79,9 @@ class ShopifyService extends ShopifyConnectionService
                             'inventory_quantity' => $variant['inventory_quantity'],
                             'old_inventory_quantity' => isset($variant['old_inventory_quantity']) ? $variant['old_inventory_quantity'] : 0,
                             'requires_shipping' => $variant['requires_shipping'],
+                            'price_requires_update' => 1,
+                            'inventory_requires_update' => 1,
+                            'images_requires_update' => 1,
                         ]
                     );
                 }
