@@ -3,10 +3,12 @@
 namespace App\Console\Commands\Shopify;
 
 use App\Http\Controllers\SyncJobController;
+use App\Models\ShopifyInventoryLevel;
 use App\Models\ShopifyLocation;
 use App\Models\ShopifyProduct;
 use App\Services\ShopifyService;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Shopify\Clients\Rest;
 
@@ -158,7 +160,7 @@ class GetProducts extends Command
                 }
             }
 
-            ShopifyProduct::whereNotIn('product_id', $productIds)->delete();
+            $this->deleteShopifyProductFromDb($productIds);
         } catch (\Exception $e) {
             throw $e;
         }
@@ -219,5 +221,23 @@ class GetProducts extends Command
         } catch (\Exception $e) {
             throw $e;
         }
+    }
+
+    public function deleteShopifyProductFromDb($productIds)
+    {
+        DB::statement('SET FOREIGN_KEY_CHECKS = 0;');
+        $shopifyProducts = ShopifyProduct::whereNotIn('product_id', $productIds)->with('variants')->get();
+
+        foreach ($shopifyProducts as $shopifyProduct) {
+            try {
+                ShopifyInventoryLevel::where('inventory_item_id', $shopifyProduct->variant->inventory_item_id)->delete();
+                $shopifyProduct->variant->delete();
+                $shopifyProduct->forceDelete();
+            } catch (\Exception $e) {
+                $message = 'Error while deleting shopify product. ' . $e->getMessage();
+                $this->info($message);
+            }
+        }
+        DB::statement('SET FOREIGN_KEY_CHECKS = 1;');
     }
 }
