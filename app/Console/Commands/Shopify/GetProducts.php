@@ -230,6 +230,27 @@ class GetProducts extends Command
 
         foreach ($shopifyProducts as $shopifyProduct) {
             try {
+                $shopifyProduct->forceDelete();
+                $message = 'Product deleted successfully: ' . $shopifyProduct->product_id;
+                $this->info($message);
+                Log::debug($message);
+            } catch (\Exception $e) {
+                DB::statement('SET FOREIGN_KEY_CHECKS = 1;');
+                $message = 'Error while deleting shopify product. ' . $e->getMessage();
+                $this->info($message);
+                Log::debug($message);
+            }
+        }
+        // DB::statement('SET FOREIGN_KEY_CHECKS = 1;');
+    }
+
+    public function deleteShopifyProductFromDbBackup($productIds)
+    {
+        // DB::statement('SET FOREIGN_KEY_CHECKS = 0;');
+        $shopifyProducts = ShopifyProduct::whereNotIn('product_id', $productIds)->with('variants')->get();
+
+        foreach ($shopifyProducts as $shopifyProduct) {
+            try {
                 foreach ($shopifyProduct->variants as $variant) {
                     ShopifyInventoryLevel::where('inventory_item_id', $variant->inventory_item_id)->delete();
                     $variant->delete();

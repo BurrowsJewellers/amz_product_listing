@@ -13,8 +13,8 @@ return new class extends Migration
     {
         Schema::create('shopify_inventory_levels', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('location_id')->references('location_id')->on('shopify_locations');
-            $table->foreignId('inventory_item_id')->references('inventory_item_id')->on('shopify_product_variants');
+            $table->foreignId('location_id')->references('location_id')->on('shopify_locations')->cascadeOnDelete();
+            $table->foreignId('inventory_item_id')->references('inventory_item_id')->on('shopify_product_variants')->cascadeOnDelete();
             $table->smallInteger('available')->default(0);
             $table->timestamp('inventory_updated_at')->nullable();
             $table->boolean('requires_update')->default(false);
