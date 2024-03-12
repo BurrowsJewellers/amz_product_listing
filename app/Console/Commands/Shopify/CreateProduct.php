@@ -73,6 +73,7 @@ class CreateProduct extends Command
                 $count = $countQuery->count();
 
                 while ($count) {
+                    $this->info('Count: ' . $count);
                     $product = RetailEdgeProduct::withWhereHas('children', function ($children) {
                         $children->where('uploaded_to_shopify', 0);
                     })->first();
@@ -166,7 +167,9 @@ class CreateProduct extends Command
 
                         $data = json_encode($productData);
 
-                        echo $data;
+
+                        $this->info($data);
+                        $this->info('======================================');
                         try {
                             $client = new Rest($session->getShop(), $session->getAccessToken());
 
@@ -182,6 +185,11 @@ class CreateProduct extends Command
                                 foreach ($product->children as $child) {
                                     $child->update(['uploaded_to_shopify' => 1]);
                                 }
+                            } else {
+                                $message = 'Error while creating product : ' . $product->title;
+                                Log::debug($message);
+                                Log::debug($body);
+                                $this->info($message);
                             }
                         } catch (\Exception $e) {
                             report($e);
