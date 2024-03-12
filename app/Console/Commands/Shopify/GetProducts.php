@@ -234,7 +234,10 @@ class GetProducts extends Command
                     ShopifyInventoryLevel::where('inventory_item_id', $variant->inventory_item_id)->delete();
                     $variant->delete();
                 }
+                $message = 'Product deleted successfully: ' . $shopifyProduct->product_id;
                 $shopifyProduct->forceDelete();
+                $this->info($message);
+                Log::debug($message);
             } catch (\Exception $e) {
                 DB::statement('SET FOREIGN_KEY_CHECKS = 1;');
                 $message = 'Error while deleting shopify product. ' . $e->getMessage();
