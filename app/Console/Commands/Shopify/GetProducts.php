@@ -138,7 +138,7 @@ class GetProducts extends Command
                             $this->info('product id : ' . $productData['id']);
                             $productIds[] = $productData['id'];
                             // if ($productData['status'] !== 'archived') {
-                            (new ShopifyService)->saveProductToDb(array_values($productData));
+                            (new ShopifyService)->saveProductToDb($productData);
                             // }
                         } catch (\Exception $e) {
                             $this->error($e->getMessage());
@@ -160,7 +160,7 @@ class GetProducts extends Command
                 }
             }
 
-            $this->deleteShopifyProductFromDb($productIds);
+            $this->deleteShopifyProductFromDb(array_values($productIds));
         } catch (\Exception $e) {
             throw $e;
         }
