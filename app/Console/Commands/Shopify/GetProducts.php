@@ -236,6 +236,7 @@ class GetProducts extends Command
             } catch (\Exception $e) {
                 $message = 'Error while deleting shopify product. ' . $e->getMessage();
                 $this->info($message);
+                Log::debug($message);
             }
         }
         DB::statement('SET FOREIGN_KEY_CHECKS = 1;');
