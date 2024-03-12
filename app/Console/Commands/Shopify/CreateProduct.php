@@ -186,7 +186,11 @@ class CreateProduct extends Command
                                     $child->update(['uploaded_to_shopify' => 1]);
                                 }
                             } else {
-                                $message = 'Error while creating product : ' . $product->title;
+                                foreach ($product->children as $child) {
+                                    $child->update(['uploaded_to_shopify' => 2]);
+                                }
+
+                                $message = 'Error while creating product. Sku :' . $product->sku . ', title: '  . $product->title;
                                 Log::debug($message);
                                 Log::debug($body);
                                 $this->info($message);
