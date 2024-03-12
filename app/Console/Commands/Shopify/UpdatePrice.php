@@ -58,7 +58,7 @@ class UpdatePrice extends Command
                                 true, // Update Object
                             );
 
-                            $this->info("Price updated for sku {$variant->sku}, variant id {$variant->variant_id}");
+                            $this->info("Price updated for id {$variant->id}, sku {$variant->sku}, variant id {$variant->variant_id}");
 
                             $variant->update(['price' => $variant->price, 'compare_at_price' => $variant->compare_at_price, 'price_requires_update' => 0]);
                         } catch (\Exception $e) {
