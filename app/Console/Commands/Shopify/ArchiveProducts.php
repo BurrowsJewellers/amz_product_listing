@@ -76,13 +76,13 @@ class ArchiveProducts extends Command
                                 true,
                             );
 
-                            ShopifyProduct::where('id', $p['pid'])->update(['status' => $status]);
+                            ShopifyProduct::where('id', $p->pid)->update(['status' => $status]);
 
-                            $msg = $p['title'] . ' marked as ' . $status;
+                            $msg = $p->title . ' marked as ' . $status;
                             $this->info($msg);
                             Log::debug($msg);
                         } catch (\Exception $e) {
-                            $msg = 'There was an error while upading the status of ' . $p['title'] . ' to ' . $status;
+                            $msg = 'There was an error while upading the status of ' . $p->title . ' to ' . $status;
                             Log::debug($msg);
                             $this->error($msg);
                         }
