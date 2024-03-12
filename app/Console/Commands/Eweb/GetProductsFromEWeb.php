@@ -100,8 +100,8 @@ class GetProductsFromEWeb extends Command
                                 'barcode' => trim($item->Barcode),
                                 'retail_price1' => $item->RetailPrice,
                                 'retail_price2' => $item->RetailPrice2,
-                                'price' => $price,
-                                'compare_at_price' => $compareAtPrice,
+                                'price' => $item->RetailPrice,
+                                'compare_at_price' => 0, // We don't want put sale price on Shopify
                                 'quantity' => intval($item->TotalAvailQOH),
                                 'id1' => trim($item->ID1),
                                 'id2' => trim($item->ID2),
