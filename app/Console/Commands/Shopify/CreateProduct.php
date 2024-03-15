@@ -119,6 +119,12 @@ class CreateProduct extends Command
                                         $variantType = $variantTypes[$vt];
                                         $variantTypeValue = '';
 
+                                        if ($vt == 'vt2') {
+                                            $optionIndex = array_search($vt, $vts) + 1;
+                                            $variant["option{$optionIndex}"] = $child->metal_colour;
+                                            $variantTypeValue = $child->metal_colour;
+                                        }
+
                                         if ($vt == 'vt3') {
                                             $optionIndex = array_search($vt, $vts) + 1;
                                             $variant["option{$optionIndex}"] = $child->s_metal_type;

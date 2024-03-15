@@ -30,6 +30,7 @@ class RetailEdgeProduct extends Model
         'is_valid_child',
         'real_design_number',
         'pendant_style',
+        'metal_colour',
         's_web_menu',
         's_metal_type',
         's_stone_type',

@@ -111,6 +111,7 @@ class GetProductsFromEWeb extends Command
                                 'is_valid_child' => preg_match('/^\d{3}-\d{5}$/', $item->OldKey) ? true : false,
                                 'real_design_number' => trim($item->RealDesignNum),
                                 'pendant_style' => isset($item->PendantStyle) ? $item->PendantStyle : null,
+                                'metal_colour' => isset($item->MetalColour) ? $item->MetalColour : null,
                                 's_web_menu' => isset($item->SWebMenu) ? $item->SWebMenu : null,
                                 's_metal_type' => isset($item->SMetalType) ? $item->SMetalType : null,
                                 's_stone_type' => isset($item->SStoneType) ? $item->SStoneType : null,
