@@ -6,7 +6,9 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\SyncJobController;
 use Shopify\Rest\Admin2024_01\InventoryLevel;
+use Shopify\Rest\Admin2024_01\Product;
 use App\Models\ShopifyLocation;
+use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyService;
 
@@ -48,7 +50,7 @@ class UpdateInventory extends Command
                 $this->info("Remaining {$count}");
 
                 while ($count) {
-                    $variant = ShopifyProductVariant::with('retailEdgeProduct')->whereNotNull('inventory_item_id')->where('inventory_requires_update', 1)->first();
+                    $variant = ShopifyProductVariant::with(['retailEdgeProduct', 'product'])->whereNotNull('inventory_item_id')->where('inventory_requires_update', 1)->first();
 
                     if ($variant) {
                         try {
@@ -64,6 +66,28 @@ class UpdateInventory extends Command
 
                             $variant->update(['inventory_quantity' => $variant->retailEdgeProduct->quantity, 'inventory_requires_update' => 0]);
                             $this->info("Inventory updated for sku {$variant->sku}, variant id {$variant->variant_id}");
+
+                            if ($variant->retailEdgeProduct->quantity > 0 && $variant->product->status == 'archived') {
+                                try {
+                                    $status = 'active';
+                                    $product = new Product($session);
+                                    $product->id = $variant->product->product_id;
+                                    $product->status = $status;
+                                    $product->save(
+                                        true,
+                                    );
+
+                                    ShopifyProduct::where('id', $variant->product->pid)->update(['status' => $status]);
+
+                                    $msg = $variant->product->title . ' marked as ' . $status;
+                                    $this->info($msg);
+                                    Log::debug($msg);
+                                } catch (\Exception $e) {
+                                    $msg = "An error occurred while updating the Shopify product status from archived to active. Title: {$variant->product->title}";
+                                    $this->info($msg);
+                                    Log::debug($msg);
+                                }
+                            }
                         } catch (\Exception $e) {
                             Log::debug("There was an error while updating the inventory to {$variant->retailEdgeProduct->quantity} for {$variant->sku}. Error message : {$e->getMessage()}");
                             $variant->update(['inventory_requires_update' => 2]);
