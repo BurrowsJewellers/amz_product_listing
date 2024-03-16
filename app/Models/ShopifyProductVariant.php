@@ -44,7 +44,7 @@ class ShopifyProductVariant extends Model
 
     public function product()
     {
-        return $this->belongsTo(ShopifyProduct::class);
+        return $this->belongsTo(ShopifyProduct::class, 'shopify_product_id');
     }
 
     public function images()
