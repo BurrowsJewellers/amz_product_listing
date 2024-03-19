@@ -61,8 +61,12 @@ class Kernel extends ConsoleKernel
          * Shopify Crons
          */
 
-        $schedule->command('shopifyGetProducts')->dailyAt('02:40');
-        $schedule->command('shopifyCreateProduct')->everyThreeHours();
+        $schedule->command('shopifyGetProducts')->everyTwoHours()->after(function () {
+            $this->call('shopifyCreateProduct');
+        });
+
+        // $schedule->command('shopifyCreateProduct')->everyThreeHours();
+
         $schedule->command('shopifyUpdateInventory')->everyFifteenMinutes();
         $schedule->command('shopifyUpdatePrice')->everyFifteenMinutes();
         $schedule->command('shopifyUploadImages')->everyThreeHours();
