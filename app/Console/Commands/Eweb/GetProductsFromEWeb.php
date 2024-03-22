@@ -104,7 +104,8 @@ class GetProductsFromEWeb extends Command
                         if ($item->SpecialPrice > 0 && isset($item->SpecialPriceEnd)) {
                             $specialPriceEnd = Carbon::parse($item->SpecialPriceEnd);
                             if ($specialPriceEnd > now()) {
-                                $compareAtPrice = $item->SpecialPrice;
+                                $price = $item->SpecialPrice;
+                                $compareAtPrice = $item->RetailPrice;
                             }
                         }
 
@@ -117,7 +118,7 @@ class GetProductsFromEWeb extends Command
                                 'barcode' => trim($item->Barcode),
                                 'retail_price1' => $item->RetailPrice,
                                 'retail_price2' => $item->RetailPrice2,
-                                'price' => $item->RetailPrice,
+                                'price' => $item->price,
                                 'compare_at_price' => $compareAtPrice,
                                 'quantity' => intval($item->TotalAvailQOH),
                                 'id1' => trim($item->ID1),
