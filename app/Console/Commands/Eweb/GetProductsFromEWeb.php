@@ -73,7 +73,7 @@ class GetProductsFromEWeb extends Command
                         }
 
                         // Set default values
-                        $price = 0;
+                        $price = $item->RetailPrice;
                         $compareAtPrice = 0;
 
                         /**
@@ -118,7 +118,7 @@ class GetProductsFromEWeb extends Command
                                 'barcode' => trim($item->Barcode),
                                 'retail_price1' => $item->RetailPrice,
                                 'retail_price2' => $item->RetailPrice2,
-                                'price' => $item->price,
+                                'price' => $price,
                                 'compare_at_price' => $compareAtPrice,
                                 'quantity' => intval($item->TotalAvailQOH),
                                 'id1' => trim($item->ID1),
