@@ -8,6 +8,7 @@ use App\Http\Controllers\SyncJobController;
 use App\Models\RetailEdgeProduct;
 use App\Models\RetailEdgeProductImage;
 use App\Services\RetailEdgeService;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class GetProductsFromEWeb extends Command
@@ -71,17 +72,21 @@ class GetProductsFromEWeb extends Command
                             $item->{$keyName} = trim($other->Value);
                         }
 
+                        // Set default values
+                        $price = 0;
+                        $compareAtPrice = 0;
 
+                        /**
+                         * Old code to calculate compare at price
+                         */
+
+                        /*
                         $retailPrices = [$item->RetailPrice, $item->RetailPrice2];
 
                         // Convert all prices to float and filter out non-positive values
                         $prices = array_filter(array_map('floatval', $retailPrices), function ($price) {
                             return $price > 0;
                         });
-
-                        // Set default values
-                        $price = 0;
-                        $compareAtPrice = 0;
 
                         // Find the lower price and higher compare_at_price
                         if (!empty($prices)) {
@@ -90,6 +95,19 @@ class GetProductsFromEWeb extends Command
                         }
 
                         $compareAtPrice = ($price == $compareAtPrice) ? 0 : $compareAtPrice;
+                        */
+
+
+                        /**
+                         * New code to calculate compare at price
+                         */
+
+                        if ($item->SpecialPrice > 0 && isset($item->SpecialPriceEnd)) {
+                            $specialPriceEnd = Carbon::parse($item->SpecialPriceEnd);
+                            if ($specialPriceEnd > now()) {
+                                $compareAtPrice = $item->SpecialPrice;
+                            }
+                        }
 
                         RetailEdgeProduct::create(
                             [
@@ -101,7 +119,7 @@ class GetProductsFromEWeb extends Command
                                 'retail_price1' => $item->RetailPrice,
                                 'retail_price2' => $item->RetailPrice2,
                                 'price' => $item->RetailPrice,
-                                'compare_at_price' => 0, // We don't want put sale price on Shopify
+                                'compare_at_price' => $compareAtPrice,
                                 'quantity' => intval($item->TotalAvailQOH),
                                 'id1' => trim($item->ID1),
                                 'id2' => trim($item->ID2),
