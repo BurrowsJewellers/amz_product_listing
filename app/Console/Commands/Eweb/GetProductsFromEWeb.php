@@ -101,7 +101,6 @@ class GetProductsFromEWeb extends Command
                         /**
                          * New code to calculate compare at price
                          */
-
                         if ($item->SpecialPrice > 0 && isset($item->SpecialPriceEnd)) {
                             $specialPriceEnd = Carbon::parse($item->SpecialPriceEnd);
                             if ($specialPriceEnd > now()) {
