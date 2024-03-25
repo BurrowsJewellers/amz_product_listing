@@ -89,8 +89,8 @@ class UpdateInventory extends Command
                                 }
                             }
                         } catch (\Exception $e) {
-                            Log::debug("There was an error while updating the inventory to {$variant->retailEdgeProduct->quantity} for {$variant->sku}. Error message : {$e->getMessage()}");
                             $variant->update(['inventory_requires_update' => 2]);
+                            Log::debug("There was an error while updating the inventory for {$variant->sku}. Error message : {$e->getMessage()}");
                         }
                         usleep(1500000);
                     }
