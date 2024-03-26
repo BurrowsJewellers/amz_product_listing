@@ -199,6 +199,7 @@ class CreateProduct extends Command
 
                                 $message = 'Error while creating product. Sku :' . $product->sku . ', title: '  . $product->title;
                                 Log::debug($message);
+                                Log::debug($data);
                                 Log::debug($body);
                                 $this->info($message);
                             }
