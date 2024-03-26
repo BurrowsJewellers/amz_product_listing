@@ -49,7 +49,7 @@ class ShopifyProductVariant extends Model
 
     public function images()
     {
-        return $this->hasMany(RetailEdgeProductImage::class, 'sku', 'sku');
+        return $this->hasMany(RetailEdgeProductImage::class, 'sku', 'sku')->orderBy('e_web_index', 'asc');
     }
 
     public function retailEdgeProduct()
