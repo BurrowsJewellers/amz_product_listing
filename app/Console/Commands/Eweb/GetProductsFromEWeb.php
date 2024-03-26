@@ -69,7 +69,10 @@ class GetProductsFromEWeb extends Command
                         // Loop through the ItemsIDSs and add them in the main item object
                         foreach ($item->ISDs->ItemISD as $other) {
                             $keyName = str_replace(['.', ' ', ',', '_', '\''], [], $other->Name);
-                            $item->{$keyName} = trim($other->Value);
+
+                            if (!isset($item->{$keyName})) {
+                                $item->{$keyName} = trim($other->Value);
+                            }
                         }
 
                         // Set default values
