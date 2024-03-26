@@ -70,7 +70,13 @@ class GetProductsFromEWeb extends Command
                         foreach ($item->ISDs->ItemISD as $other) {
                             $keyName = str_replace(['.', ' ', ',', '_', '\''], [], $other->Name);
 
-                            if (!isset($item->{$keyName})) {
+                            // for 022-XXXXX and it's variants, there are two Metal Colour fields in IDs. First one has the value, but the second one is empty.
+                            // if the department is 022, ignore the second one
+                            if ($skuArray[1] == '022') {
+                                if (!isset($item->{$keyName})) {
+                                    $item->{$keyName} = trim($other->Value);
+                                }
+                            } else {
                                 $item->{$keyName} = trim($other->Value);
                             }
                         }
