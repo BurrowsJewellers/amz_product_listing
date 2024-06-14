@@ -176,6 +176,7 @@ class CreateProduct extends Command
                         if ($product->brand?->name == 'Pandora') {
                             $productData['tags'] = 'Pandora';
                             $productData['template_suffix'] = 'no-buy';
+                            $productData['vendor'] = 'Pandora';
                         }
 
                         $data = json_encode($productData);
