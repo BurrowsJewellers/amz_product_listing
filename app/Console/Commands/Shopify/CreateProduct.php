@@ -76,7 +76,7 @@ class CreateProduct extends Command
                     $this->info('Count: ' . $count);
                     $product = RetailEdgeProduct::withWhereHas('children', function ($children) {
                         $children->where('uploaded_to_shopify', 0);
-                    })->first();
+                    })->with(['brand'])->first();
 
                     if ($product) {
                         $this->info('======================================');
@@ -173,8 +173,12 @@ class CreateProduct extends Command
                             'product_type' => $product->s_cat,
                         ];
 
-                        $data = json_encode($productData);
+                        if ($product->brand?->name == 'Pandora') {
+                            $productData['tags'] = 'Pandora';
+                            $productData['template_suffix'] = 'no-buy';
+                        }
 
+                        $data = json_encode($productData);
 
                         $this->info($data);
                         try {

@@ -63,4 +63,9 @@ class RetailEdgeProduct extends Model
     {
         return $this->hasMany(RetailEdgeProductImage::class, 'sku', 'sku');
     }
+
+    public function brand(): BelongsTo
+    {
+        return $this->belongsTo(Brand::class, 'brand_id', 'brand_id');
+    }
 }
