@@ -36,18 +36,18 @@ class GenerateProductsCsv extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if(!$job->isRunning()){
+        if (!$job->isRunning()) {
             Log::info("$marketplace $jobType started!");
             $job->update(['status' => 1]);
 
             try {
                 $count = CatchProduct::where(['published' => 0, 'exists_on_catch' => 0, 'product_csv_generated' => 0])->count();
 
-                while($count){
+                while ($count) {
                     $limit = 500;
 
                     $products = CatchProduct::with(['eWebCode', 'brand'])->where(['published' => 0, 'exists_on_catch' => 0, 'product_csv_generated' => 0])
-                    ->limit($limit)->get();
+                        ->limit($limit)->get();
 
                     $row = $rows = $productIds = [];
 
@@ -57,6 +57,7 @@ class GenerateProductsCsv extends Command
                         'title',
                         'product-reference-value',
                         'product-reference-type',
+                        'uid',
                         'product-description',
                         'brand',
                         'condition',
@@ -143,7 +144,7 @@ class GenerateProductsCsv extends Command
                         'location-postcode',
                     ];
 
-                    foreach($products as $product){
+                    foreach ($products as $product) {
                         try {
                             $this->info($product->id);
                             array_push($productIds, $product->id);
@@ -159,6 +160,7 @@ class GenerateProductsCsv extends Command
                                 $product->title, // title
                                 $product->product_reference_value, // product_reference_value
                                 strtolower($product->product_reference_type), // product_reference_type
+                                strtolower($product->product_reference_type), // uid
                                 $product->product_description, // product_description
                                 $product->brand?->name, // brand
                                 $product->condition, // condition
@@ -297,7 +299,8 @@ class GenerateProductsCsv extends Command
     }
 
 
-    public function getHeaders(){
+    public function getHeaders()
+    {
         return [
             'category',
             'internal_sku',
@@ -388,5 +391,4 @@ class GenerateProductsCsv extends Command
             'click_and_collect_eligible',
         ];
     }
-
 }
