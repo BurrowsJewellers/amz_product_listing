@@ -160,7 +160,7 @@ class GenerateProductsCsv extends Command
                                 $product->title, // title
                                 $product->product_reference_value, // product_reference_value
                                 strtolower($product->product_reference_type), // product_reference_type
-                                strtolower($product->product_reference_type), // uid
+                                strtolower($product->product_reference_value), // uid
                                 $product->product_description, // product_description
                                 $product->brand?->name, // brand
                                 $product->condition, // condition
