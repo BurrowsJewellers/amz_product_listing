@@ -15,6 +15,7 @@ class PandoraList extends Model
         'search_response',
         'product_name',
         'product_url',
+        'product_response',
         'discontinued',
         'images',
     ];
