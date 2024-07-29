@@ -40,31 +40,27 @@ class ExtractImagesUrl extends Command
 
                         $html = $product->product_response;
 
-                        // Create a new DOMDocument object
+                        libxml_use_internal_errors(true); // Suppress libxml errors
                         $dom = new DOMDocument();
-
-                        // Load the HTML, using the @ to suppress warnings for malformed HTML
-                        @$dom->loadHTML($html);
+                        $dom->loadHTML($html);
+                        libxml_clear_errors();
 
                         // Create a new DOMXPath object
                         $xpath = new DOMXPath($dom);
 
-                        $elements = $xpath->query("//*[contains(@class, 'd-block') and contains(@class, 'img-fluid') and contains(@class, 'js-product-image')]");
+                        // Find all elements with the specified class
+                        $elements = $xpath->query("//*[contains(concat(' ', normalize-space(@class), ' '), ' d-block img-fluid js-product-image ')]");
 
                         $links = [];
 
-                        if (is_array($elements)) {
-                            foreach ($elements as $element) {
-                                $data_img = $element->getAttribute('data-img');
-                                if ($data_img) {
-                                    try {
-                                        $img_data = json_decode($data_img, true);
-                                        if (isset($img_data['hires'])) {
-                                            $links[] = $img_data['hires'];
-                                        }
-                                    } catch (\Exception $e) {
-                                        echo "Could not parse JSON: " . $data_img . "\n";
-                                    }
+                        foreach ($elements as $element) {
+                            $data_img = $element->getAttribute('data-img');
+                            if ($data_img) {
+                                $img_data = json_decode($data_img, true);
+                                if (json_last_error() === JSON_ERROR_NONE && isset($img_data['hires'])) {
+                                    $links[] = $img_data['hires'];
+                                } else {
+                                    echo "Could not parse JSON or 'hires' key not found: " . $data_img . "\n";
                                 }
                             }
                         }
