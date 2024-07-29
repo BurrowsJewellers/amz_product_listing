@@ -5,8 +5,6 @@ namespace App\Console\Commands\Pandora;
 use App\Models\PandoraList;
 use DOMDocument;
 use DOMXPath;
-use GuzzleHttp\Client;
-use GuzzleHttp\Cookie\CookieJar;
 use Illuminate\Console\Command;
 
 class ExtractProductUrl extends Command

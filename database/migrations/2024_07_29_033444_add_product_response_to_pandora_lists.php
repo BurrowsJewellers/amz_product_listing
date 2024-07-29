@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('pandora_lists', function (Blueprint $table) {
-            $table->text('product_response')->nullable()->after('product_url');
+            $table->mediumText('product_response')->nullable()->after('product_url');
         });
     }
 
