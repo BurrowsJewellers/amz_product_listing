@@ -33,44 +33,50 @@ class ExtractImagesUrl extends Command
 
             foreach ($ids as $id) {
                 try {
-                    $product = PandoraList::findOrFail($id);
+                    $product = PandoraList::find($id);
 
-                    $html = $product->product_response;
+                    if ($product) {
+                        $this->info("Product design_no: {$product->design_no}");
 
-                    // Create a new DOMDocument object
-                    $dom = new DOMDocument();
+                        $html = $product->product_response;
 
-                    // Load the HTML, using the @ to suppress warnings for malformed HTML
-                    @$dom->loadHTML($html);
+                        // Create a new DOMDocument object
+                        $dom = new DOMDocument();
 
-                    // Create a new DOMXPath object
-                    $xpath = new DOMXPath($dom);
+                        // Load the HTML, using the @ to suppress warnings for malformed HTML
+                        @$dom->loadHTML($html);
 
-                    $elements = $xpath->query("//*[contains(@class, 'd-block') and contains(@class, 'img-fluid') and contains(@class, 'js-product-image')]");
+                        // Create a new DOMXPath object
+                        $xpath = new DOMXPath($dom);
 
-                    $links = [];
+                        $elements = $xpath->query("//*[contains(@class, 'd-block') and contains(@class, 'img-fluid') and contains(@class, 'js-product-image')]");
 
-                    if (is_array($elements)) {
-                        foreach ($elements as $element) {
-                            $data_img = $element->getAttribute('data-img');
-                            if ($data_img) {
-                                try {
-                                    $img_data = json_decode($data_img, true);
-                                    if (isset($img_data['hires'])) {
-                                        $links[] = $img_data['hires'];
+                        $links = [];
+
+                        if (is_array($elements)) {
+                            foreach ($elements as $element) {
+                                $data_img = $element->getAttribute('data-img');
+                                if ($data_img) {
+                                    try {
+                                        $img_data = json_decode($data_img, true);
+                                        if (isset($img_data['hires'])) {
+                                            $links[] = $img_data['hires'];
+                                        }
+                                    } catch (\Exception $e) {
+                                        echo "Could not parse JSON: " . $data_img . "\n";
                                     }
-                                } catch (\Exception $e) {
-                                    echo "Could not parse JSON: " . $data_img . "\n";
                                 }
                             }
                         }
-                    }
 
-                    // Convert the links array to JSON
-                    $links_json = json_encode($links, JSON_PRETTY_PRINT);
+                        // Convert the links array to JSON
+                        $links_json = json_encode($links, JSON_PRETTY_PRINT);
 
-                    if (!empty($links)) {
-                        $product->update(['images' => $links_json]);
+                        if (!empty($links)) {
+                            $product->update(['images' => $links_json]);
+                        }
+                    } else {
+                        $this->error("Product not found with id {$product->id}");
                     }
                 } catch (\Exception $e) {
                     $this->error($e->getMessage());
