@@ -29,9 +29,12 @@ class ExtractImagesUrl extends Command
     public function handle()
     {
         try {
-            $products = PandoraList::whereNull('images')->whereNotNull('product_url')->get();
-            foreach ($products as $product) {
+            $ids = PandoraList::whereNull('images')->whereNotNull('product_url')->pluck('id')->toArray();
+
+            foreach ($ids as $id) {
                 try {
+                    $product = PandoraList::findOrFail($id);
+
                     $html = $product->product_response;
 
                     // Create a new DOMDocument object
