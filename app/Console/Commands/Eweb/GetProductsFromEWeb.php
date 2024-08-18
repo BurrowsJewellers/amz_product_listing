@@ -8,7 +8,6 @@ use App\Http\Controllers\SyncJobController;
 use App\Models\RetailEdgeProduct;
 use App\Models\RetailEdgeProductImage;
 use App\Services\RetailEdgeService;
-use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class GetProductsFromEWeb extends Command
@@ -106,16 +105,23 @@ class GetProductsFromEWeb extends Command
                         $compareAtPrice = ($price == $compareAtPrice) ? 0 : $compareAtPrice;
                         */
 
-
                         /**
                          * New code to calculate compare at price
                          */
-                        if ($item->SpecialPrice > 0 && isset($item->SpecialPriceEnd)) {
-                            $specialPriceEnd = Carbon::parse($item->SpecialPriceEnd);
-                            if ($specialPriceEnd > now()) {
-                                $price = $item->SpecialPrice;
-                                $compareAtPrice = $item->RetailPrice;
-                            }
+                        // if ($item->SpecialPrice > 0 && isset($item->SpecialPriceEnd)) {
+                        //     $specialPriceEnd = Carbon::parse($item->SpecialPriceEnd);
+                        //     if ($specialPriceEnd > now()) {
+                        //         $price = $item->SpecialPrice;
+                        //         $compareAtPrice = $item->RetailPrice;
+                        //     }
+                        // }
+
+                        /**
+                         * Only check if there is special price filled
+                         */
+                        if (isset($item->SpecialPrice) && $item->SpecialPrice > 0) {
+                            $price = $item->SpecialPrice;
+                            $compareAtPrice = $item->RetailPrice;
                         }
 
                         RetailEdgeProduct::create(

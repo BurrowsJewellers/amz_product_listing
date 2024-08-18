@@ -165,19 +165,30 @@ class CreateProduct extends Command
                             $options[] = $option;
                         }
 
+                        $mktDescription = $product->marketing_description;
+
+                        if ($product->brand?->name) {
+                            $mktDescription .= "Brand: " . $product->brand?->name;
+                        }
+
                         $productData['product'] = [
                             'title' => $product->title,
-                            'body_html' => $product->marketing_description,
+                            'body_html' => $mktDescription,
                             'variants' => $variants,
                             'options' => $options,
                             'product_type' => $product->s_cat,
                         ];
 
+                        $productData['product']['vendor'] = $product->brand?->name;
+
+                        $productTags = $this->calculateTags($product);
+
                         if ($product->brand?->name == 'Pandora') {
-                            $productData['product']['tags'] = 'Pandora';
+                            $productTags[] = 'Pandora';
                             $productData['product']['template_suffix'] = 'no-buy';
-                            $productData['product']['vendor'] = 'Pandora';
                         }
+
+                        $productData['product']['tags'] = implode(",", $productTags);
 
                         $data = json_encode($productData);
 
@@ -228,5 +239,34 @@ class CreateProduct extends Command
         } else {
             Log::info("$marketplace $jobType is already running.");
         }
+    }
+
+    private function calculateTags(RetailEdgeProduct $product): array
+    {
+        $tags = [];
+
+        try {
+            $types = [
+                's_web_menu' => 'S.WebMenu',
+                's_metal_type' => 'S.Metal Type',
+                's_stone_type' => 'S.Stone Type',
+                's_cat' => 'S.Cat',
+                's_sub_cat' => 'S.Sub Cat',
+            ];
+
+            foreach ($types as $type => $value) {
+                $propValue = $product->{$type} ?? '';
+                if ($propValue !== '' && $propValue !== 'N/A') {
+                    foreach (explode(",", $propValue) as $tempTag) {
+                        $tags[] = $value . "_" . trim($tempTag);
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            report($e);
+            return [];
+        }
+
+        return $tags;
     }
 }
