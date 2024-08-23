@@ -52,7 +52,7 @@ class UpdateProduct extends Command
                     $brandsArray[$brand->brand_id]['name'] = $brand->name;
                 }
 
-                $variants = ShopifyProductVariant::with('retailEdgeProduct')->where('requires_update', 1)->select('shopify_product_id', 'product_id', 'sku')->get();
+                $variants = ShopifyProductVariant::withWhereHas('retailEdgeProduct')->where('requires_update', 1)->select('shopify_product_id', 'product_id', 'sku')->get();
 
                 foreach ($variants as $variant) {
                     $this->info('Updating: ' . $variant->sku);
@@ -75,6 +75,8 @@ class UpdateProduct extends Command
                         }
 
                         $product->save(true);
+
+                        $variant->update(['requires_update' => 0]);
                     } catch (\Exception $e) {
                         report($e);
                         $this->error($e->getMessage());
