@@ -79,7 +79,7 @@ class UpdateProduct extends Command
                         report($e);
                         $this->error($e->getMessage());
                     }
-                    usleep(15000000);
+                    usleep(1500000);
                 }
 
                 $job->update(['status' => 0, 'message' => null]);
