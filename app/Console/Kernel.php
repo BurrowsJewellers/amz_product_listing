@@ -46,9 +46,16 @@ class Kernel extends ConsoleKernel
          */
 
         // The following three cron jobs must run in the same sequence.
-        $schedule->command('getProductsFromEWebCatch')->dailyAt('00:20');
-        $schedule->command('catchCheckIfExists')->dailyAt('00:50');
+        // $schedule->command('getProductsFromEWebCatch')->dailyAt('00:20');
+        // $schedule->command('catchCheckIfExists')->dailyAt('00:50');
+        // $schedule->command('catchListOffersOfShop')->dailyAt('01:20');
+
+        $schedule->command('getProductsFromEWebCatch')->dailyAt('00:20')->after(function () {
+            $this->call('catchCheckIfExists');
+        });
         $schedule->command('catchListOffersOfShop')->dailyAt('01:20');
+
+
 
         $schedule->command('getProductsFromEWebCatch')->everyFifteenMinutes()->between('02:00', '23:59');
         // $schedule->command('catchGenerateProductsCsv')->everyTwoHours()->between('02:00','23:59');
