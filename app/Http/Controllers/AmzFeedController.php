@@ -123,28 +123,28 @@ class AmzFeedController extends Controller
                 foreach ($feeds as $feed) {
                     try {
                         $exists = Storage::disk('local')->exists($feed->file_name);
-    
+
                         if ($exists) {
                             $xml = Storage::disk('local')->get($feed->file_name);
-    
+
                             $feedDocumentInfo = $feedsApiInstance->createFeedDocument($createFeedDocSpec);
                             $feedDocumentId = $feedDocumentInfo->getFeedDocumentId();
                             $url = $feedDocumentInfo->getUrl();
-    
+
                             if ($feedDocumentId && $url) {
                                 // $client = new Client(['exceptions' => false]);
                                 $client = new Client();
-    
+
                                 $request = new Request(
                                     'PUT',
                                     $url,
                                     array('Content-Type' => $contentType),
                                     $xml
                                 );
-    
+
                                 $response = $client->send($request);
                                 $statusCode = $response->getStatusCode();
-    
+
                                 if ($statusCode == 200) {
                                     $specifications = [
                                         'feed_type'             => $feedType,
@@ -152,18 +152,18 @@ class AmzFeedController extends Controller
                                         'input_feed_document_id' => $feedDocumentId,
                                         'feed_options'          => null
                                     ];
-    
+
                                     $body = new CreateFeedSpecification($specifications);
-    
+
                                     // dd($body);
                                     $response = $feedsApiInstance->createFeed($body);
-    
+
                                     $feedId = $response->getFeedId();
-    
+
                                     $id = $feed->id;
-    
+
                                     $feed = $feed->update(['feed_id' => $feedId, 'processing_status' => 'SUBMITTED']);
-    
+
                                     if ($feed) {
                                         $feed = AmzFeed::where('id', $id)->first();
                                         $newName = $feedId . '_' . $feed->type . '.xml';
@@ -172,14 +172,15 @@ class AmzFeedController extends Controller
                                             $feed->update(['file_name' => $newName]);
                                         }
                                     }
-    
+
                                     if ($feeds->count() > 1) {
                                         sleep(150);
                                     }
-    
+
                                     // Storage::disk('local')->put('result.json', $response);
                                 } else {
-                                    Log::error('Error in AmzFeedController : ' . $response->getBody()->getContents());
+                                    Log::error("Error in AmzFeedController - statusCode : " . $statusCode);
+                                    // Log::error('Error in AmzFeedController : ' . $response->getBody()->getContents());
                                 }
                             }
                         }
@@ -195,10 +196,10 @@ class AmzFeedController extends Controller
 
     public function checkFeedStatus()
     {
-        $feeds = AmzFeed::whereNotNull('feed_id')->where(function($query){
+        $feeds = AmzFeed::whereNotNull('feed_id')->where(function ($query) {
             $query->where('processing_status', 'SUBMITTED')
-            ->orWhere('processing_status', 'IN_QUEUE')
-            ->orWhere('processing_status', 'IN_PROGRESS');
+                ->orWhere('processing_status', 'IN_QUEUE')
+                ->orWhere('processing_status', 'IN_PROGRESS');
         })->get();
 
         $productDataFeed = false;
@@ -212,17 +213,17 @@ class AmzFeedController extends Controller
                     $feedType = constant("SellingPartnerApi\FeedType::$feed->type");
 
                     $productDataFeed = $feed->type == 'POST_PRODUCT_DATA';
-    
+
                     $getFeed = $feedsApiInstance->getFeed($feed->feed_id);
                     $processingStatus = $getFeed->getProcessingStatus();
                     if ($processingStatus == 'DONE') {
                         $feedResultDocumentId = $getFeed->getResultFeedDocumentId();
                         $feedResultDocument = $feedsApiInstance->getFeedDocument($feedResultDocumentId);
-    
+
                         $docToDownload = new Document($feedResultDocument, $feedType);
                         $contents = $docToDownload->download();
                         // $data = $docToDownload->getData();
-    
+
                         $fileName = $feed->feed_id . '_response.xml';
                         Storage::disk('local')->put($fileName, $contents);
                         $feed->update(['response_file_name' => $fileName, 'processing_status' => $processingStatus]);
@@ -308,9 +309,9 @@ class AmzFeedController extends Controller
                     $i++;
                 }
 
-                echo 'SKU : '. $sku ."\n";
-                echo 'Message : '. $m . "\n";
-                echo '==================================='. "\n";
+                echo 'SKU : ' . $sku . "\n";
+                echo 'Message : ' . $m . "\n";
+                echo '===================================' . "\n";
 
                 // $product = Product::where('sku', $sku)->update(['message' => implode("<br>", $messages)]);
                 $product = Product::where('sku', $sku)->update(['message' => $m]);
