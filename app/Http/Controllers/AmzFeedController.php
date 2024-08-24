@@ -185,7 +185,7 @@ class AmzFeedController extends Controller
                             }
                         }
                     } catch (\Exception $e) {
-                        Log::error('Error in AmzFeedController : ' . $response->getBody()->getContents());
+                        Log::error('Error in AmzFeedController : ' . $e->getMessage());
                     }
                 }
             }
