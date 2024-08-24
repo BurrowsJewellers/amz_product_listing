@@ -52,11 +52,12 @@ class UpdateProduct extends Command
                     $brandsArray[$brand->brand_id]['name'] = $brand->name;
                 }
 
-                $variants = ShopifyProductVariant::withWhereHas('retailEdgeProduct')->where('requires_update', 1)->select('shopify_product_id', 'product_id', 'sku')->get();
+                $variants = ShopifyProductVariant::withWhereHas('retailEdgeProduct')->with('product')->where('requires_update', 1)->select('shopify_product_id', 'product_id', 'sku')->get();
 
                 foreach ($variants as $variant) {
                     $this->info('Updating: ' . $variant->sku);
-                    $productTags = $this->calculateTags($variant->retailEdgeProduct);
+                    $productTags = $this->calculateTags($variant->retailEdgeProduct, $variant->product->tags);
+                    // $productTags = $this->calculateTags($variant->retailEdgeProduct);
 
                     if ($variant->retailEdgeProduct->brand?->name == 'Pandora') {
                         $productTags[] = 'Pandora';
@@ -97,32 +98,42 @@ class UpdateProduct extends Command
         }
     }
 
-    private function calculateTags(RetailEdgeProduct $product): array
+    private function calculateTags(RetailEdgeProduct $product, string|array $existingTags = null): array
     {
-        $tags = [];
+        $tags = $this->normalizeExistingTags($existingTags);
 
-        try {
-            $types = [
-                's_web_menu' => 'S.WebMenu',
-                's_metal_type' => 'S.Metal Type',
-                's_stone_type' => 'S.Stone Type',
-                's_cat' => 'S.Cat',
-                's_sub_cat' => 'S.Sub Cat',
-            ];
+        $types = [
+            's_web_menu' => 'S.WebMenu',
+            's_metal_type' => 'S.Metal Type',
+            's_stone_type' => 'S.Stone Type',
+            's_cat' => 'S.Cat',
+            's_sub_cat' => 'S.Sub Cat',
+        ];
 
-            foreach ($types as $type => $value) {
-                $propValue = $product->{$type} ?? '';
-                if ($propValue !== '' && $propValue !== "N/A") {
-                    foreach (explode(",", $propValue) as $tempTag) {
-                        $tags[] = $value . "_" . trim($tempTag);
-                    }
-                }
-            }
-        } catch (\Exception $e) {
-            report($e);
+        foreach ($types as $propertyName => $tagPrefix) {
+            $this->addProductPropertyTags($product, $propertyName, $tagPrefix, $tags);
+        }
+
+        return array_unique($tags);
+    }
+
+    private function normalizeExistingTags(string|array|null $existingTags): array
+    {
+        if (empty($existingTags)) {
             return [];
         }
 
-        return $tags;
+        $tags = is_array($existingTags) ? $existingTags : explode(",", $existingTags);
+        return array_map('trim', $tags);
+    }
+
+    private function addProductPropertyTags(RetailEdgeProduct $product, string $propertyName, string $tagPrefix, array &$tags): void
+    {
+        $propertyValue = $product->{$propertyName} ?? '';
+        if ($propertyValue !== '' && $propertyValue !== 'N/A') {
+            foreach (explode(",", $propertyValue) as $tagValue) {
+                $tags[] = trim($tagPrefix) . "_" . trim($tagValue);
+            }
+        }
     }
 }
