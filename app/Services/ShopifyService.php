@@ -18,6 +18,21 @@ class ShopifyService extends ShopifyConnectionService
             DB::beginTransaction();
             foreach ($productData['variants'] as $variant) {
                 if ($shopifyProductVariant = ShopifyProductVariant::where('variant_id', $variant['id'])->first()) {
+
+                    $shopifyProduct = ShopifyProduct::updateOrCreate(
+                        [
+                            'product_id' => $productData['id']
+                        ],
+                        [
+                            'title' => $productData['title'],
+                            'vendor' => $productData['vendor'],
+                            'product_type' => $productData['product_type'],
+                            'handle' => $productData['handle'],
+                            'tags' => $productData['tags'],
+                            'status' => $productData['status'],
+                        ]
+                    );
+
                     $shopifyProductVariant->update(
                         [
                             'product_id' => $variant['product_id'],

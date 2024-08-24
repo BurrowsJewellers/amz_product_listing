@@ -77,6 +77,7 @@ class UpdateProduct extends Command
                         $product->save(true);
 
                         $variant->update(['requires_update' => 0]);
+                        $variant->product->update(['tags' => $tags]);
                     } catch (\Exception $e) {
                         report($e);
                         $this->error($e->getMessage());
