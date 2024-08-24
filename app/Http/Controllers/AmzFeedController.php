@@ -173,20 +173,18 @@ class AmzFeedController extends Controller
                                         }
                                     }
 
-                                    if ($feeds->count() > 1) {
-                                        sleep(150);
-                                    }
 
                                     // Storage::disk('local')->put('result.json', $response);
                                 } else {
                                     Log::error("Error in AmzFeedController - statusCode : " . $statusCode);
-                                    // Log::error('Error in AmzFeedController : ' . $response->getBody()->getContents());
                                 }
                             }
                         }
                     } catch (\Exception $e) {
                         Log::error('Error in AmzFeedController : ' . $e->getMessage());
                     }
+
+                    sleep(150);
                 }
             }
         } catch (\Exception $e) {
