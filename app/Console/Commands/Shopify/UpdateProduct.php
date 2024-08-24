@@ -52,12 +52,11 @@ class UpdateProduct extends Command
                     $brandsArray[$brand->brand_id]['name'] = $brand->name;
                 }
 
-                $variants = ShopifyProductVariant::withWhereHas('retailEdgeProduct')->with('product')->where('requires_update', 1)->select('shopify_product_id', 'product_id', 'sku')->get();
+                $variants = ShopifyProductVariant::withWhereHas('retailEdgeProduct')->with('product')->where('requires_update', 1)->select('id', 'shopify_product_id', 'product_id', 'sku')->get();
 
                 foreach ($variants as $variant) {
                     $this->info('Updating: ' . $variant->sku);
                     $productTags = $this->calculateTags($variant->retailEdgeProduct, $variant->product->tags);
-                    // $productTags = $this->calculateTags($variant->retailEdgeProduct);
 
                     if ($variant->retailEdgeProduct->brand?->name == 'Pandora') {
                         $productTags[] = 'Pandora';
