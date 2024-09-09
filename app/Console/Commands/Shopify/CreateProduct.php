@@ -167,8 +167,9 @@ class CreateProduct extends Command
 
                         $mktDescription = $product->marketing_description;
 
-                        if ($product->brand?->name) {
-                            $mktDescription .= "Brand: " . $product->brand?->name;
+                        if ($product->brand?->name == 'Pandora') {
+                            // $mktDescription .= "Brand: " . $product->brand?->name;
+                            $mktDescription .= " - Design number: " . $product->real_design_number;
                         }
 
                         $productData['product'] = [
