@@ -150,6 +150,7 @@ class GetProductsFromEWeb extends Command
                                 's_stone_type' => isset($item->SStoneType) ? $item->SStoneType : null,
                                 's_cat' => isset($item->SCat) ? $item->SCat : null,
                                 's_sub_cat' => isset($item->SSubCat) ? $item->SSubCat : null,
+                                'ring_size' => isset($item->RingSize) ? $item->RingSize : null,
                                 'web_option_boolean1' => $item->WebOptionBoolean1,
                                 'web_option_boolean2' => $item->WebOptionBoolean2,
                                 'web_option_boolean3' => $item->WebOptionBoolean3,

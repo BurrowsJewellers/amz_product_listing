@@ -36,6 +36,7 @@ class RetailEdgeProduct extends Model
         's_stone_type',
         's_cat',
         's_sub_cat',
+        'ring_size',
         'web_option_boolean1',
         'web_option_boolean2',
         'web_option_boolean3',
