@@ -47,7 +47,7 @@ class CheckIfExists extends Command
 
                 $count = CatchProduct::whereNull('exists_on_catch')->count();
 
-                $productReferenceTypes = ['EAN', 'UPC'];
+                $productReferenceTypes = ['EAN', 'UPC', 'UID'];
 
                 $retry = 0;
 
@@ -73,25 +73,24 @@ class CheckIfExists extends Command
                         $request = new GetProductsRequest($productReferenceRequest);
 
                         $result = $api->getProducts($request);
-    
+
                         // DB::beginTransaction();
 
                         CatchProduct::whereIn('id', $productIds)->update(['exists_on_catch' => 0]);
 
                         if (count($result->getItems()) > 0) {
                             foreach ($result->getItems() as $p) {
-                                $this->info($p->getId() .' is listed with '. $p->getIdType());
+                                $this->info($p->getId() . ' is listed with ' . $p->getIdType());
                                 CatchProduct::where('product_reference_value', $p->getId())->update(['product_reference_type' => $p->getIdType(), 'exists_on_catch' => 1]);
                             }
 
                             // DB::commit();
                         }
-    
                     } catch (\Exception $e) {
                         report($e);
                         // DB::rollBack();
                         $retry++;
-                        $this->info('Retry : '. $retry);
+                        $this->info('Retry : ' . $retry);
                     }
 
                     sleep(10);
