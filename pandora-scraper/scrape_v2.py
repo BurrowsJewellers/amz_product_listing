@@ -23,13 +23,18 @@ def create_db_connection():
         logging.info("Attempting to load env...")
         env_path = '../.env'
         load_dotenv(dotenv_path=env_path)
+        db_host=os.getenv('PYTHON_DB_HOST')
+        db_user=os.getenv('PYTHON_DB_USERNAME')
+        db_password=os.getenv('PYTHON_DB_PASSWORD')
+        db_database=os.getenv('PYTHON_DB_DATABASE')
+
         logging.info("Env loaded...")
         logging.info("Attempting to connect to the database...")
         connection = mysql.connector.connect(
-            host=os.getenv('DB_HOST'),
-            user=os.getenv('DB_USERNAME'),
-            password=os.getenv('DB_PASSWORD'),
-            database=os.getenv('DB_DATABASE'),
+            host=db_host,
+            user=db_user,
+            password=db_password,
+            database=db_database,
             auth_plugin='mysql_native_password'
         )
         logging.info(f"Connection object created: {type(connection)}")
@@ -191,7 +196,7 @@ def scrape(design_no):
                 product_description = None
                 # Extract the text from the div
                 if description_div:
-                    product_description = description_div.get_text(strip=True)
+                    product_description = description_div.text
 
                 update_record(connection, 
                               "UPDATE `pandora_lists` SET `product_response` = %s, `product_description` = %s, `images` = %s, `updated_at` = %s WHERE `design_no` LIKE %s", 
