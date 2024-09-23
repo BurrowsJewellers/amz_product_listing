@@ -19,4 +19,4 @@ yarn-error.log
 /.vscode
 .DS_Store
 t.txt
-/pandora-scraper/*
+# /pandora-scraper/*
