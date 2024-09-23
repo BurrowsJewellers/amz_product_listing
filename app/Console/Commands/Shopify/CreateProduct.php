@@ -68,7 +68,7 @@ class CreateProduct extends Command
 
                 $countQuery = RetailEdgeProduct::whereIn('id', $pendingProductIds)->whereHas('children', function ($children) {
                     $children->where('uploaded_to_shopify', 0);
-                });
+                })->where('quantity', '>', 0);
 
                 $count = $countQuery->count();
 
@@ -76,7 +76,7 @@ class CreateProduct extends Command
                     $this->info('Count: ' . $count);
                     $product = RetailEdgeProduct::withWhereHas('children', function ($children) {
                         $children->where('uploaded_to_shopify', 0);
-                    })->with(['brand'])->first();
+                    })->with(['brand'])->where('quantity', '>', 0)->first();
 
                     if ($product) {
                         $this->info('======================================');
