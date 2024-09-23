@@ -60,7 +60,7 @@ class UploadImages extends Command
                         }
 
                         try {
-                            $process = new Process(['python3', '/opt/bitnami/projects/pandora-scraping/scrape_v2.py', $retailEdgeProduct->real_design_number]);
+                            $process = new Process(['python3', '/opt/bitnami/projects/amz_product_listing/pandora-scraper/scrape_v2.py', $retailEdgeProduct->real_design_number]);
                             $process->run();
 
                             if ($process->isSuccessful()) {
