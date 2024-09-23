@@ -12,6 +12,7 @@ use App\Models\PandoraList;
 use App\Models\RetailEdgeProduct;
 use App\Services\ShopifyService;
 use App\Models\ShopifyProductVariant;
+use App\Services\PandoraScraperService;
 
 class UploadImages extends Command
 {
@@ -60,38 +61,33 @@ class UploadImages extends Command
                         }
 
                         try {
-                            $process = new Process(['python3', '/opt/bitnami/projects/amz_product_listing/pandora-scraper/scrape_v2.py', $retailEdgeProduct->real_design_number]);
-                            $process->run();
+                            $pandoraService = new PandoraScraperService();
 
-                            if ($process->isSuccessful()) {
-                                $pandoraProduct = PandoraList::where('design_no', $retailEdgeProduct->real_design_number)->whereNotNull('images')->first();
+                            $pandoraProduct = $pandoraService->getPandoraProductByDesignNo($retailEdgeProduct->real_design_number);
 
-                                if (!$pandoraProduct) {
+                            if (!$pandoraProduct) {
+                                $variant->update(['images_requires_update' => 2]);
+                                continue;
+                            }
+
+                            foreach (json_decode($pandoraProduct->images) as $i) {
+                                try {
+                                    $image = new Image($session);
+                                    $image->product_id = $variant->product_id;
+                                    $image->src = $i;
+                                    $image->variant_ids = [
+                                        $variant->variant_id
+                                    ];
+
+                                    $image->save(
+                                        true, // Update Object
+                                    );
+                                    $this->info("Image uploaded for sku {$variant->sku}, variant id  {$variant->variant_id}");
+                                    $variant->update(['images_requires_update' => 0]);
+                                } catch (\Exception $e) {
+                                    Log::debug("There was an error while uploading the images for {$variant->sku}. Error message : {$e->getMessage()}");
                                     $variant->update(['images_requires_update' => 2]);
-                                    continue;
                                 }
-
-                                foreach (json_decode($pandoraProduct->images) as $i) {
-                                    try {
-                                        $image = new Image($session);
-                                        $image->product_id = $variant->product_id;
-                                        $image->src = $i;
-                                        $image->variant_ids = [
-                                            $variant->variant_id
-                                        ];
-
-                                        $image->save(
-                                            true, // Update Object
-                                        );
-                                        $this->info("Image uploaded for sku {$variant->sku}, variant id  {$variant->variant_id}");
-                                        $variant->update(['images_requires_update' => 0]);
-                                    } catch (\Exception $e) {
-                                        Log::debug("There was an error while uploading the images for {$variant->sku}. Error message : {$e->getMessage()}");
-                                        $variant->update(['images_requires_update' => 2]);
-                                    }
-                                }
-                            } else {
-                                throw new ProcessFailedException($process);
                             }
                         } catch (\Exception $e) {
                             report($e);
