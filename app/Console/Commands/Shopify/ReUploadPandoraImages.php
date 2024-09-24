@@ -56,6 +56,8 @@ class ReUploadPandoraImages extends Command
                         $pandoraProductsCount = PandoraList::whereIn('sku', $skusArray)->whereNotNull('images')->count();
 
                         if ($pandoraProductsCount > 0) {
+
+                            $this->info("Found {$pandoraProductsCount} products scraped.");
                             // Delete the existing product images from Shopify
                             $images = Image::all(
                                 $session,
@@ -75,6 +77,8 @@ class ReUploadPandoraImages extends Command
 
                             foreach ($shopifyProduct->variants as $variant) {
                                 $pandoraProduct = PandoraList::where('sku', $variant->sku)->select('id', 'sku', 'design_no', 'images')->whereNotNull('images')->first();
+
+                                $this->info("Re-uploading images for {$pandoraProduct->sku}");
 
                                 foreach (json_decode($pandoraProduct->images) as $i) {
                                     try {
@@ -96,12 +100,12 @@ class ReUploadPandoraImages extends Command
                                     }
                                 }
                             }
+                            sleep(100);
                         }
                     } catch (\Exception $e) {
                         report($e);
                         $this->error($e->getMessage());
                     }
-                    sleep(100);
                 }
 
                 $job->update(['status' => 0]);
