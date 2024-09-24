@@ -8,6 +8,7 @@ use Carbon\Carbon;
 use App\Models\ShopifyInventoryLevel;
 use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
+use Shopify\Rest\Admin2024_01\Image;
 
 class ShopifyService extends ShopifyConnectionService
 {
@@ -215,5 +216,24 @@ class ShopifyService extends ShopifyConnectionService
         } catch (\Exception $e) {
             throw $e;
         }
+    }
+
+
+    public function deleteImagesByProductId(string $productId)
+    {
+        $session = $this->getSession();
+        $images = Image::all(
+            $session,
+            ["product_id" => $productId]
+        );
+        foreach ($images as $image) {
+            Image::delete(
+                $session,
+                $image->id,
+                ["product_id" => $productId],
+            );
+        }
+
+        return true;
     }
 }

@@ -38,6 +38,7 @@ class ScrapeImages extends Command
                     $this->info('Scraping Pandora Images for ' . $retailEdgeProduct->sku);
                     $pandoraService = new PandoraScraperService();
                     $pandoraService->getPandoraProductByDesignNo($retailEdgeProduct->real_design_number);
+                    PandoraList::where('design_no', $retailEdgeProduct->real_design_number)->update(['sku' => $retailEdgeProduct->sku]);
                     $this->info('Pandora Images scraped for ' . $retailEdgeProduct->sku);
                 }
                 sleep(10);

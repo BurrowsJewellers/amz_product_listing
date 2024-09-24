@@ -38,6 +38,7 @@ class RetailEdgeProduct extends Model
         's_cat',
         's_sub_cat',
         'ring_size',
+        'bracelet_length',
         'web_option_boolean1',
         'web_option_boolean2',
         'web_option_boolean3',

@@ -19,4 +19,9 @@ class PandoraList extends Model
         'discontinued',
         'images',
     ];
+
+    public function retailEdgeProduct()
+    {
+        return $this->belongsTo(RetailEdgeProduct::class, 'design_no', 'real_design_number');
+    }
 }
