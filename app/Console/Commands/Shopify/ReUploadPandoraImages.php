@@ -50,7 +50,7 @@ class ReUploadPandoraImages extends Command
 
                         $skusArray = [];
                         foreach ($shopifyProduct->variants as $variant) {
-                            $skusArray = $variant->sku;
+                            $skusArray[] = $variant->sku;
                         }
 
                         $pandoraProductsCount = PandoraList::whereIn('sku', $skusArray)->whereNotNull('images')->count();
