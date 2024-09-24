@@ -100,7 +100,7 @@ class ReUploadPandoraImages extends Command
                                     }
                                 }
                             }
-                            sleep(100);
+                            sleep(5);
                         }
                     } catch (\Exception $e) {
                         report($e);
