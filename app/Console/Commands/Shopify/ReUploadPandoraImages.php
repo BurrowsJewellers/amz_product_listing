@@ -46,6 +46,7 @@ class ReUploadPandoraImages extends Command
 
                 foreach ($shopifyProducts as $shopifyProduct) {
                     try {
+                        $this->info("=============================================================");
                         $this->info($shopifyProduct->title);
 
                         $skusArray = [];
