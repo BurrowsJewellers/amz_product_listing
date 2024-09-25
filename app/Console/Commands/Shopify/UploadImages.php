@@ -68,6 +68,7 @@ class UploadImages extends Command
                             if (!$pandoraProduct) {
                                 $variant->update(['images_requires_update' => 2]);
                                 continue;
+                                sleep(20);
                             }
 
                             foreach (json_decode($pandoraProduct->images) as $i) {
@@ -92,6 +93,7 @@ class UploadImages extends Command
                         } catch (\Exception $e) {
                             report($e);
                             $variant->update(['images_requires_update' => 2]);
+                            sleep(20);
                         }
                     } else {
                         if ($variant->images) {
