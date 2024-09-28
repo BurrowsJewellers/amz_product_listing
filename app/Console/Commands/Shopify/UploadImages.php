@@ -61,9 +61,11 @@ class UploadImages extends Command
                         }
 
                         try {
-                            $pandoraService = new PandoraScraperService();
+                            // temporary disabled the cron for Pandora
+                            // $pandoraService = new PandoraScraperService();
+                            // $pandoraProduct = $pandoraService->getPandoraProductByDesignNo($retailEdgeProduct->real_design_number);
 
-                            $pandoraProduct = $pandoraService->getPandoraProductByDesignNo($retailEdgeProduct->real_design_number);
+                            $pandoraProduct =  null;
 
                             if (!$pandoraProduct) {
                                 $variant->update(['images_requires_update' => 2]);
