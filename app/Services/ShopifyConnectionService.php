@@ -18,7 +18,7 @@ class ShopifyConnectionService
             scopes: ['NA'],
             hostName: config('shopify.store_name'),
             sessionStorage: new FileSessionStorage(storage_path()),
-            apiVersion: ApiVersion::LATEST,
+            apiVersion: ApiVersion::JANUARY_2024,
             isEmbeddedApp: false,
         );
 
