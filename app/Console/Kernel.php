@@ -15,7 +15,7 @@ class Kernel extends ConsoleKernel
         /**
          * Main job to fetch products from eWeb
          */
-        $schedule->command('getProductsFromEWebMain')->everyTenMinutes();
+        $schedule->command('getProductsFromEWebMain')->everyFifteenMinutes();
 
         /**
          * Amazon Crons
@@ -68,9 +68,14 @@ class Kernel extends ConsoleKernel
          * Shopify Crons
          */
 
-        $schedule->command('shopifyGetProducts')->everyTwoHours()->after(function () {
+        // $schedule->command('shopifyGetProducts')->everyTwoHours()->after(function () {
+        //     $this->call('shopifyCreateProduct');
+        // });
+
+        $schedule->command('shopifyGetProducts')->cron("5 */2 * * *")->after(function () {
             $this->call('shopifyCreateProduct');
         });
+
 
         // $schedule->command('shopifyCreateProduct')->everyThreeHours();
 
