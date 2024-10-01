@@ -5,8 +5,6 @@ namespace App\Console\Commands\Shopify;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Shopify\Rest\Admin2024_01\Image;
-use Symfony\Component\Process\Process;
-use Symfony\Component\Process\Exception\ProcessFailedException;
 use App\Http\Controllers\SyncJobController;
 use App\Models\PandoraList;
 use App\Models\RetailEdgeProduct;
@@ -61,36 +59,69 @@ class UploadImages extends Command
                         }
 
                         try {
-                            // temporary disabled the cron for Pandora
-                            // $pandoraService = new PandoraScraperService();
-                            // $pandoraProduct = $pandoraService->getPandoraProductByDesignNo($retailEdgeProduct->real_design_number);
+                            $images = [];
+                            $sleep = 600;
 
-                            $pandoraProduct =  null;
+                            $result = PandoraList::selectRaw("DISTINCT CASE 
+                                                WHEN INSTR(`design_no`, '-') > 0 
+                                                THEN LEFT(`design_no`, INSTR(`design_no`, '-') - 1)
+                                                ELSE `design_no`
+                                            END AS `design_no`, 
+                                            `design_no` AS `org_design_no`, 
+                                            `id`, `sku`, `product_name`, `product_url`, `search_response`, `discontinued`, `images`, `created_at`, `updated_at`")
+                                ->whereNotNull('product_url')
+                                ->whereNotNull('images')
+                                ->where('design_no', $retailEdgeProduct->real_design_number)
+                                ->first();
 
-                            if (!$pandoraProduct) {
-                                $variant->update(['images_requires_update' => 2]);
-                                continue;
-                                sleep(20);
+                            if ($result) {
+                                $images = json_decode($result->images);
+                                $sleep = 0;
+
+                                PandoraList::create([
+                                    'design_no' => $retailEdgeProduct->real_design_number,
+                                    'sku' => $retailEdgeProduct->sku,
+                                    'search_response' => $result->search_response,
+                                    'product_name' => $result->product_name,
+                                    'product_url' => $result->product_url,
+                                    'product_response' => $result->product_response,
+                                    'discontinued' => 0,
+                                    'images' => $result->images,
+                                ]);
+                            } else {
+                                $pandoraService = new PandoraScraperService();
+                                $pandoraProduct = $pandoraService->getPandoraProductByDesignNo($retailEdgeProduct->real_design_number);
+
+                                if (!$pandoraProduct) {
+                                    $variant->update(['images_requires_update' => 2]);
+                                    sleep(20);
+                                    continue;
+                                }
+
+                                $images = json_decode($pandoraProduct->images);
                             }
 
-                            foreach (json_decode($pandoraProduct->images) as $i) {
-                                try {
-                                    $image = new Image($session);
-                                    $image->product_id = $variant->product_id;
-                                    $image->src = $i;
-                                    $image->variant_ids = [
-                                        $variant->variant_id
-                                    ];
+                            if (is_array($images) && count($images)) {
+                                foreach ($images as $i) {
+                                    try {
+                                        $image = new Image($session);
+                                        $image->product_id = $variant->product_id;
+                                        $image->src = $i;
+                                        $image->variant_ids = [
+                                            $variant->variant_id
+                                        ];
 
-                                    $image->save(
-                                        true, // Update Object
-                                    );
-                                    $this->info("Image uploaded for sku {$variant->sku}, variant id  {$variant->variant_id}");
-                                    $variant->update(['images_requires_update' => 0]);
-                                } catch (\Exception $e) {
-                                    Log::debug("There was an error while uploading the images for {$variant->sku}. Error message : {$e->getMessage()}");
-                                    $variant->update(['images_requires_update' => 2]);
+                                        $image->save(
+                                            true, // Update Object
+                                        );
+                                        $this->info("Image uploaded for sku {$variant->sku}, variant id  {$variant->variant_id}");
+                                        $variant->update(['images_requires_update' => 0]);
+                                    } catch (\Exception $e) {
+                                        Log::debug("There was an error while uploading the images for {$variant->sku}. Error message : {$e->getMessage()}");
+                                        $variant->update(['images_requires_update' => 2]);
+                                    }
                                 }
+                                $this->info("Sleeping for {$sleep} seconds after scraping Pandora.");
                             }
                         } catch (\Exception $e) {
                             report($e);
