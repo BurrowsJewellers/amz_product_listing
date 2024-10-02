@@ -82,6 +82,8 @@ class UploadImages extends Command
                                 ->first();
 
                             if ($result) {
+                                $this->info("{$variant->sku} already scraped.");
+
                                 $images = json_decode($result->images);
                                 $sleep = 0;
 
@@ -96,10 +98,13 @@ class UploadImages extends Command
                                     'images' => $result->images,
                                 ]);
                             } else {
+                                $this->info("Scraping images for sku: {$variant->sku}, design no: {$retailEdgeProduct->real_design_number}");
+
                                 $pandoraService = new PandoraScraperService();
                                 $pandoraProduct = $pandoraService->getPandoraProductByDesignNo($retailEdgeProduct->real_design_number);
 
                                 if (!$pandoraProduct) {
+                                    $this->error("Couldn't scrape the sku: {$variant->sku}, design no: {$retailEdgeProduct->real_design_number}");
                                     $variant->update(['images_requires_update' => 2]);
                                     sleep(20);
                                     continue;
@@ -129,6 +134,8 @@ class UploadImages extends Command
                                     }
                                 }
                                 $this->info("Sleeping for {$sleep} seconds after scraping Pandora.");
+                            } else {
+                                $this->error("images is not array");
                             }
                         } catch (\Exception $e) {
                             report($e);
