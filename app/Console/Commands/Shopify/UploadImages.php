@@ -54,7 +54,10 @@ class UploadImages extends Command
                         $this->error("No variant found with images_requires_update = 1");
                     }
 
+                    $this->info("Uploading images for {$variant->sku}");
+
                     if ($variant->product->vendor == 'Pandora') {
+                        $this->info("{$variant->sku} belongs to Pandora.");
                         $retailEdgeProduct = RetailEdgeProduct::where('sku', $variant->sku)->first();
 
                         if (!$retailEdgeProduct) {
