@@ -101,7 +101,8 @@ class UploadImages extends Command
                                 $this->info("Scraping images for sku: {$variant->sku}, design no: {$retailEdgeProduct->real_design_number}");
 
                                 $pandoraService = new PandoraScraperService();
-                                $pandoraProduct = $pandoraService->getPandoraProductByDesignNo($retailEdgeProduct->real_design_number);
+                                // $pandoraProduct = $pandoraService->getPandoraProductByDesignNo($retailEdgeProduct->real_design_number);
+                                $pandoraProduct = null;
 
                                 if (!$pandoraProduct) {
                                     $this->error("Couldn't scrape the sku: {$variant->sku}, design no: {$retailEdgeProduct->real_design_number}");
