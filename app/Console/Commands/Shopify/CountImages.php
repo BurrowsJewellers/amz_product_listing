@@ -60,15 +60,17 @@ class CountImages extends Command
         try {
             $session = (new ShopifyService)->getSession();
 
-            $variants = ShopifyProductVariant::select('id', 'product_id', 'variant_id')->where('inventory_quantity', '>', 0)->get();
+            $variants = ShopifyProductVariant::select('id', 'product_id', 'variant_id', 'sku')->where('inventory_quantity', '>', 0)->get();
 
             foreach ($variants as $variant) {
                 try {
+                    $this->info("Fetching images count for SKU: {$variant->sku}");
                     $resp = Image::count(
                         $session,
                         ["product_id" => $variant->product_id],
                     );
 
+                    $this->info("Found {$resp['count']} images.");
                     if ($resp['count'] == 0) {
                         $variant->update(['images_requires_update' => 1]);
                     }
