@@ -50,6 +50,10 @@ class UploadImages extends Command
                 while ($count) {
                     $variant = ShopifyProductVariant::where('images_requires_update', 1)->with(['images', 'product'])->first();
 
+                    if (!$variant) {
+                        $this->error("No variant found with images_requires_update = 1");
+                    }
+
                     if ($variant->product->vendor == 'Pandora') {
                         $retailEdgeProduct = RetailEdgeProduct::where('sku', $variant->sku)->first();
 
