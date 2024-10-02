@@ -78,6 +78,7 @@ class CountImages extends Command
                     report($e);
                     $this->error($e->getMessage());
                 }
+                sleep(1);
             }
         } catch (\Exception $e) {
             report($e);
