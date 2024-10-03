@@ -237,7 +237,7 @@ class ShopifyService extends ShopifyConnectionService
         return true;
     }
 
-    public function uploadImages(ShopifyProductVariant $variant, string $imageUrl)
+    public function uploadImages(ShopifyProductVariant $variant, string $imageContent)
     {
         try {
             $session = $this->getSession();
@@ -245,7 +245,7 @@ class ShopifyService extends ShopifyConnectionService
             try {
                 $image = new Image($session);
                 $image->product_id = $variant->product_id;
-                $image->src = $imageUrl;
+                $image->attachment = $imageContent;
                 $image->variant_ids = [
                     $variant->variant_id
                 ];

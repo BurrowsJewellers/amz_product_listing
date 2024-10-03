@@ -26,8 +26,8 @@ class PandoraController extends Controller
                 throw new \Exception("Shopify variant not found with SKU {$retailEdgeProduct->sku}");
             }
 
-            $imagesArray = explode(",", implode(",", $request->image_links));
-            $imagesJson = json_encode($imagesArray, JSON_UNESCAPED_SLASHES);
+            // $imagesArray = explode(",", implode(",", $request->image_links));
+            // $imagesJson = json_encode($imagesArray, JSON_UNESCAPED_SLASHES);
 
             $pandoraProduct = PandoraList::updateOrCreate(
                 [
@@ -41,14 +41,12 @@ class PandoraController extends Controller
                     'product_url' => $request->product_url,
                     'product_response' => "From Chrome Extension",
                     'discontinued' => 0,
-                    'images' => $imagesJson,
+                    'images' => "Blob",
                 ]
             );
 
-            $images = json_decode($pandoraProduct->images);
-
-            foreach ($images as $imageUrl) {
-                (new ShopifyService)->uploadImages($variant, $imageUrl);
+            foreach ($request->image_contents as $imageContent) {
+                (new ShopifyService)->uploadImages($variant, $imageContent);
             }
 
             return response()
