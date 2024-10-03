@@ -15,7 +15,7 @@ class PandoraController extends Controller
     public function uploadData(Request $request)
     {
         try {
-            Log::debug($request->all());
+            // Log::debug($request->all());
 
             $retailEdgeProduct = RetailEdgeProduct::where('real_design_number', $request->design_no)->first();
 
@@ -46,7 +46,14 @@ class PandoraController extends Controller
                 ]
             );
 
-            $images = explode(",", implode(",", $request->image_links));
+            $imagesArray = explode(",", implode(",", $request->image_links));
+
+
+            $images = [];
+
+            foreach ($imagesArray as $image) {
+                $images[] = $image;
+            }
 
             (new ShopifyService)->uploadImages($variant, $images);
 
