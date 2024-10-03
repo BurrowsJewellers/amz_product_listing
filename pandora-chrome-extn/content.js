@@ -17,7 +17,8 @@ async function fetchImageAsBase64(url) {
 async function extractData() {
     console.log('Extracting data from page...');
     const productUrl = document.querySelector('link[rel="canonical"]')?.href || '';
-    const designNo = document.querySelector('[data-bv-show="rating_summary"]')?.getAttribute('data-bv-productid') || '';
+    // const designNo = document.querySelector('[data-bv-show="rating_summary"]')?.getAttribute('data-bv-productid') || '';
+    const designNo = document.querySelector('.product-id')?.textContent.trim() || '';
     const productName = document.querySelector('.product-name.title-medium')?.textContent || '';
     const productDescription = document.querySelector('.short-description')?.textContent || '';
 
