@@ -70,6 +70,7 @@ class UploadImages extends Command
                                     $variant->update(['images_requires_update' => 2]);
                                 }
                             }
+                            sleep(2);
                         } else {
                             $variant->update(['images_requires_update' => 2]);
                             Log::debug("No images found on Retail Edge for {$variant->sku}");
