@@ -12,10 +12,11 @@ class PandoraList extends Model
     protected $fillable = [
         'design_no',
         'sku',
-        'search_response',
         'product_name',
+        'product_description',
         'product_url',
         'product_response',
+        'search_response',
         'discontinued',
         'images',
     ];

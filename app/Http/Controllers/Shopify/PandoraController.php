@@ -41,12 +41,12 @@ class PandoraController extends Controller
                     'product_url' => $request->product_url,
                     'product_response' => "From Chrome Extension",
                     'discontinued' => 0,
-                    'images' => json_encode($request->image_links),
+                    'images' => implode(",", $request->image_links),
 
                 ]
             );
 
-            $images = json_decode(json_encode($request->image_links));
+            $images = explode(",", implode(",", $request->image_links));
 
             (new ShopifyService)->uploadImages($variant, $images);
 

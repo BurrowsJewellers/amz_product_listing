@@ -250,7 +250,7 @@ class ShopifyService extends ShopifyConnectionService
                 try {
                     $image = new Image($session);
                     $image->product_id = $variant->product_id;
-                    $image->src = str_replace("\/", "/", $i);
+                    $image->src = $i;
                     $image->variant_ids = [
                         $variant->variant_id
                     ];
