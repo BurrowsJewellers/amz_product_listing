@@ -10,7 +10,7 @@ function showNotification(title, message) {
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     console.log('Received message in background script:', request);
     if (request.action === "uploadData") {
-        fetch('https://portal.burrowsjewellers.com.au/api/upload-data', {
+        fetch('https://portal.burrowsjewellers.com.au/upload-data', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

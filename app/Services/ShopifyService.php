@@ -244,6 +244,7 @@ class ShopifyService extends ShopifyConnectionService
     public function uploadImages(Request $request)
     {
         try {
+            Log::debug(print_r($request->all(), true));
             $retailEdgeProduct = RetailEdgeProduct::where('real_design_number', $request->designNo)->first();
 
             if (!$retailEdgeProduct) {
