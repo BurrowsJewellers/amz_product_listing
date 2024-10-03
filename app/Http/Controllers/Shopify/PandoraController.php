@@ -41,12 +41,14 @@ class PandoraController extends Controller
                     'product_url' => $request->product_url,
                     'product_response' => "From Chrome Extension",
                     'discontinued' => 0,
-                    'images' => $request->image_links,
+                    'images' => json_encode($request->image_links),
 
                 ]
             );
 
-            (new ShopifyService)->uploadImages($variant, $request->image_links);
+            $images = json_decode(json_encode($request->image_links));
+
+            (new ShopifyService)->uploadImages($variant, $images);
 
             return response()
                 ->json(['message' => 'Data uploaded successfully'])
