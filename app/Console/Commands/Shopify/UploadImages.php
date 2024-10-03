@@ -74,6 +74,8 @@ class UploadImages extends Command
                         } else {
                             $variant->update(['images_requires_update' => 2]);
                             Log::debug("No images found on Retail Edge for {$variant->sku}");
+                            Log::debug("shopifyUploadImages sleep 60 seconds");
+                            sleep(60);
                         }
                     } else {
                         $this->error("No variant found with images_requires_update = 1");
