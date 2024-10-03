@@ -60,7 +60,7 @@ class CountImages extends Command
         try {
             $session = (new ShopifyService)->getSession();
 
-            $variants = ShopifyProductVariant::select('id', 'product_id', 'variant_id', 'sku')->where('inventory_quantity', '>', 0)->get();
+            $variants = ShopifyProductVariant::select('id', 'product_id', 'variant_id', 'sku')->get();
 
             foreach ($variants as $variant) {
                 try {

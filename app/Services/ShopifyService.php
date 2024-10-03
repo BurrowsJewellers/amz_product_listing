@@ -2,13 +2,16 @@
 
 namespace App\Services;
 
+use Illuminate\Http\Request;
 use App\Models\RetailEdgeProduct;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 use App\Models\ShopifyInventoryLevel;
 use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
+use Illuminate\Support\Facades\Log;
 use Shopify\Rest\Admin2024_01\Image;
+
 
 class ShopifyService extends ShopifyConnectionService
 {
@@ -235,5 +238,46 @@ class ShopifyService extends ShopifyConnectionService
         }
 
         return true;
+    }
+
+
+    public function uploadImages(Request $request)
+    {
+        try {
+            $retailEdgeProduct = RetailEdgeProduct::where('real_design_number', $request->designNo)->first();
+
+            if (!$retailEdgeProduct) {
+                throw new \Exception("RetailEdge Product not found with real_design_number {$request->designNo}");
+            }
+
+            $session = $this->getSession();
+            $variant = ShopifyProductVariant::where('sku', $retailEdgeProduct->sku)->first();
+
+            if (!$variant) {
+                throw new \Exception("Shopify variant not found with SKU {$retailEdgeProduct->sku}");
+            }
+
+            foreach ($request->imageLinks as $i) {
+                try {
+                    $image = new Image($session);
+                    $image->product_id = $variant->product_id;
+                    $image->src = $i;
+                    $image->variant_ids = [
+                        $variant->variant_id
+                    ];
+
+                    $image->save(
+                        true, // Update Object
+                    );
+                    $variant->update(['images_requires_update' => 0]);
+                } catch (\Exception $e) {
+                    Log::debug("There was an error while uploading the images for {$variant->sku}. Error message : {$e->getMessage()}");
+                    report($e);
+                    $variant->update(['images_requires_update' => 2]);
+                }
+            }
+        } catch (\Exception $e) {
+            report($e);
+        }
     }
 }
