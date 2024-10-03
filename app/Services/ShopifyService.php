@@ -277,8 +277,10 @@ class ShopifyService extends ShopifyConnectionService
                     $variant->update(['images_requires_update' => 2]);
                 }
             }
+
+            return 'ok';
         } catch (\Exception $e) {
-            report($e);
+            throw ($e);
         }
     }
 }

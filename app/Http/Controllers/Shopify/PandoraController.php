@@ -10,6 +10,11 @@ class PandoraController extends Controller
 {
     public function uploadData(Request $request)
     {
-        (new ShopifyService)->uploadImages($request);
+        try {
+            return (new ShopifyService)->uploadImages($request);
+        } catch (\Exception $e) {
+            report($e);
+            return response()->json('failed', 500);
+        }
     }
 }

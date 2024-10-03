@@ -27,8 +27,14 @@ Route::prefix('/shopify')->name('shopify.')->group(function () {
     Route::post('webhooks/orders/create', [WebhookController::class, 'ordersCreate']);
 });
 
-Route::post('/upload-data', [PandoraController::class, 'uploadData']);
+Route::options('/upload-data', function () {
+    return response('', 200)
+        ->header('Access-Control-Allow-Origin', '*')
+        ->header('Access-Control-Allow-Methods', 'POST, GET, OPTIONS')
+        ->header('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With');
+});
 
+Route::post('/upload-data', [PandoraController::class, 'uploadData']);
 
 Route::middleware(['auth'])->group(function () {
     Route::get('/', function () {
