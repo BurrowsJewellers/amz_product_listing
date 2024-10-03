@@ -241,24 +241,12 @@ class ShopifyService extends ShopifyConnectionService
     }
 
 
-    public function uploadImages(Request $request)
+    public function uploadImages(ShopifyProductVariant $variant, array $images)
     {
         try {
-            Log::debug(print_r($request->all(), true));
-            $retailEdgeProduct = RetailEdgeProduct::where('real_design_number', $request->design_no)->first();
-
-            if (!$retailEdgeProduct) {
-                throw new \Exception("RetailEdge Product not found with real_design_number {$request->design_no}");
-            }
-
             $session = $this->getSession();
-            $variant = ShopifyProductVariant::where('sku', $retailEdgeProduct->sku)->first();
 
-            if (!$variant) {
-                throw new \Exception("Shopify variant not found with SKU {$retailEdgeProduct->sku}");
-            }
-
-            foreach ($request->image_links as $i) {
+            foreach ($images as $i) {
                 try {
                     $image = new Image($session);
                     $image->product_id = $variant->product_id;
@@ -268,7 +256,7 @@ class ShopifyService extends ShopifyConnectionService
                     ];
 
                     $image->save(
-                        true, // Update Object
+                        true,
                     );
                     $variant->update(['images_requires_update' => 0]);
                 } catch (\Exception $e) {
