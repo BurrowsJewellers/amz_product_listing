@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use Illuminate\Http\Request;
 use App\Models\RetailEdgeProduct;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
@@ -11,7 +10,6 @@ use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
 use Illuminate\Support\Facades\Log;
 use Shopify\Rest\Admin2024_01\Image;
-
 
 class ShopifyService extends ShopifyConnectionService
 {
@@ -221,7 +219,6 @@ class ShopifyService extends ShopifyConnectionService
         }
     }
 
-
     public function deleteImagesByProductId(string $productId)
     {
         $session = $this->getSession();
@@ -240,33 +237,29 @@ class ShopifyService extends ShopifyConnectionService
         return true;
     }
 
-
-    public function uploadImages(ShopifyProductVariant $variant, array $images)
+    public function uploadImages(ShopifyProductVariant $variant, string $imageUrl)
     {
         try {
             $session = $this->getSession();
 
-            foreach ($images as $i) {
-                try {
-                    $image = new Image($session);
-                    $image->product_id = $variant->product_id;
-                    $image->src = $i;
-                    $image->variant_ids = [
-                        $variant->variant_id
-                    ];
+            try {
+                $image = new Image($session);
+                $image->product_id = $variant->product_id;
+                $image->src = $imageUrl;
+                $image->variant_ids = [
+                    $variant->variant_id
+                ];
 
-                    $image->save(
-                        true,
-                    );
-                    $variant->update(['images_requires_update' => 0]);
-                } catch (\Exception $e) {
-                    Log::debug("There was an error while uploading the images for {$variant->sku}. Error message : {$e->getMessage()}");
-                    report($e);
-                    $variant->update(['images_requires_update' => 2]);
-                }
+                $image->save(
+                    true,
+                );
+                $variant->update(['images_requires_update' => 0]);
+                return 'ok';
+            } catch (\Exception $e) {
+                Log::debug("There was an error while uploading the images for {$variant->sku}. Error message : {$e->getMessage()}");
+                report($e);
+                $variant->update(['images_requires_update' => 2]);
             }
-
-            return 'ok';
         } catch (\Exception $e) {
             throw ($e);
         }

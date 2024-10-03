@@ -8,15 +8,12 @@ use App\Models\RetailEdgeProduct;
 use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 
 class PandoraController extends Controller
 {
     public function uploadData(Request $request)
     {
         try {
-            // Log::debug($request->all());
-
             $retailEdgeProduct = RetailEdgeProduct::where('real_design_number', $request->design_no)->first();
 
             if (!$retailEdgeProduct) {
@@ -29,33 +26,30 @@ class PandoraController extends Controller
                 throw new \Exception("Shopify variant not found with SKU {$retailEdgeProduct->sku}");
             }
 
-            PandoraList::updateOrCreate(
+            $imagesArray = explode(",", implode(",", $request->image_links));
+            $imagesJson = json_encode($imagesArray, JSON_UNESCAPED_SLASHES);
+
+            $pandoraProduct = PandoraList::updateOrCreate(
                 [
                     'design_no' => $retailEdgeProduct->real_design_number,
-
                 ],
                 [
                     'sku' => $retailEdgeProduct->sku,
                     'search_response' => "From Chrome Extension",
                     'product_name' => $request->product_name,
+                    'product_description' => $request->product_description,
                     'product_url' => $request->product_url,
                     'product_response' => "From Chrome Extension",
                     'discontinued' => 0,
-                    'images' => implode(",", $request->image_links),
-
+                    'images' => $imagesJson,
                 ]
             );
 
-            $imagesArray = explode(",", implode(",", $request->image_links));
+            $images = json_decode($pandoraProduct->images);
 
-
-            $images = [];
-
-            foreach ($imagesArray as $image) {
-                $images[] = $image;
+            foreach ($images as $imageUrl) {
+                (new ShopifyService)->uploadImages($variant, $imageUrl);
             }
-
-            (new ShopifyService)->uploadImages($variant, $images);
 
             return response()
                 ->json(['message' => 'Data uploaded successfully'])
