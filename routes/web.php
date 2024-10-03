@@ -9,6 +9,7 @@ use App\Http\Controllers\AmzFeedController;
 use App\Http\Controllers\AmzReportController;
 use App\Http\Controllers\Catch\ImportController;
 use App\Http\Controllers\Catch\ProductController as CatchProductController;
+use App\Http\Controllers\Shopify\PandoraController;
 use App\Http\Controllers\Shopify\WebhookController;
 
 /*
@@ -25,6 +26,8 @@ use App\Http\Controllers\Shopify\WebhookController;
 Route::prefix('/shopify')->name('shopify.')->group(function () {
     Route::post('webhooks/orders/create', [WebhookController::class, 'ordersCreate']);
 });
+
+Route::post('/upload-data', [PandoraController::class, 'uploadData']);
 
 
 Route::middleware(['auth'])->group(function () {
