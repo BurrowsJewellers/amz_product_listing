@@ -245,10 +245,10 @@ class ShopifyService extends ShopifyConnectionService
     {
         try {
             Log::debug(print_r($request->all(), true));
-            $retailEdgeProduct = RetailEdgeProduct::where('real_design_number', $request->designNo)->first();
+            $retailEdgeProduct = RetailEdgeProduct::where('real_design_number', $request->design_no)->first();
 
             if (!$retailEdgeProduct) {
-                throw new \Exception("RetailEdge Product not found with real_design_number {$request->designNo}");
+                throw new \Exception("RetailEdge Product not found with real_design_number {$request->design_no}");
             }
 
             $session = $this->getSession();
@@ -258,7 +258,7 @@ class ShopifyService extends ShopifyConnectionService
                 throw new \Exception("Shopify variant not found with SKU {$retailEdgeProduct->sku}");
             }
 
-            foreach ($request->imageLinks as $i) {
+            foreach ($request->image_links as $i) {
                 try {
                     $image = new Image($session);
                     $image->product_id = $variant->product_id;
