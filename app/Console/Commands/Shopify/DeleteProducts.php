@@ -64,6 +64,8 @@ class DeleteProducts extends Command
 
             $products = ShopifyProduct::where('id', '>', 12291)->pluck('product_id')->toArray();
 
+            $this->info("Found " . count($products) . " to delete.");
+
             foreach ($products as $product) {
                 try {
                     $this->info("Deleting product: {$product->product_id}");
