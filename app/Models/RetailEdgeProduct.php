@@ -50,6 +50,7 @@ class RetailEdgeProduct extends Model
         'uploaded_to_shopify',
         'uploaded_to_catch',
         'uploaded_to_amazon',
+        'update_date_time',
     ];
 
     public function children(): HasMany

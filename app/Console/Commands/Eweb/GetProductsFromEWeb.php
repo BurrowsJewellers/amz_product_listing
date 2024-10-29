@@ -8,6 +8,7 @@ use App\Http\Controllers\SyncJobController;
 use App\Models\RetailEdgeProduct;
 use App\Models\RetailEdgeProductImage;
 use App\Services\RetailEdgeService;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class GetProductsFromEWeb extends Command
@@ -160,6 +161,7 @@ class GetProductsFromEWeb extends Command
                                 'web_option_boolean6' => $item->WebOptionBoolean6,
                                 'web_option_boolean7' => $item->WebOptionBoolean6,
                                 'web_option_boolean8' => $item->WebOptionBoolean8,
+                                'update_date_time' => isset($item->UpdateDateTime) ? Carbon::parse($item->UpdateDateTime) : null,
                             ]
                         );
 

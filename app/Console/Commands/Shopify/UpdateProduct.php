@@ -25,7 +25,7 @@ class UpdateProduct extends Command
      *
      * @var string
      */
-    protected $description = 'The code to update the Shopify product tags';
+    protected $description = 'The code to update the Shopify products';
 
     /**
      * Execute the console command.
@@ -40,7 +40,7 @@ class UpdateProduct extends Command
         if (!$job->isRunning()) {
             try {
                 Log::info("$marketplace $jobType started!");
-                $job->update(['status' => 1]);
+                // $job->update(['status' => 1]);
 
                 $session = (new ShopifyService)->getSession();
                 $brands = Brand::all();
@@ -52,7 +52,10 @@ class UpdateProduct extends Command
                     $brandsArray[$brand->brand_id]['name'] = $brand->name;
                 }
 
-                $variants = ShopifyProductVariant::withWhereHas('retailEdgeProduct')->with('product')->where('requires_update', 1)->select('id', 'shopify_product_id', 'product_id', 'sku')->get();
+                $skus = RetailEdgeProduct::where('update_date_time', '>', now()->subHours(24))->pluck('sku')->toArray();
+
+                // $variants = ShopifyProductVariant::withWhereHas('retailEdgeProduct')->with('product')->where('requires_update', 1)->select('id', 'shopify_product_id', 'product_id', 'sku')->get();
+                $variants = ShopifyProductVariant::withWhereHas('retailEdgeProduct')->with('product')->whereIn('sku', $skus)->select('id', 'shopify_product_id', 'product_id', 'sku')->get();
 
                 foreach ($variants as $variant) {
                     $this->info('Updating: ' . $variant->sku);
