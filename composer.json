@@ -18,7 +18,8 @@
         "laravel/tinker": "^2.8",
         "mirakl/sdk-php-shop": "^1.20.5",
         "shopify/shopify-api": "^5.6",
-        "yajra/laravel-datatables-oracle": "^10.0"
+        "yajra/laravel-datatables-oracle": "^10.0",
+        "phpoffice/phpspreadsheet": "^1.29.2"
     },
     "require-dev": {
         "fakerphp/faker": "^1.9.1",
