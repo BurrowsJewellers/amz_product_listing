@@ -62,17 +62,17 @@ class DeleteProducts extends Command
         try {
             $session = (new ShopifyService)->getSession();
 
-            $products = ShopifyProduct::where('id', '>', 12291)->pluck('product_id')->toArray();
+            $products = ShopifyProduct::where('id', '>', 13396)->pluck('product_id')->toArray();
 
             $this->info("Found " . count($products) . " to delete.");
 
-            foreach ($products as $product) {
+            foreach ($products as $productId) {
                 try {
-                    $this->info("Deleting product: {$product->product_id}");
+                    $this->info("Deleting product: {$productId}");
 
                     Product::delete(
                         $session,
-                        $product->product_id,
+                        $productId,
                     );
                 } catch (\Exception $e) {
                     report($e);
