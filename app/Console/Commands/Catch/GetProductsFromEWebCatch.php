@@ -113,7 +113,7 @@ class GetProductsFromEWebCatch extends Command
                         $productData['sku'] = $sku;
                         $productData['title'] = $item->ShortMarketingDescription;
                         $productData['product_description'] = $item->MarketingDescription;
-                        $productData['product_reference_value'] = $barcode;
+                        // $productData['product_reference_value'] = $barcode;
                         $productData['brand_id'] = isset($brandsArray[$item->BrandID]['id']) ? $brandsArray[$item->BrandID]['id'] : null;
                         $productData['marketplace_id'] = $marketplaceObj->id;
                         $productData['category_id'] = $category->id;
@@ -212,7 +212,7 @@ class GetProductsFromEWebCatch extends Command
 
                             if ($wasRecentlyCreated) {
                                 $productReferenceType = strlen($barcode) == 11 || strlen($barcode) == 12 ? 'UPC' : 'EAN';
-                                $product->update(['product_reference_type' => $productReferenceType]);
+                                // $product->update(['product_reference_type' => $productReferenceType]);
                                 $product = $product->refresh();
                             }
 

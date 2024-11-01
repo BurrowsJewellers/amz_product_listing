@@ -36,7 +36,7 @@ class ListOffersOfShop extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if(!$job->isRunning()){
+        if (!$job->isRunning()) {
             Log::info("$marketplace $jobType started!");
             $job->update(['status' => 1]);
 
@@ -50,13 +50,13 @@ class ListOffersOfShop extends Command
                     'offer_csv_submitted' => 0,
                 ]);
 
-                $max = 50;
+                $max = 90;
                 $offset = 0;
 
                 $result = $this->getOffers($max, $offset);
                 $totalCount = $result->getTotalCount();
 
-                while($totalCount > $offset){
+                while ($totalCount > $offset) {
                     try {
                         $shopOfferCollection = $this->getOffers($max, $offset);
                         // $totalCount = $result->getTotalCount();
@@ -64,14 +64,24 @@ class ListOffersOfShop extends Command
                         foreach ($shopOfferCollection as $shopOffer) {
                             /** @var ShopOffer $shopOffer */
 
-                            $this->info('sku: '. $shopOffer->getSku());
-                            CatchProduct::where('sku', $shopOffer->getSku())->update([
+                            $this->info('sku: ' . $shopOffer->getSku());
+
+                            $references = $shopOffer->getProduct()?->getReferences();
+
+                            $dataToUpdate = [
                                 'published' => 1,
                                 'product_csv_generated' => 1,
                                 'product_csv_submitted' => 1,
                                 'offer_csv_generated' => 1,
                                 'offer_csv_submitted' => 1,
-                            ]);
+                            ];
+
+                            if (!empty($references) && null !== $references[0]->getType()) {
+                                $dataToUpdate['product_reference_type'] = $references[0]->getType();
+                                $dataToUpdate['product_reference_value'] = $references[0]->getValue();
+                            }
+
+                            CatchProduct::where('sku', $shopOffer->getSku())->update($dataToUpdate);
                         }
 
                         $offset += $max;
@@ -100,7 +110,8 @@ class ListOffersOfShop extends Command
      * @return \Mirakl\MMP\Shop\Domain\Collection\Offer\ShopOfferCollection
      * @throws \Exception
      */
-    public function getOffers($max, $offset, $shopId = null) {
+    public function getOffers($max, $offset, $shopId = null)
+    {
         try {
             $this->info("Max: $max");
             $this->info("Offset: $offset");
@@ -113,17 +124,15 @@ class ListOffersOfShop extends Command
                     throw new \Exception('Catch shop id is not set config file.');
                 }
 
-                $api = MiraklShopApiClient::getShopApiClient();        
-                
+                $api = MiraklShopApiClient::getShopApiClient();
+
                 $request = new GetOffersRequest($shopId);
                 $request->setMax($max);
                 $request->setOffset($offset);
                 return $api->getOffers($request);
             }
-
         } catch (\Exception $e) {
             throw new \Exception($e);
         }
-    } 
-
+    }
 }
