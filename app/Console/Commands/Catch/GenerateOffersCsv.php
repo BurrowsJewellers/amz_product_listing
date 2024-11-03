@@ -35,14 +35,14 @@ class GenerateOffersCsv extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if(!$job->isRunning()){
+        if (!$job->isRunning()) {
             Log::info("$marketplace $jobType started!");
             $job->update(['status' => 1]);
 
             try {
                 $count = CatchProduct::where(['exists_on_catch' => 1, 'offer_csv_generated' => 0])->count();
 
-                while($count){
+                while ($count) {
                     $limit = 500;
 
                     $products = CatchProduct::with(['eWebCode', 'brand'])->where(['exists_on_catch' => 1, 'offer_csv_generated' => 0])->limit($limit)->get();
@@ -77,7 +77,7 @@ class GenerateOffersCsv extends Command
                         'location-postcode',
                     ];
 
-                    foreach($products as $product){
+                    foreach ($products as $product) {
                         try {
                             $this->info($product->id);
                             array_push($productIds, $product->id);
@@ -125,7 +125,7 @@ class GenerateOffersCsv extends Command
                     }
 
                     if (!empty($productIds)) {
-                        $filename = 'catch_offers_' . time() . '.csv';
+                        $filename = 'catch_offers_' . microtime(true) * 10000 . '.csv';
 
                         $stream = fopen('php://temp', 'w');
 
@@ -170,7 +170,8 @@ class GenerateOffersCsv extends Command
     }
 
 
-    public function getHeaders(){
+    public function getHeaders()
+    {
         return [
             'category',
             'internal_sku',
