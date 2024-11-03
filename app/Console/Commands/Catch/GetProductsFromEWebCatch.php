@@ -198,23 +198,23 @@ class GetProductsFromEWebCatch extends Command
                             $wasRecentlyCreated = $product->wasRecentlyCreated;
 
                             $newData = [];
-                            if ($product->wasChanged('quantity') || $product->wasChanged('price') || $product->wasChanged('discount_price')) {
-                                Log::debug("Values changed for : " . $product->sku);
-                                Log::debug($product->getChanges());
-                                $newData['offer_csv_generated'] = 0;
-                                $newData['offer_csv_submitted'] = 0;
-                            }
+                            // if ($product->wasChanged('quantity') || $product->wasChanged('price') || $product->wasChanged('discount_price')) {
+                            //     Log::debug("Values changed for : " . $product->sku);
+                            //     Log::debug($product->getChanges());
+                            $newData['offer_csv_generated'] = 0;
+                            $newData['offer_csv_submitted'] = 0;
+                            // }
 
                             if (!empty($newData)) {
                                 $product->update($newData);
                                 $product = $product->refresh();
                             }
 
-                            if ($wasRecentlyCreated) {
-                                $productReferenceType = strlen($barcode) == 11 || strlen($barcode) == 12 ? 'UPC' : 'EAN';
-                                // $product->update(['product_reference_type' => $productReferenceType]);
-                                $product = $product->refresh();
-                            }
+                            // if ($wasRecentlyCreated) {
+                            // $productReferenceType = strlen($barcode) == 11 || strlen($barcode) == 12 ? 'UPC' : 'EAN';
+                            // $product->update(['product_reference_type' => $productReferenceType]);
+                            // $product = $product->refresh();
+                            // }
 
                             if (!empty($productImages)) {
                                 foreach ($productImages as $productImage) {
