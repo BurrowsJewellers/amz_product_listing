@@ -60,8 +60,12 @@ class Kernel extends ConsoleKernel
         $schedule->command('getProductsFromEWebCatch')->everyFifteenMinutes()->between('02:00', '23:59');
         // $schedule->command('catchGenerateProductsCsv')->everyTwoHours()->between('02:00','23:59');
         $schedule->command('catchGenerateProductsCsv')->cron('18 2 */4 * *');
-        $schedule->command('catchGenerateOffersCsv')->everyFifteenMinutes()->between('02:00', '23:59');
-        $schedule->command('catchSubmitImports')->everyThirtyMinutes()->between('02:00', '23:59');
+        $schedule->command('catchGenerateOffersCsv')->everyFifteenMinutes()->between('02:00', '23:59')
+            ->after(function () {
+                $this->call('catchSubmitImports');
+            });
+
+        // $schedule->command('catchSubmitImports')->everyThirtyMinutes()->between('02:00', '23:59');
 
 
         /**
