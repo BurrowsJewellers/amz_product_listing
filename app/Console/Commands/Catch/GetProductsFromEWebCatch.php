@@ -13,6 +13,7 @@ use App\Models\EWebShortCode;
 use App\Models\Marketplace;
 use App\Models\Catch\CatchProduct;
 use App\Models\Catch\CatchProductImage;
+use Aws\FreeTier\FreeTierClient;
 
 class GetProductsFromEWebCatch extends Command
 {
@@ -156,7 +157,12 @@ class GetProductsFromEWebCatch extends Command
                         $productData['price'] = $price > 0 ? $price : null;
                         $productData['discount_price'] = $discountPrice;
 
-                        $productData['logistic_class'] = 'FREE';
+                        if ($productData['price'] > 0) {
+                            $productData['logistic_class'] = 'FREE';
+                        } else {
+                            $productData['logistic_class'] = 'Flat Rate';
+                        }
+
                         $productData['leadtime_to_ship'] = 2;
                         $productData['update_delete'] = 'UPDATE';
                         $productData['club_catch_eligible'] = 0;
