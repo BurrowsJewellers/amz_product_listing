@@ -42,6 +42,95 @@ class UpdateInventory extends Command
         $this->shopifyService = new ShopifyService();
     }
 
+    private function checkResponseForErrors($response)
+    {
+        $responseBody = $response->getDecodedBody();
+
+        // Check for GraphQL response errors
+        if (isset($responseBody['errors'])) {
+            throw new \Exception(json_encode($responseBody['errors']));
+        }
+
+        // Check for user errors in the mutation response
+        if (
+            isset($responseBody['data']['inventorySetQuantities']['userErrors'])
+            && !empty($responseBody['data']['inventorySetQuantities']['userErrors'])
+        ) {
+            throw new \Exception(json_encode($responseBody['data']['inventorySetQuantities']['userErrors']));
+        }
+
+        return $responseBody;
+    }
+
+    private function updateInventoryLevel($locationId, $inventoryItemId, $newQuantity, $currentQuantity)
+    {
+        $mutation = <<<'GRAPHQL'
+        mutation InventorySet($input: InventorySetQuantitiesInput!) {
+            inventorySetQuantities(input: $input) {
+                inventoryAdjustmentGroup {
+                    createdAt
+                    reason
+                    changes {
+                        name
+                        delta
+                    }
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+        GRAPHQL;
+
+        $variables = [
+            'input' => [
+                'name' => 'available',
+                'reason' => 'correction',
+                'referenceDocumentUri' => 'logistics://inventory/update/' . date('Y-m-d\TH:i:s\Z'),
+                'quantities' => [
+                    [
+                        'inventoryItemId' => "gid://shopify/InventoryItem/{$inventoryItemId}",
+                        'locationId' => "gid://shopify/Location/{$locationId}",
+                        'quantity' => $newQuantity,
+                        'compareQuantity' => $currentQuantity
+                    ]
+                ]
+            ]
+        ];
+
+        $response = $this->client->query(['query' => $mutation, 'variables' => $variables]);
+        return $this->checkResponseForErrors($response);
+    }
+
+    private function updateProductStatus($productId, $status)
+    {
+        $mutation = <<<'GRAPHQL'
+        mutation productUpdate($input: ProductInput!) {
+            productUpdate(input: $input) {
+                product {
+                    id
+                    status
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+        GRAPHQL;
+
+        $variables = [
+            'input' => [
+                'id' => "gid://shopify/Product/{$productId}",
+                'status' => strtoupper($status)
+            ]
+        ];
+
+        $response = $this->client->query(['query' => $mutation, 'variables' => $variables]);
+        return $this->checkResponseForErrors($response);
+    }
+
     public function handle()
     {
         $marketplace = 'Shopify';
@@ -83,10 +172,6 @@ class UpdateInventory extends Command
                                 $currentQuantity
                             );
 
-                            if (!empty($response['errors'])) {
-                                throw new \Exception(json_encode($response['errors']));
-                            }
-
                             $variant->update([
                                 'inventory_quantity' => $newQuantity,
                                 'inventory_requires_update' => 0
@@ -98,14 +183,10 @@ class UpdateInventory extends Command
                             if ($variant->retailEdgeProduct->quantity > 0 && $variant->product->status == 'archived') {
                                 try {
                                     $status = 'active';
-                                    $statusResponse = $this->updateProductStatus(
+                                    $response = $this->updateProductStatus(
                                         $variant->product->product_id,
                                         $status
                                     );
-
-                                    if (!empty($statusResponse['errors'])) {
-                                        throw new \Exception(json_encode($statusResponse['errors']));
-                                    }
 
                                     ShopifyProduct::where('id', $variant->product->id)
                                         ->update(['status' => $status]);
@@ -143,73 +224,6 @@ class UpdateInventory extends Command
             Log::info("$marketplace $jobType is already running.");
         }
     }
-
-    private function updateInventoryLevel($locationId, $inventoryItemId, $newQuantity, $currentQuantity)
-    {
-        $mutation = <<<'GRAPHQL'
-        mutation InventorySet($input: InventorySetQuantitiesInput!) {
-            inventorySetQuantities(input: $input) {
-                inventoryAdjustmentGroup {
-                    createdAt
-                    reason
-                    changes {
-                        name
-                        delta
-                    }
-                }
-                userErrors {
-                    field
-                    message
-                }
-            }
-        }
-        GRAPHQL;
-
-        $variables = [
-            'input' => [
-                'name' => 'available',
-                'reason' => 'correction',
-                'quantities' => [
-                    [
-                        'inventoryItemId' => "gid://shopify/InventoryItem/{$inventoryItemId}",
-                        'locationId' => "gid://shopify/Location/{$locationId}",
-                        'quantity' => $newQuantity,
-                        'compareQuantity' => $currentQuantity
-                    ]
-                ]
-            ]
-        ];
-
-        return $this->client->query(['query' => $mutation, 'variables' => $variables]);
-    }
-
-    private function updateProductStatus($productId, $status)
-    {
-        $mutation = <<<'GRAPHQL'
-        mutation productUpdate($input: ProductInput!) {
-            productUpdate(input: $input) {
-                product {
-                    id
-                    status
-                }
-                userErrors {
-                    field
-                    message
-                }
-            }
-        }
-        GRAPHQL;
-
-        $variables = [
-            'input' => [
-                'id' => "gid://shopify/Product/{$productId}",
-                'status' => strtoupper($status)
-            ]
-        ];
-
-        return $this->client->query(['query' => $mutation, 'variables' => $variables]);
-    }
-
 
     public function handleOld()
     {
