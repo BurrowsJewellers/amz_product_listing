@@ -72,16 +72,15 @@ class UpdateInventory extends Command
 
                     if ($variant) {
                         try {
-                            // Calculate the delta (difference) for inventory adjustment
                             $currentQuantity = $variant->inventory_quantity ?? 0;
                             $newQuantity = $variant->retailEdgeProduct->quantity;
-                            $delta = $newQuantity - $currentQuantity;
 
                             // Update inventory level using GraphQL
                             $response = $this->updateInventoryLevel(
                                 $location->location_id,
                                 $variant->inventory_item_id,
-                                $delta
+                                $newQuantity,
+                                $currentQuantity
                             );
 
                             if (!empty($response['errors'])) {
@@ -145,21 +144,22 @@ class UpdateInventory extends Command
         }
     }
 
-    private function updateInventoryLevel($locationId, $inventoryItemId, $quantity)
+    private function updateInventoryLevel($locationId, $inventoryItemId, $newQuantity, $currentQuantity)
     {
         $mutation = <<<'GRAPHQL'
-        mutation inventoryAdjustQuantities($input: InventoryAdjustQuantitiesInput!) {
-            inventoryAdjustQuantities(input: $input) {
-                userErrors {
-                    field
-                    message
-                }
+        mutation InventorySet($input: InventorySetQuantitiesInput!) {
+            inventorySetQuantities(input: $input) {
                 inventoryAdjustmentGroup {
                     createdAt
+                    reason
                     changes {
                         name
                         delta
                     }
+                }
+                userErrors {
+                    field
+                    message
                 }
             }
         }
@@ -167,13 +167,15 @@ class UpdateInventory extends Command
 
         $variables = [
             'input' => [
-                'reason' => 'correction',
                 'name' => 'available',
-                'changes' => [
+                'reason' => 'correction',
+                'referenceDocumentUri' => 'logistics://inventory/update/' . date('Y-m-d\TH:i:s\Z'),
+                'quantities' => [
                     [
-                        'delta' => $quantity,
                         'inventoryItemId' => "gid://shopify/InventoryItem/{$inventoryItemId}",
-                        'locationId' => "gid://shopify/Location/{$locationId}"
+                        'locationId' => "gid://shopify/Location/{$locationId}",
+                        'quantity' => $newQuantity,
+                        'compareQuantity' => $currentQuantity
                     ]
                 ]
             ]
@@ -208,6 +210,7 @@ class UpdateInventory extends Command
 
         return $this->client->query(['query' => $mutation, 'variables' => $variables]);
     }
+
 
     public function handleOld()
     {
