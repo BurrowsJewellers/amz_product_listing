@@ -14,7 +14,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Shopify\Clients\Rest;
-use Shopify\Rest\Admin2024_01\Product;
+use Shopify\Rest\Admin2024_10\Product;
 
 class GetProductsFromEWeb extends Command
 {

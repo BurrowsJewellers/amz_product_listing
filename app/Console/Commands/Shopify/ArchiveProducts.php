@@ -8,7 +8,7 @@ use App\Http\Controllers\SyncJobController;
 use App\Models\ShopifyProduct;
 use App\Services\ShopifyService;
 use Illuminate\Support\Facades\DB;
-use Shopify\Rest\Admin2024_01\Product;
+use Shopify\Rest\Admin2024_10\Product;
 
 class ArchiveProducts extends Command
 {
