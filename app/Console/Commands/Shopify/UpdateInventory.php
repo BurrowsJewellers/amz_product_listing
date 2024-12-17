@@ -70,7 +70,7 @@ class UpdateInventory extends Command
             'input' => [
                 'name' => 'available',
                 'reason' => 'correction',
-                'ignoreCompareQuantity' => false,
+                'ignoreCompareQuantity' => true,
                 'quantities' => [
                     [
                         'inventoryItemId' => "gid://shopify/InventoryItem/{$inventoryItemId}",
