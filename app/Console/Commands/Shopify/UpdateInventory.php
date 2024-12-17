@@ -169,7 +169,6 @@ class UpdateInventory extends Command
             'input' => [
                 'name' => 'available',
                 'reason' => 'correction',
-                'referenceDocumentUri' => 'logistics://inventory/update/' . date('Y-m-d\TH:i:s\Z'),
                 'quantities' => [
                     [
                         'inventoryItemId' => "gid://shopify/InventoryItem/{$inventoryItemId}",
