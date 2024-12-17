@@ -11,6 +11,7 @@ use App\Models\ShopifyLocation;
 use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyService;
+use Shopify\Clients\Graphql;
 
 class UpdateInventory extends Command
 {
@@ -26,12 +27,189 @@ class UpdateInventory extends Command
      *
      * @var string
      */
-    protected $description = 'Command description';
+    protected $description = 'Update Shopify inventory using GraphQL';
+
+    private $client;
+    private $shopifyService;
 
     /**
      * Execute the console command.
      */
+
+    public function __construct()
+    {
+        parent::__construct();
+        $this->shopifyService = new ShopifyService();
+    }
+
     public function handle()
+    {
+        $marketplace = 'Shopify';
+        $jobType = 'shopifyUpdateInventory';
+
+        $job = SyncJobController::getJob($jobType, $marketplace);
+
+        if (!$job->isRunning()) {
+            try {
+                Log::info("$marketplace $jobType started!");
+                $job->update(['status' => 1]);
+
+                $session = $this->shopifyService->getSession();
+                $this->client = new Graphql($session->getShop(), $session->getAccessToken());
+
+                $location = ShopifyLocation::first();
+
+                $count = ShopifyProductVariant::whereNotNull('inventory_item_id')
+                    ->where('inventory_requires_update', 1)
+                    ->count();
+                $this->info("Remaining {$count}");
+
+                while ($count) {
+                    $variant = ShopifyProductVariant::with(['retailEdgeProduct', 'product'])
+                        ->whereNotNull('inventory_item_id')
+                        ->where('inventory_requires_update', 1)
+                        ->first();
+
+                    if ($variant) {
+                        try {
+                            // Calculate the delta (difference) for inventory adjustment
+                            $currentQuantity = $variant->inventory_quantity ?? 0;
+                            $newQuantity = $variant->retailEdgeProduct->quantity;
+                            $delta = $newQuantity - $currentQuantity;
+
+                            // Update inventory level using GraphQL
+                            $response = $this->updateInventoryLevel(
+                                $location->location_id,
+                                $variant->inventory_item_id,
+                                $delta
+                            );
+
+                            if (!empty($response['errors'])) {
+                                throw new \Exception(json_encode($response['errors']));
+                            }
+
+                            $variant->update([
+                                'inventory_quantity' => $newQuantity,
+                                'inventory_requires_update' => 0
+                            ]);
+
+                            $this->info("Inventory updated for sku {$variant->sku}, variant id {$variant->variant_id}");
+
+                            // Update product status if necessary
+                            if ($variant->retailEdgeProduct->quantity > 0 && $variant->product->status == 'archived') {
+                                try {
+                                    $status = 'active';
+                                    $statusResponse = $this->updateProductStatus(
+                                        $variant->product->product_id,
+                                        $status
+                                    );
+
+                                    if (!empty($statusResponse['errors'])) {
+                                        throw new \Exception(json_encode($statusResponse['errors']));
+                                    }
+
+                                    ShopifyProduct::where('id', $variant->product->id)
+                                        ->update(['status' => $status]);
+
+                                    $msg = $variant->product->title . ' marked as ' . $status;
+                                    $this->info($msg);
+                                    Log::debug($msg);
+                                } catch (\Exception $e) {
+                                    $msg = "An error occurred while updating the Shopify product status from archived to active. Title: {$variant->product->title}";
+                                    $this->info($msg);
+                                    Log::debug($msg);
+                                }
+                            }
+                        } catch (\Exception $e) {
+                            $variant->update(['inventory_requires_update' => 2]);
+                            Log::debug("There was an error while updating the inventory for {$variant->sku}. Error message : {$e->getMessage()}");
+                        }
+                        usleep(1500000);
+                    }
+
+                    $count = ShopifyProductVariant::whereNotNull('inventory_item_id')
+                        ->where('inventory_requires_update', 1)
+                        ->count();
+                    $this->info("Remaining {$count}");
+                }
+
+                $job->update(['status' => 0, 'message' => null]);
+                Log::info("$marketplace $jobType finished!");
+            } catch (\Exception $e) {
+                $job->update(['status' => 0, 'message' => $e->getMessage()]);
+                report($e);
+                $this->error($e->getMessage());
+            }
+        } else {
+            Log::info("$marketplace $jobType is already running.");
+        }
+    }
+
+    private function updateInventoryLevel($locationId, $inventoryItemId, $quantity)
+    {
+        $mutation = <<<'GRAPHQL'
+        mutation inventoryAdjustQuantities($input: InventoryAdjustQuantitiesInput!) {
+            inventoryAdjustQuantities(input: $input) {
+                userErrors {
+                    field
+                    message
+                }
+                inventoryAdjustmentGroup {
+                    createdAt
+                    changes {
+                        name
+                        delta
+                    }
+                }
+            }
+        }
+        GRAPHQL;
+
+        $variables = [
+            'input' => [
+                'reason' => 'correction',
+                'name' => 'available',
+                'changes' => [
+                    [
+                        'delta' => $quantity,
+                        'inventoryItemId' => "gid://shopify/InventoryItem/{$inventoryItemId}",
+                        'locationId' => "gid://shopify/Location/{$locationId}"
+                    ]
+                ]
+            ]
+        ];
+
+        return $this->client->query(['query' => $mutation, 'variables' => $variables]);
+    }
+
+    private function updateProductStatus($productId, $status)
+    {
+        $mutation = <<<'GRAPHQL'
+        mutation productUpdate($input: ProductInput!) {
+            productUpdate(input: $input) {
+                product {
+                    id
+                    status
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+        GRAPHQL;
+
+        $variables = [
+            'input' => [
+                'id' => "gid://shopify/Product/{$productId}",
+                'status' => strtoupper($status)
+            ]
+        ];
+
+        return $this->client->query(['query' => $mutation, 'variables' => $variables]);
+    }
+
+    public function handleOld()
     {
         $marketplace = 'Shopify';
         $jobType = 'shopifyUpdateInventory';
