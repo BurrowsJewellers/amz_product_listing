@@ -157,7 +157,7 @@ class GetProductsFromEWebCatch extends Command
                         $productData['price'] = $price > 0 ? $price : null;
                         $productData['discount_price'] = $discountPrice;
 
-                        if ($productData['price'] > 0) {
+                        if ($productData['price'] > 90) {
                             $productData['logistic_class'] = 'FREE';
                         } else {
                             $productData['logistic_class'] = 'Flat Rate';
