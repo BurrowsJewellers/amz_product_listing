@@ -50,7 +50,10 @@ class UpdatePrice extends Command
             productVariantsBulkUpdate(variants: \$variants) {
                 productVariants {
                     id
-                    price
+                    price {
+                        amount
+                        currencyCode
+                    }
                 }
                 userErrors {
                     field
@@ -64,7 +67,7 @@ class UpdatePrice extends Command
             return [
                 'id' => "gid://shopify/ProductVariant/{$variant->variant_id}",
                 'price' => $variant->price,
-                'compareAtPrice' => $variant->compare_at_price
+                'compareAtPrice' => $variant->compare_at_price ?: null
             ];
         })->toArray();
 
