@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Amazon;
 
 use Illuminate\Console\Command;
 use App\Http\Controllers\AmzFeedController;

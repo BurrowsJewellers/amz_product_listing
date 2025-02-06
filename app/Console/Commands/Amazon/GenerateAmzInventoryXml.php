@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Amazon;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -36,7 +36,7 @@ class GenerateAmzInventoryXml extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if(!$job->isRunning()){
+        if (!$job->isRunning()) {
             Log::info("$marketplace $jobType started!");
             $job->update(['status' => 1]);
 
@@ -54,12 +54,12 @@ class GenerateAmzInventoryXml extends Command
 
                 $this->info($count);
 
-                while($count){
+                while ($count) {
                     $limit = 1000;
 
                     $products = Product::where(['inventory_feed_status' => 0, 'published' => 1])->limit($limit)->get();
 
-                    if($products->count()) {
+                    if ($products->count()) {
                         $inventoryValue = null;
                         $amzBuildFeedId = 0;
                         $merchantId = config('spapi.merchand_id');
@@ -78,7 +78,7 @@ class GenerateAmzInventoryXml extends Command
                         $envelop->appendChild($dom->createElement('MessageType', 'Inventory'));
 
                         $productIds = [];
-                        foreach($products as $product){
+                        foreach ($products as $product) {
                             array_push($productIds, $product->id);
 
                             $message = $envelop->appendChild($dom->createElement('Message'));
@@ -98,7 +98,7 @@ class GenerateAmzInventoryXml extends Command
                         $dom->formatOutput = true;
                         $xml = $dom->saveXML();
 
-                        if(!empty($productIds)){
+                        if (!empty($productIds)) {
                             $feedController = new AmzFeedController();
                             $feedController->createAmzFeed($xml, 'POST_INVENTORY_AVAILABILITY_DATA', $productIds);
                         }
@@ -110,9 +110,9 @@ class GenerateAmzInventoryXml extends Command
                 }
 
                 $job->update(['status' => 0, 'message' => null]);
-            } catch (\Exception $e){
+            } catch (\Exception $e) {
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
-                Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() .' Line : '. $e->getLine());
+                Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
             }
 
             Log::info("$marketplace $jobType finished!");

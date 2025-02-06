@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Amazon;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -36,7 +36,7 @@ class GenerateAmzImagesXml extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if(!$job->isRunning()){
+        if (!$job->isRunning()) {
             Log::info("$marketplace $jobType started!");
             $job->update(['status' => 1]);
 
@@ -56,56 +56,56 @@ class GenerateAmzImagesXml extends Command
 
                 $count = Product::where(['image_feed_status' => 0, 'published' => 1])->count();
 
-                while($count){
+                while ($count) {
                     $limit = 100;
 
                     $products = Product::with('images')->where(['image_feed_status' => 0, 'published' => 1])->limit($limit)->get();
 
-                    if($products->count()) {
+                    if ($products->count()) {
                         $merchantId = config('spapi.merchand_id');
-        
+
                         $dom = new \DOMDocument('1.0', 'utf-8');
-        
+
                         $envelop = $dom->createElement("AmazonEnvelope");
                         $envelop->setAttribute('xsi:noNamespaceSchemaLocation', 'amzn-envelope.xsd');
-        
+
                         $header = $dom->createElement('Header');
                         $header->appendChild($dom->createElement('DocumentVersion', 1.01));
                         $header->appendChild($dom->createElement('MerchantIdentifier', $merchantId));
-                        
+
                         $envelop->appendChild($header);
-        
+
                         $envelop->appendChild($dom->createElement('MessageType', 'ProductImage'));
-        
+
                         $productIds = [];
-                        foreach($products as $product){
+                        foreach ($products as $product) {
                             array_push($productIds, $product->id);
-                            
-                            if(isset($product->images) && $product->images->count()) {
+
+                            if (isset($product->images) && $product->images->count()) {
                                 $i = 1;
-                                foreach($product->images as $image){
+                                foreach ($product->images as $image) {
                                     $mainImageUrl = null;
                                     $message = $envelop->appendChild($dom->createElement('Message'));
-        
+
                                     $message->appendChild($dom->createElement('MessageID', $product->id));
                                     $message->appendChild($dom->createElement('OperationType', 'Update'));
                                     $productImage = $message->appendChild($dom->createElement('ProductImage'));
-        
-                                    if($image->e_web_index == 1){
+
+                                    if ($image->e_web_index == 1) {
                                         $imageType = 'Main';
                                         $mainImageUrl = $image->url;
-                                    } else{
-                                        $imageType = 'PT'.$i;
+                                    } else {
+                                        $imageType = 'PT' . $i;
                                         $i++;
                                     }
                                     $productImage->appendChild($dom->createElement('SKU', $product->sku));
                                     $productImage->appendChild($dom->createElement('ImageType', $imageType));
-        
+
                                     // $elementImageLocation = $dom->createElement('ImageLocation');
                                     $productImage->ImageLocation = $image->url;
                                     $productImage->appendChild($dom->createElement('ImageLocation', htmlspecialchars($image->url)));
                                 }
-        
+
                                 /**
                                  * Swatch image
                                  */
@@ -133,7 +133,7 @@ class GenerateAmzImagesXml extends Command
                         $dom->formatOutput = true;
                         $xml = $dom->saveXML();
 
-                        if(!empty($productIds)){
+                        if (!empty($productIds)) {
                             $feedController = new AmzFeedController();
                             $feedController->createAmzFeed($xml, 'POST_PRODUCT_IMAGE_DATA', $productIds);
                         }
@@ -145,9 +145,9 @@ class GenerateAmzImagesXml extends Command
                 }
 
                 $job->update(['status' => 0, 'message' => null]);
-            } catch (\Exception $e){
+            } catch (\Exception $e) {
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
-                Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() .' Line : '. $e->getLine());
+                Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
             }
 
             Log::info("$marketplace $jobType finished!");

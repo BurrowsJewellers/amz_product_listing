@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Amazon;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -36,7 +36,7 @@ class ProcessAmzMerchantListingAllData extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if(!$job->isRunning()){
+        if (!$job->isRunning()) {
             Log::info("$marketplace $jobType started!");
             $job->update(['status' => 1]);
 
@@ -67,7 +67,7 @@ class ProcessAmzMerchantListingAllData extends Command
 
                             // dd($headings);
                             $product = null;
-                            if($skuIndex !== false && $asinIndex !== false && $statusIndex !== false) {
+                            if ($skuIndex !== false && $asinIndex !== false && $statusIndex !== false) {
                                 // dd('ok');
                                 $report->update(['processed' => 3]);
                                 $report = $report->refresh();
@@ -101,22 +101,22 @@ class ProcessAmzMerchantListingAllData extends Command
                                         }
                                     } catch (\Exception $e) {
                                         var_dump($e->getMessage());
-                                        Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() .' Line : '. $e->getLine());
+                                        Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
                                     }
                                 }
 
                                 $processed = 1;
                             } else {
-                                Log::debug('Required fields not found in report. '.$report->file_name);
+                                Log::debug('Required fields not found in report. ' . $report->file_name);
                                 $processed = 2;
                             }
                         } else {
                             $processed = 2;
-                            Log::debug('No records found in report. '.$report->file_name);
+                            Log::debug('No records found in report. ' . $report->file_name);
                         }
                     } else {
                         $processed = 2;
-                        Log::debug('Report not found. '.$report->file_name);
+                        Log::debug('Report not found. ' . $report->file_name);
                     }
                     $report->update(['processed' => $processed]);
 
@@ -131,10 +131,10 @@ class ProcessAmzMerchantListingAllData extends Command
                         'status' => null,
                         'message' => null
                     ];
-    
+
                     Product::whereNull('asin')->update($dataToBeUpdated);
                     Product::whereNotIn('sku', array_values($skuArray))->update($dataToBeUpdated);
-    
+
                     // foreach ($skuArray as $sku) {
                     //     Product::where('sku', $sku)->update($dataToBeUpdated);
                     // }
@@ -142,9 +142,9 @@ class ProcessAmzMerchantListingAllData extends Command
 
 
                 $job->update(['status' => 0, 'message' => null]);
-            } catch (\Exception $e){
+            } catch (\Exception $e) {
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
-                Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() .' Line : '. $e->getLine());
+                Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
             }
 
             Log::info("$marketplace $jobType finished!");

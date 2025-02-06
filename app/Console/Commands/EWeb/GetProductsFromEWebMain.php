@@ -7,18 +7,19 @@ use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\SyncJobController;
 use App\Models\RetailEdgeProduct;
 use App\Models\RetailEdgeProductImage;
+use App\Models\Shopify\ShopifySku;
 use App\Services\RetailEdgeService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
-class GetProductsFromEWeb extends Command
+class GetProductsFromEWebMain extends Command
 {
     /**
      * The name and signature of the console command.
      *
      * @var string
      */
-    protected $signature = 'getProductsFromEWeb';
+    protected $signature = 'getProductsFromEWebMain';
 
     /**
      * The console command description.
@@ -33,7 +34,7 @@ class GetProductsFromEWeb extends Command
     public function handle()
     {
         $marketplace = 'EWeb';
-        $jobType = 'getProductsFromEWeb';
+        $jobType = 'getProductsFromEWebMain';
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
@@ -46,10 +47,24 @@ class GetProductsFromEWeb extends Command
         $job->update(['status' => 1]);
 
         try {
+            $shopifySkus = RetailEdgeProduct::where('uploaded_to_shopify', 1)
+                ->pluck('sku')
+                ->toArray();
+
+            ShopifySku::truncate();
+
+            foreach ($shopifySkus as $shopifySku) {
+                ShopifySku::create(['sku' => $shopifySku]);
+            }
+
+            // Clear existing data
+            RetailEdgeProduct::truncate();
+            RetailEdgeProductImage::truncate();
+
             DB::beginTransaction();
 
-            $shopifySkus = $this->processProducts($job);
-            $this->updateShopifyProducts($shopifySkus);
+            $this->processProducts();
+            $this->updateShopifyProducts();
 
             DB::commit();
 
@@ -63,22 +78,8 @@ class GetProductsFromEWeb extends Command
         }
     }
 
-    private function processProducts($job)
+    private function processProducts()
     {
-        $shopifySkus = [];
-        try {
-            $shopifySkus = RetailEdgeProduct::where('uploaded_to_shopify', 1)
-                ->pluck('sku')
-                ->toArray();
-
-            // Clear existing data
-            RetailEdgeProduct::truncate();
-            RetailEdgeProductImage::truncate();
-        } catch (\Exception $e) {
-            report($e);
-            throw $e;
-        }
-
         $activeItems = (new RetailEdgeService)->getAllActiveItems();
         foreach ($activeItems as $item) {
             try {
@@ -89,8 +90,6 @@ class GetProductsFromEWeb extends Command
                 continue;
             }
         }
-
-        return $shopifySkus;
     }
 
     private function processItem($item)
@@ -204,8 +203,10 @@ class GetProductsFromEWeb extends Command
         }
     }
 
-    private function updateShopifyProducts($shopifySkus)
+    private function updateShopifyProducts()
     {
+        $shopifySkus = ShopifySku::pluck('sku')->toArray();
+
         if (!empty($shopifySkus)) {
             RetailEdgeProduct::whereIn('sku', $shopifySkus)
                 ->update(['uploaded_to_shopify' => 1]);

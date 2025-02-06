@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Amazon;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -34,57 +34,57 @@ class GenerateAmzProductsXml extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if(!$job->isRunning()){
+        if (!$job->isRunning()) {
             Log::info("$marketplace $jobType started!");
             $job->update(['status' => 1]);
 
             try {
                 $count = Product::where(['xml_generated' => 0, 'published' => 0])->whereNotNull('brand_id')
-                ->where(function($query){
-                    $query->whereNotNull('ean');
-                    $query->orWhereNotNull('upc');
-                    $query->orWhereNotNull('asin');
-                })
-                ->count();
-
-                $this->info($count);
-                while($count){
-                    $limit = 500;
-
-                    $products = Product::with(['fields' => function($query) {
-                        $query->with(['category', 'productType', 'categoryField', 'productTypeField']);
-                    }, 'brand', 'category', 'productType', 'eWebCode'])->where(['xml_generated' => 0, 'published' => 0])
-                    ->where(function($query){
+                    ->where(function ($query) {
                         $query->whereNotNull('ean');
                         $query->orWhereNotNull('upc');
                         $query->orWhereNotNull('asin');
                     })
-                    ->whereNotNull('brand_id')
-                    ->limit($limit)->get();
+                    ->count();
 
-                    if($products->count()) {
+                $this->info($count);
+                while ($count) {
+                    $limit = 500;
+
+                    $products = Product::with(['fields' => function ($query) {
+                        $query->with(['category', 'productType', 'categoryField', 'productTypeField']);
+                    }, 'brand', 'category', 'productType', 'eWebCode'])->where(['xml_generated' => 0, 'published' => 0])
+                        ->where(function ($query) {
+                            $query->whereNotNull('ean');
+                            $query->orWhereNotNull('upc');
+                            $query->orWhereNotNull('asin');
+                        })
+                        ->whereNotNull('brand_id')
+                        ->limit($limit)->get();
+
+                    if ($products->count()) {
                         $merchantId = config('amazon.merchand_id');
-            
+
                         $dom = new \DOMDocument('1.0', 'utf-8');
-            
+
                         $envelop = $dom->createElement("AmazonEnvelope");
                         $envelop->setAttribute('xsi:noNamespaceSchemaLocation', 'amzn-envelope.xsd');
-            
+
                         $header = $dom->createElement('Header');
                         $header->appendChild($dom->createElement('DocumentVersion', 1.01));
                         $header->appendChild($dom->createElement('MerchantIdentifier', $merchantId));
-                        
+
                         $envelop->appendChild($header);
-            
+
                         $envelop->appendChild($dom->createElement('MessageType', 'Product'));
                         $envelop->appendChild($dom->createElement('PurgeAndReplace', 'false'));
-            
-                        $productIds = [];
-                        foreach($products as $product){
-                            $this->info('SKU '. $product->sku);
-                            Log::info('SKU '. $product->sku);
 
-                            if(!$product->brand) {
+                        $productIds = [];
+                        foreach ($products as $product) {
+                            $this->info('SKU ' . $product->sku);
+                            Log::info('SKU ' . $product->sku);
+
+                            if (!$product->brand) {
                                 $this->error('Brand name is not set. Skipping the record.');
                                 Log::error('Brand name is not set. Skipping the record.');
                                 continue;
@@ -99,7 +99,7 @@ class GenerateAmzProductsXml extends Command
                             } elseif ($product->ean) {
                                 if ($product->brand->name == 'Ania Haie') {
                                     $standardProductIDType = 'UPC';
-                                    $standardProductIDValue = '0'.$product->ean;
+                                    $standardProductIDValue = '0' . $product->ean;
                                 } else {
                                     $standardProductIDType = 'EAN';
                                     $standardProductIDValue = $product->ean;
@@ -115,14 +115,14 @@ class GenerateAmzProductsXml extends Command
                             }
 
                             array_push($productIds, $product->id);
-            
+
                             $message = $envelop->appendChild($dom->createElement('Message'));
-            
+
                             $message->appendChild($dom->createElement('MessageID', $product->id));
                             $message->appendChild($dom->createElement('OperationType', 'Update'));
 
                             $elementProd = $dom->createElement('Product');
-                            
+
                             $elementProd->appendChild($dom->createElement('SKU', $product->sku));
 
                             $standardProductID = $dom->createElement('StandardProductID');
@@ -188,7 +188,7 @@ class GenerateAmzProductsXml extends Command
 
                             $elementDescriptionData->appendChild($dom->createElement('CountryOfOrigin', $product->country_of_origin));
                             // $elementDescriptionData->appendChild($dom->createElement('ItemTypeName', substr(htmlspecialchars($product->item_type_name), 0, 47) . '...'));
-                            $elementDescriptionData->appendChild($dom->createElement('ItemTypeName', htmlspecialchars(substr($product->title,0,47) . "...")));
+                            $elementDescriptionData->appendChild($dom->createElement('ItemTypeName', htmlspecialchars(substr($product->title, 0, 47) . "...")));
 
                             $elementProd->appendChild($elementDescriptionData);
 
@@ -206,7 +206,7 @@ class GenerateAmzProductsXml extends Command
                                 if (!$productField->categoryField && $productField->productTypeField) {
                                     $elementProductTypeName->appendChild($dom->createElement($productField->productTypeField->amz_name, $productField->value));
                                 }
-                                
+
                                 // elseif ($productField->categoryField && !$productField->productTypeField) {
                                 //     $elementCategoryName->appendChild($dom->createElement($productField->categoryField->amz_name, $productField->value));
                                 // }
@@ -221,7 +221,7 @@ class GenerateAmzProductsXml extends Command
                                 // if (!$productField->categoryField && $productField->productTypeField) {
                                 //     $elementProductTypeName->appendChild($dom->createElement($productField->productTypeField->amz_name, $productField->value));
                                 // } else
-                                
+
                                 if ($productField->categoryField && !$productField->productTypeField) {
                                     $elementCategoryName->appendChild($dom->createElement($productField->categoryField->amz_name, $productField->value));
                                 }
@@ -245,14 +245,14 @@ class GenerateAmzProductsXml extends Command
                                 $elementProd->appendChild($itemLengthNumeric);
                             }
                         }
-            
+
                         $xmlRoot = $dom->appendChild($envelop);
                         $xmlRoot->setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:xsi', "http://www.w3.org/2001/XMLSchema-instance");
-            
+
                         $dom->formatOutput = true;
                         $xml = $dom->saveXML();
-            
-                        if(!empty($productIds)){
+
+                        if (!empty($productIds)) {
                             $feedController = new AmzFeedController();
                             $feedController->createAmzFeed($xml, 'POST_PRODUCT_DATA', $productIds);
                         }
@@ -261,17 +261,17 @@ class GenerateAmzProductsXml extends Command
                     sleep(2);
 
                     $count = Product::where(['xml_generated' => 0, 'published' => 0])->whereNotNull('brand_id')
-                    ->where(function($query){
-                        $query->whereNotNull('ean');
-                        $query->orWhereNotNull('upc');
-                        $query->orWhereNotNull('asin');
-                    })
-                    ->count();
+                        ->where(function ($query) {
+                            $query->whereNotNull('ean');
+                            $query->orWhereNotNull('upc');
+                            $query->orWhereNotNull('asin');
+                        })
+                        ->count();
                 }
                 $job->update(['status' => 0, 'message' => null]);
-            } catch (\Exception $e){
+            } catch (\Exception $e) {
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
-                Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() .' Line : '. $e->getLine());
+                Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
             }
 
             Log::info("$marketplace $jobType finished!");
