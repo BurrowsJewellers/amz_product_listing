@@ -13,13 +13,11 @@ Artisan::command('inspire', function () {
 /**
  * Main job to fetch products from eWeb
  */
-Schedule::command(GetProductsFromEWebMain::class)->everyFifteenMinutes();
+Schedule::command(GetProductsFromEWebMain::class)->everyFifteenMinutes()->after(function () {
+    Artisan::call('getProductsFromEWebAmazon'); //Amazon products
+});
 
-/**
- * Amazon Crons
- */
 Schedule::call('getBrandsFromEWeb')->dailyAt('00:05');
-Schedule::call('getProductsFromEWeb')->everyFifteenMinutes();
 
 Schedule::call('getAmzMerchantListingAllData')->everyThreeHours();
 Schedule::call('processAmzMerchantListingAllData')->cron('32 */3 * * *');
