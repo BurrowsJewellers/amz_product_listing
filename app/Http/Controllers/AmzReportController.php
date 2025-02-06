@@ -6,34 +6,42 @@ use Illuminate\Http\Request as Req;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use SellingPartnerApi\Api\ReportsV20210630Api;
-use SellingPartnerApi\Model\ReportsV20210630\CreateReportSpecification;
 use SellingPartnerApi\Document;
 use App\Models\AmzRequestedReport;
+use App\Services\Amazon\AmazonSpApiService;
+use SellingPartnerApi\Seller\ReportsV20210630\Dto\CreateReportSpecification;
+use DateTime;
 
 class AmzReportController extends Controller
 {
-    public function requestReport($reportType, $marketplace, $params){
+    public function requestReport($reportType, $marketplace, $params)
+    {
         try {
-            $specification = new CreateReportSpecification();
-            $specification->setReportType($reportType);
-            $specification->setMarketplaceIds([$marketplace->marketplace_id]);
-    
-            if (isset($params['fromDate']) && isset($params['toDate'])) {
-                $specification->setDataStartTime($params['fromDate']);
-                $specification->setDataEndTime($params['toDate']);
+            $dataStartTime = null;
+            $dataEndTime = null;
+
+            if (isset($params['fromDate'])) {
+                $dataStartTime = new DateTime($params['fromDate']);
             }
 
-            $amz = new AmzConfigController();
-            $config = $amz->getConfig($marketplace->region);
+            if (isset($params['toDate'])) {
+                $dataEndTime = new DateTime($params['toDate']);
+            }
 
-            $apiInstance = new ReportsV20210630Api($config);
-            $response = $apiInstance->createReport($specification);
-    
-            if ($response->getReportId()) {
-                $reportId = $response->getReportId();
-                $file_name = $reportType.'_'. $reportId .'.txt';
-    
-                $requested_report = AmzRequestedReport::create([
+            $specification = new CreateReportSpecification(reportType: $reportType, marketplaceIds: [$marketplace->marketplace_id], dataStartTime: $dataStartTime, dataEndTime: $dataEndTime);
+
+            $sellerConnector = (new AmazonSpApiService())->getSellerConnector();
+            $reportsApi = $sellerConnector->reportsV20210630();
+
+            $response = $reportsApi->createReport($specification);
+
+            $createReportResponse = $response->dto();
+
+            if ($createReportResponse->reportId) {
+                $reportId = $createReportResponse->reportId;
+                $file_name = $reportType . '_' . $reportId . '.txt';
+
+                AmzRequestedReport::create([
                     'report_id' => $reportId,
                     'report_type' => $reportType,
                     'file_name' => $file_name,
@@ -43,7 +51,7 @@ class AmzReportController extends Controller
                 Log::debug(print_r($response, true));
             }
         } catch (\Exception $e) {
-            Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() .' Line : '. $e->getLine());
+            throw $e;
         }
     }
 
@@ -52,39 +60,43 @@ class AmzReportController extends Controller
         try {
             $reports = AmzRequestedReport::with('marketplace')->whereNotNull('report_id')->where(['downloaded' => 0, 'processed' => 0])->get();
 
-            // dd($reports);
             if ($reports->count()) {
                 foreach ($reports as $report) {
-                    $amz = new AmzConfigController();
-                    $config = $amz->getConfig($report->marketplace->region);
-        
-                    $apiInstance = new ReportsV20210630Api($config);
+                    $sellerConnector = (new AmazonSpApiService())->getSellerConnector();
+                    $reportsApi = $sellerConnector->reportsV20210630();
                     Log::info("Downloading $report->report_type report.");
-                    $resp = $apiInstance->getReport($report->report_id);
-    
-                    $reportDocumentId = $resp->getReportDocumentId();
-                    $processingStatus = $resp->getProcessingStatus();
-    
-                    if($reportDocumentId && $processingStatus){
-                        if($processingStatus == 'DONE'){
-                            $reportDocumentInfo = $apiInstance->getReportDocument($reportDocumentId, $report->report_type);
-    
-                            $reportType = constant("SellingPartnerApi\ReportType::$report->report_type");
 
-                            $docToDownload = new Document($reportDocumentInfo, $reportType);
-                            $contents = $docToDownload->download();
-                
-                            Storage::disk('local')->put($report->file_name, $contents);
+                    $response = $reportsApi->getReport($report->report_id);
+
+                    $response = $response->dto();
+
+                    $reportDocumentId = $response->reportDocumentId;
+                    $processingStatus = $response->processingStatus;
+
+                    if ($reportDocumentId && $processingStatus) {
+                        if ($processingStatus == 'DONE') {
+                            $response = $reportsApi->getReportDocument($reportDocumentId, $report->report_type);
+                            $reportDocument = $response->dto();
+
+                            /*
+                             * - Array of arrays, where each sub array corresponds to a row of the report, if this is a TSV, CSV, or XLSX report
+                             * - A nested associative array (from json_decode) if this is a JSON report
+                             * - The raw report data if this is a TXT or PDF report
+                             * - A SimpleXMLElement object if this is an XML report
+                             */
+                            $contents = $reportDocument->download($report->report_type);
+
+                            Storage::disk('local')->put($report->file_name, json_encode($contents));
                             $report->update(['downloaded' => 1]);
                             Log::info("Downloaded $report->report_type");
-                        } elseif($processingStatus == 'CANCELLED' || $processingStatus == 'FATAL') {
-                            $report->update(['downloaded'=> 2, 'processed' => 2]);
+                        } elseif ($processingStatus == 'CANCELLED' || $processingStatus == 'FATAL') {
+                            $report->update(['downloaded' => 2, 'processed' => 2]);
                         }
                     }
                 }
             }
         } catch (\Exception $e) {
-            Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() .' Line : '. $e->getLine());
+            throw $e;
         }
     }
 
@@ -128,5 +140,4 @@ class AmzReportController extends Controller
             return 'Report not found!';
         }
     }
-
 }

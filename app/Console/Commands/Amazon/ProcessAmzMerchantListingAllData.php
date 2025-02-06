@@ -28,14 +28,12 @@ class ProcessAmzMerchantListingAllData extends Command
      */
     protected $description = 'Command description';
 
-
-    private const REQUIRED_COLUMNS = ['asin1', 'seller-sku', 'status', 'price', 'quantity'];
+    private const REQUIRED_FIELDS = ['asin1', 'seller-sku', 'status', 'price', 'quantity'];
     private const BATCH_SIZE = 1000; // Process records in batches
 
     /**
      * Execute the console command.
      */
-
     public function handle()
     {
         $marketplace = 'Amazon';
@@ -79,9 +77,7 @@ class ProcessAmzMerchantListingAllData extends Command
             throw new InvalidArgumentException("Report file not found: {$report->file_name}");
         }
 
-        $filePath = Storage::path($report->file_name);
-        $this->processCSVFile($filePath, $report, $skuArray);
-
+        $this->processJSONFile($report, $skuArray);
         $this->updateUnlistedProducts($skuArray);
 
         $job->update(['status' => 0, 'message' => null]);
@@ -96,97 +92,95 @@ class ProcessAmzMerchantListingAllData extends Command
         ])->orderBy('id', 'desc')->first();
     }
 
-    private function processCSVFile($filePath, $report, &$skuArray)
+    private function processJSONFile($report, &$skuArray)
     {
-        $report->update(['processed' => 3]); // Mark as processing
-
-        if (($handle = fopen($filePath, "r")) === FALSE) {
-            throw new Exception("Failed to open file: $filePath");
-        }
+        $report->update(['processed' => 3]);
 
         try {
-            $headers = $this->validateHeaders(fgetcsv($handle, 0, "\t"));
+            $jsonContent = Storage::get($report->file_name);
+            $data = json_decode($jsonContent, true, 512, JSON_THROW_ON_ERROR);
+
+            if (!is_array($data)) {
+                throw new InvalidArgumentException("Invalid JSON structure");
+            }
+
+            $this->validateJsonStructure($data);
             $batch = [];
-            $rowCount = 0;
 
-            while (($data = fgetcsv($handle, 0, "\t")) !== FALSE) {
-                if (empty(array_filter($data))) {
-                    continue; // Skip empty rows
-                }
-
+            foreach ($data as $index => $item) {
                 try {
-                    $productData = $this->mapProductData($data, $headers);
+                    $productData = $this->mapProductData($item);
                     $skuArray[] = $productData['sku'];
                     $batch[] = $productData;
-                    $rowCount++;
 
                     if (count($batch) >= self::BATCH_SIZE) {
                         $this->processBatch($batch);
                         $batch = [];
                     }
                 } catch (Exception $e) {
-                    Log::warning("Error processing row $rowCount: " . $e->getMessage());
+                    Log::warning("Error processing item $index: " . $e->getMessage());
                     continue;
                 }
             }
 
-            // Process remaining batch
             if (!empty($batch)) {
                 $this->processBatch($batch);
             }
 
             $report->update(['processed' => 1]);
-        } finally {
-            fclose($handle);
+        } catch (\JsonException $e) {
+            throw new InvalidArgumentException("Invalid JSON format: " . $e->getMessage());
         }
     }
 
-    private function validateHeaders($headers)
+    private function validateJsonStructure($data)
     {
-        if (!$headers) {
-            throw new InvalidArgumentException("Failed to read CSV headers");
+        if (empty($data)) {
+            throw new InvalidArgumentException("Empty JSON data");
         }
 
-        $columnIndexes = [];
-        foreach (self::REQUIRED_COLUMNS as $requiredColumn) {
-            $index = array_search($requiredColumn, $headers);
-            if ($index === false) {
-                throw new InvalidArgumentException("Required column '$requiredColumn' not found in CSV");
+        $firstItem = reset($data);
+        foreach (self::REQUIRED_FIELDS as $field) {
+            if (!isset($firstItem[$field])) {
+                throw new InvalidArgumentException("Required field '$field' not found in JSON");
             }
-            $columnIndexes[$requiredColumn] = $index;
         }
-
-        return $columnIndexes;
     }
 
-    private function mapProductData($row, $headers)
+    private function mapProductData($item)
     {
-        if (count($row) < max(array_values($headers))) {
-            throw new InvalidArgumentException("Row has insufficient columns");
-        }
-
         return [
-            'sku' => $row[$headers['seller-sku']],
-            'asin' => $row[$headers['asin1']],
-            'status' => $row[$headers['status']],
-            'price' => $row[$headers['price']],
-            'quantity' => $row[$headers['quantity']]
+            'sku' => $item['seller-sku'],
+            'asin' => $item['asin1'],
+            'status' => $item['status'],
+            'price' => $item['price'],
+            'quantity' => $item['quantity'],
+            'name' => $item['item-name'] ?? null,
+            'description' => $item['item-description'] ?? null,
+            'product_id' => $item['product-id'] ?? null
         ];
     }
 
     private function processBatch($batch)
     {
         foreach ($batch as $productData) {
-            $product = Product::where('sku', $productData['sku'])->first();
+            try {
+                $product = Product::where('sku', $productData['sku'])->first();
 
-            if ($product) {
-                $product->update([
-                    'asin' => $productData['asin'],
-                    'status' => $productData['status'],
-                    'published' => !empty($productData['asin']) ? 1 : 0,
-                    'price' => $productData['price'],
-                    'quantity' => $productData['quantity']
-                ]);
+                if ($product) {
+                    $product->update([
+                        'asin' => $productData['asin'],
+                        'status' => $productData['status'],
+                        'published' => !empty($productData['asin']) ? 1 : 0,
+                        'price' => $productData['price'],
+                        'quantity' => $productData['quantity'],
+                        'name' => $productData['name'],
+                        'description' => $productData['description'],
+                        'product_id' => $productData['product_id']
+                    ]);
+                }
+            } catch (Exception $e) {
+                Log::error("Error updating product {$productData['sku']}: " . $e->getMessage());
             }
         }
     }
@@ -212,7 +206,7 @@ class ProcessAmzMerchantListingAllData extends Command
     private function handleError($job, Exception $e)
     {
         $errorMessage = "Error in {$e->getFile()} : {$e->getMessage()} Line : {$e->getLine()}";
-        report($e);
+        Log::error($errorMessage);
         $job->update([
             'status' => 0,
             'message' => $errorMessage

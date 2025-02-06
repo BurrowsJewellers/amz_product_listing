@@ -27,41 +27,56 @@ class GetAmzMerchantListingAllData extends Command
     /**
      * Execute the console command.
      */
+
     public function handle()
     {
         $marketplace = 'Amazon';
         $jobType = 'getAmzMerchantListingAllData';
 
-        $job = SyncJobController::getJob($jobType, $marketplace);
+        try {
+            $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
-            Log::info("$marketplace $jobType started!");
-            $job->update(['status' => 1]);
+            if (!$job->isRunning()) {
+                Log::info("$marketplace $jobType started!");
+                $job->update(['status' => 1]);
 
-            try {
-                $marketplaces = AmzMarketplace::active()->get();
-                $reportType = 'GET_MERCHANT_LISTINGS_ALL_DATA';
-                $params = [];
+                try {
+                    $marketplaces = AmzMarketplace::active()->get();
+                    $reportType = 'GET_MERCHANT_LISTINGS_ALL_DATA';
+                    $params = [];
 
-                if ($marketplaces->count()) {
-                    $params['fromDate'] = now()->subDay()->startOfDay()->toISOString();
-                    $params['toDate'] = now()->toISOString();
+                    if ($marketplaces->count()) {
+                        $params['fromDate'] = now()->subDay()->startOfDay()->format('Y-m-d');
+                        $params['toDate'] = now()->format('Y-m-d');
 
-                    $reportController = new AmzReportController();
-                    foreach ($marketplaces as $marketplace) {
-                        $reportController->requestReport($reportType, $marketplace, $params);
+                        $reportController = new AmzReportController();
+                        foreach ($marketplaces as $amzMarketplace) {
+                            try {
+                                $reportController->requestReport($reportType, $amzMarketplace, $params);
+                            } catch (\Exception $e) {
+                                $job->update(['status' => 0, 'message' => $e->getMessage()]);
+                                report($e);
+                            }
+                        }
                     }
+
+                    $job->update(['status' => 0, 'message' => null]);
+                } catch (\Exception $e) {
+                    $job->update(['status' => 0, 'message' => $e->getMessage()]);
+                    report($e);
                 }
 
-                $job->update(['status' => 0, 'message' => null]);
-            } catch (\Exception $e) {
-                $job->update(['status' => 0, 'message' => $e->getMessage()]);
-                Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
+                Log::info("$marketplace $jobType finished!");
+            } else {
+                Log::info("$marketplace $jobType is already running.");
             }
-
-            Log::info("$marketplace $jobType finished!");
-        } else {
-            Log::info("$marketplace $jobType is already running.");
+        } catch (\Exception $e) {
+            // Handle any errors that might occur during job retrieval or status checking
+            if (isset($job)) {
+                $job->update(['status' => 0, 'message' => $e->getMessage()]);
+            }
+            report($e);
+            Log::error("$marketplace $jobType failed: " . $e->getMessage());
         }
     }
 }
