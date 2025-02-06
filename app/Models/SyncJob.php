@@ -16,8 +16,8 @@ class SyncJob extends Model
         'status',
     ];
 
-    public function isRunning(){
+    public function isRunning(): bool
+    {
         return $this->status == 1 ? true : false;
     }
-
 }
