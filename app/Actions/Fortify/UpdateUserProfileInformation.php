@@ -37,8 +37,6 @@ class UpdateUserProfileInformation implements UpdatesUserProfileInformation
                 'name' => $input['name'],
                 'email' => $input['email'],
             ])->save();
-
-            redirect()->route('user-profile-information.update')->with('success', 'Profile updated successfully');
         }
     }
 
