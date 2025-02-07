@@ -71,9 +71,9 @@ Schedule::command(GenerateOffersCsv::class)->everyFifteenMinutes()->between('02:
  * Shopify Crons
  */
 
-// Schedule::command('shopifyGetProducts')->everyTwoHours()->after(function () {
-//     $this->call('shopifyCreateProduct');
-// });
+Schedule::command(GetProducts::class)->everyTwoHours()->after(function () {
+    $this->call(CreateProduct::class);
+});
 
 Schedule::command(GetProducts::class)->cron("5 */2 * * *")->after(function () {
     $this->call(CreateProduct::class);

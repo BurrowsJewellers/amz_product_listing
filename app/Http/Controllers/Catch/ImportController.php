@@ -79,12 +79,12 @@ class ImportController extends Controller
         try {
             $imports = CatchImport::whereIn('import_type', $importTypes)->where(['submitted' => 0])->get();
 
-            $api = MiraklShopApiClient::getShopApiClient();        
+            $api = MiraklShopApiClient::getShopApiClient();
             foreach ($imports as $import) {
                 try {
-                    $filePath = storage_path('/app') . '/' .$import->file_name;
+                    $filePath = storage_path('/app/private') . '/' . $import->file_name;
                     $file = new \SplFileObject($filePath);
-    
+
                     $request = new OfferImportRequest($file);
 
                     if ($import->import_type == 'product') {
@@ -92,7 +92,7 @@ class ImportController extends Controller
                     }
 
                     // if ($import->import_type == 'offer') {
-                        $request->setImportMode('NORMAL');
+                    $request->setImportMode('NORMAL');
                     // }
 
                     // $request->setImportMode(\Mirakl\MMP\OperatorShop\Domain\Offer\Importer\ImportMode::PARTIAL_UPDATE); // Optional

@@ -205,8 +205,8 @@ class ProcessAmzMerchantListingAllData extends Command
 
     private function handleError($job, Exception $e)
     {
+        report($e);
         $errorMessage = "Error in {$e->getFile()} : {$e->getMessage()} Line : {$e->getLine()}";
-        Log::error($errorMessage);
         $job->update([
             'status' => 0,
             'message' => $errorMessage
