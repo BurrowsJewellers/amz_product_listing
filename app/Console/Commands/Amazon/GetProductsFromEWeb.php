@@ -155,7 +155,9 @@ class GetProductsFromEWeb extends Command
             ->first();
 
         if (!$shortCode) {
-            $this->info('Short code not found in EWebShortCode.');
+            $msg1 = "Short code {$eWebCode} not found in EWebShortCode for {$item->SKU}";
+            $this->info($msg1);
+            Log::info($msg1);
             return null;
         }
 
