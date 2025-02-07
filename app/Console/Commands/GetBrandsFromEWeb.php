@@ -43,12 +43,20 @@ class GetBrandsFromEWeb extends Command
                 $resp = $eWeb->call('GetAllBrands');
 
                 foreach ($resp->GetAllBrandsResult->Brand as $brand) {
-                    Brand::firstOrCreate(['name' => $brand->Name, 'brand_id' => $brand->ID]);
+                    Brand::updateOrCreate(
+                        [
+                            'brand_id' => $brand->ID
+                        ],
+                        [
+                            'name' => $brand->Name
+                        ]
+                    );
+                    // Brand::firstOrCreate(['name' => $brand->Name, 'brand_id' => $brand->ID]);
                     $this->info($brand->Name);
                 }
                 $job->update(['status' => 0, 'message' => null]);
             } catch (\Exception $e) {
-                Log::debug('getBrandsFromEWeb : ' . $e->getMessage());
+                report($e);
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
             }
 
