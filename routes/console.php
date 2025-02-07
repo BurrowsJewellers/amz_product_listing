@@ -26,18 +26,18 @@ use Illuminate\Support\Facades\Schedule;
 /**
  * Main job to fetch products from eWeb
  */
-Schedule::call(GetProductsFromEWebMain::class)->everyFifteenMinutes()->after(function () {
+Schedule::command(GetProductsFromEWebMain::class)->everyFifteenMinutes()->after(function () {
     Artisan::call(GetProductsFromEWeb::class); //Amazon products
 });
 
-Schedule::call(GetBrandsFromEWeb::class)->dailyAt('00:05');
+Schedule::command(GetBrandsFromEWeb::class)->dailyAt('00:05');
 
-Schedule::call(GetAmzMerchantListingAllData::class)->everyThreeHours()->after(function () {
+Schedule::command(GetAmzMerchantListingAllData::class)->everyThreeHours()->after(function () {
     sleep(600);
     Artisan::call(ProcessAmzMerchantListingAllData::class);
 });
 
-Schedule::call(ProcessAmzMerchantListingAllData::class)->cron('32 */3 * * *');
+Schedule::command(ProcessAmzMerchantListingAllData::class)->cron('32 */3 * * *');
 
 
 /**
@@ -45,48 +45,48 @@ Schedule::call(ProcessAmzMerchantListingAllData::class)->cron('32 */3 * * *');
  */
 
 // The following three cron jobs must run in the same sequence.
-// Schedule::call('getProductsFromEWebCatch')->dailyAt('00:20');
-// Schedule::call('catchCheckIfExists')->dailyAt('00:50');
-// Schedule::call('catchListOffersOfShop')->dailyAt('01:20');
+// Schedule::command('getProductsFromEWebCatch')->dailyAt('00:20');
+// Schedule::command('catchCheckIfExists')->dailyAt('00:50');
+// Schedule::command('catchListOffersOfShop')->dailyAt('01:20');
 
-Schedule::call(GetProductsFromEWebCatch::class)->dailyAt('00:20')->after(function () {
+Schedule::command(GetProductsFromEWebCatch::class)->dailyAt('00:20')->after(function () {
     $this->call(CheckIfExists::class);
 });
-Schedule::call(ListOffersOfShop::class)->dailyAt('01:20');
+Schedule::command(ListOffersOfShop::class)->dailyAt('01:20');
 
 
 
-Schedule::call(GetProductsFromEWebCatch::class)->everyFifteenMinutes()->between('02:00', '23:59');
-// Schedule::call('catchGenerateProductsCsv')->everyTwoHours()->between('02:00','23:59');
-Schedule::call(GenerateProductsCsv::class)->cron('18 2 */4 * *');
-Schedule::call(GenerateOffersCsv::class)->everyFifteenMinutes()->between('02:00', '23:59')
+Schedule::command(GetProductsFromEWebCatch::class)->everyFifteenMinutes()->between('02:00', '23:59');
+// Schedule::command('catchGenerateProductsCsv')->everyTwoHours()->between('02:00','23:59');
+Schedule::command(GenerateProductsCsv::class)->cron('18 2 */4 * *');
+Schedule::command(GenerateOffersCsv::class)->everyFifteenMinutes()->between('02:00', '23:59')
     ->after(function () {
         $this->call(SubmitImports::class);
     });
 
-// Schedule::call('catchSubmitImports')->everyThirtyMinutes()->between('02:00', '23:59');
+// Schedule::command('catchSubmitImports')->everyThirtyMinutes()->between('02:00', '23:59');
 
 
 /**
  * Shopify Crons
  */
 
-// Schedule::call('shopifyGetProducts')->everyTwoHours()->after(function () {
+// Schedule::command('shopifyGetProducts')->everyTwoHours()->after(function () {
 //     $this->call('shopifyCreateProduct');
 // });
 
-Schedule::call(GetProducts::class)->cron("5 */2 * * *")->after(function () {
+Schedule::command(GetProducts::class)->cron("5 */2 * * *")->after(function () {
     $this->call(CreateProduct::class);
 });
 
 
-// Schedule::call('shopifyCreateProduct')->everyThreeHours();
+// Schedule::command('shopifyCreateProduct')->everyThreeHours();
 
-Schedule::call(UpdateInventory::class)->everyFifteenMinutes();
-Schedule::call(UpdatePrice::class)->everyFifteenMinutes();
-Schedule::call(UploadImages::class)->everyThreeHours();
-Schedule::call(ArchiveProducts::class)->cron('20 */3 * * *');
+Schedule::command(UpdateInventory::class)->everyFifteenMinutes();
+Schedule::command(UpdatePrice::class)->everyFifteenMinutes();
+Schedule::command(UploadImages::class)->everyThreeHours();
+Schedule::command(ArchiveProducts::class)->cron('20 */3 * * *');
 
-Schedule::call(UpdateProduct::class)->cron('0 20 * * 6');
+Schedule::command(UpdateProduct::class)->cron('0 20 * * 6');
 
-Schedule::call(CountImages::class)->dailyAt('17:00');
+Schedule::command(CountImages::class)->dailyAt('17:00');
