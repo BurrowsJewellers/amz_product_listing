@@ -19,7 +19,6 @@ use App\Console\Commands\Shopify\UpdateInventory;
 use App\Console\Commands\Shopify\UpdatePrice;
 use App\Console\Commands\Shopify\UpdateProduct;
 use App\Console\Commands\Shopify\UploadImages;
-use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 

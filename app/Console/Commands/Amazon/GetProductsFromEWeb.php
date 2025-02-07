@@ -163,6 +163,8 @@ class GetProductsFromEWeb extends Command
             return null;
         }
 
+        $productType = $shortCode->productType;
+        $productType->code = $eWebCode;
         return $shortCode->productType;
     }
 
@@ -181,8 +183,8 @@ class GetProductsFromEWeb extends Command
             'country_of_origin' => $this->getCountryOfOrigin($item->BrandID),
             'item_type_name' => $item->ShortMarketingDescription,
             'quantity' => intval($item->TotalAvailQOH),
-            'retail_price' => number_format($item->RetailPrice, 2),
-            'retail_price2' => number_format($item->RetailPrice2, 2),
+            'retail_price' => number_format($item->RetailPrice, 2, '.', ''),
+            'retail_price2' => number_format($item->RetailPrice2, 2, '.', ''),
             'real_design_number' => $item->RealDesignNum,
             'e_web_code' => $productType->code
         ];
