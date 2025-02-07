@@ -116,7 +116,9 @@ class GetProductsFromEWeb extends Command
         }
 
         $productType = $this->getProductType($item);
-        if (!$productType) {
+
+        if (!$productType || !$productType->code) {
+            Log::info("Invalid product type or code for SKU: $sku");
             return $sku;
         }
 
@@ -206,6 +208,11 @@ class GetProductsFromEWeb extends Command
 
     private function getDepartmentName(object $productType): string
     {
+        if (!$productType || !$productType->code || strlen($productType->code) < 2) {
+            // return 'Womens';  // or whatever default makes sense
+            throw new \Exception("Invalid product type or code");
+        }
+
         return $productType->code[1] == 'W' ? 'Womens' : 'Mens';
     }
 
