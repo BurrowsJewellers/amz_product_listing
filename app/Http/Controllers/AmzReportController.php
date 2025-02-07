@@ -84,7 +84,7 @@ class AmzReportController extends Controller
                              * - The raw report data if this is a TXT or PDF report
                              * - A SimpleXMLElement object if this is an XML report
                              */
-                            $contents = $reportDocument->download($report->report_type);
+                            $contents = $reportDocument->download(documentType: $report->report_type, postProcess: false, encoding: 'UTF-8');
 
                             Storage::disk('local')->put($report->file_name, json_encode($contents));
                             $report->update(['downloaded' => 1]);
