@@ -73,6 +73,8 @@ class AmzReportController extends Controller
                     $reportDocumentId = $response->reportDocumentId;
                     $processingStatus = $response->processingStatus;
 
+                    echo "The report {$report->report_type} is in {$processingStatus} status with document id {$reportDocumentId} \n";
+
                     if ($reportDocumentId && $processingStatus) {
                         if ($processingStatus == 'DONE') {
                             $response = $reportsApi->getReportDocument($reportDocumentId, $report->report_type);
@@ -84,7 +86,7 @@ class AmzReportController extends Controller
                              * - The raw report data if this is a TXT or PDF report
                              * - A SimpleXMLElement object if this is an XML report
                              */
-                            $contents = $reportDocument->download(documentType: $report->report_type, postProcess: false, encoding: 'UTF-8');
+                            $contents = $reportDocument->download(documentType: $report->report_type, postProcess: true);
 
                             Storage::disk('local')->put($report->file_name, json_encode($contents));
                             $report->update(['downloaded' => 1]);
@@ -96,6 +98,7 @@ class AmzReportController extends Controller
                 }
             }
         } catch (\Exception $e) {
+            report($e);
             throw $e;
         }
     }
