@@ -1,6 +1,7 @@
 <?php
 
 use App\Console\Commands\Amazon\GetAmzMerchantListingAllData;
+use App\Console\Commands\Amazon\GetProductsFromEWeb;
 use App\Console\Commands\Amazon\ProcessAmzMerchantListingAllData;
 use App\Console\Commands\Catch\CheckIfExists;
 use App\Console\Commands\Catch\GenerateOffersCsv;
@@ -27,7 +28,7 @@ use Illuminate\Support\Facades\Schedule;
  * Main job to fetch products from eWeb
  */
 Schedule::call(GetProductsFromEWebMain::class)->everyFifteenMinutes()->after(function () {
-    Artisan::call('getProductsFromEWebAmazon'); //Amazon products
+    Artisan::call(GetProductsFromEWeb::class); //Amazon products
 });
 
 Schedule::call(GetBrandsFromEWeb::class)->dailyAt('00:05');
