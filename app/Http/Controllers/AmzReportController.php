@@ -58,114 +58,6 @@ class AmzReportController extends Controller
     public static function downloadReports()
     {
         try {
-            $reports = AmzRequestedReport::with('marketplace')
-                ->whereNotNull('report_id')
-                ->where(['downloaded' => 0, 'processed' => 0])
-                ->get();
-
-            if ($reports->count()) {
-                foreach ($reports as $report) {
-                    $sellerConnector = (new AmazonSpApiService())->getSellerConnector();
-                    $reportsApi = $sellerConnector->reportsV20210630();
-                    Log::info("Downloading $report->report_type report.");
-
-                    $response = $reportsApi->getReport($report->report_id);
-                    $response = $response->dto();
-
-                    $reportDocumentId = $response->reportDocumentId;
-                    $processingStatus = $response->processingStatus;
-
-                    echo "The report {$report->report_type} is in {$processingStatus} status with document id {$reportDocumentId} \n";
-
-                    if ($reportDocumentId && $processingStatus) {
-                        if ($processingStatus == 'DONE') {
-                            try {
-                                $response = $reportsApi->getReportDocument($reportDocumentId, $report->report_type);
-                                $reportDocument = $response->dto();
-
-                                // First try to get raw content without processing
-                                $rawContents = $reportDocument->download(
-                                    documentType: $report->report_type,
-                                    postProcess: false
-                                );
-
-                                // Try to convert the encoding
-                                try {
-                                    $convertedContents = mb_convert_encoding($rawContents, 'UTF-8', 'CP932');
-
-                                    // Create temporary file with converted content
-                                    $tmpFile = tempnam(sys_get_temp_dir(), 'amz_report_');
-                                    file_put_contents($tmpFile, $convertedContents);
-
-                                    // Now process the converted content
-                                    $options = new \OpenSpout\Reader\CSV\Options();
-                                    $options->ENCODING = 'UTF-8';
-
-                                    $reader = new \OpenSpout\Reader\CSV\Reader($options);
-                                    $reader->open($tmpFile);
-
-                                    $data = [];
-                                    foreach ($reader->getSheetIterator() as $sheet) {
-                                        $rowIterator = $sheet->getRowIterator();
-                                        $headers = null;
-
-                                        foreach ($rowIterator as $row) {
-                                            if (!$headers) {
-                                                $headers = $row->toArray();
-                                                continue;
-                                            }
-
-                                            $rowData = $row->toArray();
-                                            if (!empty(array_filter($rowData)) && $rowData !== $headers) {
-                                                $data[] = array_combine($headers, $rowData);
-                                            }
-                                        }
-                                    }
-
-                                    $reader->close();
-                                    unlink($tmpFile);
-
-                                    // Store the processed data
-                                    if (!empty($data)) {
-                                        Storage::disk('local')->put($report->file_name, json_encode($data));
-                                        $report->update(['downloaded' => 1]);
-                                        Log::info("Downloaded $report->report_type");
-                                    } else {
-                                        throw new \RuntimeException("Processed content is empty");
-                                    }
-                                } catch (\Exception $e) {
-                                    Log::warning("CP932 conversion failed, trying original download method: " . $e->getMessage());
-
-                                    // Fallback to original method if conversion fails
-                                    $contents = $reportDocument->download(
-                                        documentType: $report->report_type,
-                                        postProcess: true
-                                    );
-
-                                    Storage::disk('local')->put($report->file_name, json_encode($contents));
-                                    $report->update(['downloaded' => 1]);
-                                    Log::info("Downloaded $report->report_type using fallback method");
-                                }
-                            } catch (\Exception $e) {
-                                Log::error("Error processing report {$report->report_type}: " . $e->getMessage());
-                                $report->update(['downloaded' => 3]); // Mark as failed download
-                                continue;
-                            }
-                        } elseif (in_array($processingStatus, ['CANCELLED', 'FATAL'])) {
-                            $report->update(['downloaded' => 2, 'processed' => 2]);
-                        }
-                    }
-                }
-            }
-        } catch (\Exception $e) {
-            Log::error("Fatal error in downloadReports: " . $e->getMessage());
-            report($e);
-            throw $e;
-        }
-    }
-    public static function downloadReportsBackup()
-    {
-        try {
             $reports = AmzRequestedReport::with('marketplace')->whereNotNull('report_id')->where(['downloaded' => 0, 'processed' => 0])->get();
 
             if ($reports->count()) {
@@ -194,7 +86,7 @@ class AmzReportController extends Controller
                              * - The raw report data if this is a TXT or PDF report
                              * - A SimpleXMLElement object if this is an XML report
                              */
-                            $contents = $reportDocument->download(documentType: $report->report_type, postProcess: true);
+                            $contents = $reportDocument->download(documentType: $report->report_type, postProcess: false);
 
                             Storage::disk('local')->put($report->file_name, json_encode($contents));
                             $report->update(['downloaded' => 1]);
