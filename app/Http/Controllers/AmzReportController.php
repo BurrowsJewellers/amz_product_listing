@@ -99,7 +99,7 @@ class AmzReportController extends Controller
 
                                     // Now process the converted content
                                     $options = new \OpenSpout\Reader\CSV\Options();
-                                    $options->setEncoding('UTF-8');
+                                    $options->ENCODING = 'UTF-8';
 
                                     $reader = new \OpenSpout\Reader\CSV\Reader($options);
                                     $reader->open($tmpFile);
