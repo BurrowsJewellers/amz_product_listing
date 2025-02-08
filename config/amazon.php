@@ -9,6 +9,9 @@ return [
         'secret_key'    => env('SP_API_SECRET_KEY'),
         'role_arn'      => env('SP_API_ROLE_ARN'),
         'merchand_id'   => env('SP_API_MERCHANT_ID'),
+        'seller_id'   => env('SP_API_MERCHANT_ID'),
+        'marketplace_id'   => env('SP_API_MARKETPLACE_ID'),
+        'currency'   => env('SP_API_CURRENCY'),
     ],
 
 ];
