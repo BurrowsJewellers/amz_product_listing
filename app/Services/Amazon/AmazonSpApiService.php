@@ -24,7 +24,7 @@ class AmazonSpApiService
         $this->marketplaceId = config('amazon.spapi.marketplace_id');
         $this->currency = config('amazon.spapi.currency');
 
-        $this->validateConfig();
+        // $this->validateConfig();
     }
 
     public function getSellerConnector($region = 'FE', $debug = false): SellerConnector
