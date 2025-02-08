@@ -3,6 +3,7 @@
 use App\Console\Commands\Amazon\GetAmzMerchantListingAllData;
 use App\Console\Commands\Amazon\GetProductsFromEWeb;
 use App\Console\Commands\Amazon\ProcessAmzMerchantListingAllData;
+use App\Console\Commands\Amazon\UpdateProduct as AmazonUpdateProduct;
 use App\Console\Commands\Catch\CheckIfExists;
 use App\Console\Commands\Catch\GenerateOffersCsv;
 use App\Console\Commands\Catch\GenerateProductsCsv;
@@ -39,6 +40,7 @@ Schedule::command(GetAmzMerchantListingAllData::class)->everyThreeHours()->after
 
 Schedule::command(ProcessAmzMerchantListingAllData::class)->cron('32 */3 * * *');
 
+Schedule::command(AmazonUpdateProduct::class)->everyFifteenMinutes();
 
 /**
  * Catch Crons
