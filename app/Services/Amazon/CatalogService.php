@@ -85,7 +85,7 @@ class CatalogService
                     $itemSearchResults = $response->dto();
 
                     if ($itemSearchResults->numberOfResults > 0) {
-                        $this->processExistingProduct($product, $itemSearchResults->item[0]);
+                        $this->processExistingProduct($product, $itemSearchResults->items[0]);
                         $results['success']++;
                     } else {
                         $this->processNewProduct($product);
