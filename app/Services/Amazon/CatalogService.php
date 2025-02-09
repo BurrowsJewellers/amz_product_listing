@@ -91,6 +91,7 @@ class CatalogService
                         $this->processNewProduct($product);
                         $results['success']++;
                     }
+                    sleep(1);
                 } catch (\Exception $e) {
                     $results['failed']++;
                     $results['errors'][] = [
