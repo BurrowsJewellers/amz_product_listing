@@ -78,13 +78,15 @@ class CatalogService
                         marketplaceIds: [$this->marketplaceId],
                         identifiers: [$product->ean],
                         identifiersType: 'EAN',
-                        includedData: ['summaries'],
+                        includedData: ['summaries', 'productTypes'],
                         sellerId: $this->sellerId,
                     );
 
                     $itemSearchResults = $response->dto();
 
                     if ($itemSearchResults->numberOfResults > 0) {
+                        echo "{$product->sku} found in Amazon Catalog.\n";
+                        // dd($itemSearchResults->items[0]);
                         $this->processExistingProduct($product, $itemSearchResults->items[0]);
                         $results['success']++;
                     } else {

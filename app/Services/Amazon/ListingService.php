@@ -77,16 +77,23 @@ class ListingService
 
             $attributes = $this->prepareOfferAttributes($product);
 
+            echo json_encode($attributes);
+            echo "\n";
+
+            $listingsItemPutRequest = new ListingsItemPutRequest(
+                productType: $product->amz_product_type,
+                attributes: $attributes,
+                requirements: "LISTING_OFFER_ONLY"
+            );
+
             $listingsItemSubmissionResponse = $this->listingsItemsApi->putListingsItem(
                 sellerId: $this->sellerId,
                 sku: $product->sku,
-                listingsItemPutRequest: new ListingsItemPutRequest(
-                    productType: $product->amz_product_type,
-                    attributes: $attributes
-                ),
+                listingsItemPutRequest: $listingsItemPutRequest,
                 marketplaceIds: [$this->marketplaceId]
             );
 
+            // var_dump($listingsItemPutRequest);
             $response = $listingsItemSubmissionResponse->dto();
 
             return $this->handleSubmissionResponse($product, $response);
@@ -109,29 +116,52 @@ class ListingService
     private function prepareOfferAttributes(Product $product): array
     {
         return [
-            "productType" => "PRODUCT",
-            "requirements" => "LISTING_OFFER_ONLY",
-            "attributes" => [
-                "condition_type" => [
-                    [
-                        "value" => "new_new",
-                        "marketplace_id" => $this->marketplaceId
+            "condition_type" => [
+                [
+                    "value" => "new_new",
+                    "marketplace_id" => $this->marketplaceId
+                ]
+            ],
+            "merchant_suggested_asin" => [
+                [
+                    "value" => $product->asin,
+                    "marketplace_id" => $this->marketplaceId
+                ]
+            ],
+            "purchasable_offer" => [
+                [
+                    "audience" => "ALL",
+                    "currency" => "AUD",
+                    "our_price" => [
+                        [
+                            "schedule" => [
+                                [
+                                    "value_with_tax" => floatval($product->retail_price),
+                                ]
+                            ]
+                        ]
                     ]
-                ],
-                "merchant_suggested_asin" => [
-                    [
-                        "value" => $product->asin,
-                        "marketplace_id" => $this->marketplaceId
-                    ]
-                ],
-                "fulfillment_availability" => [
-                    [
-                        'fulfillment_channel_code' => 'DEFAULT',
-                        'lead_time_to_ship_max_days' => 2,
-                        'quantity' => (int) $product->quantity
-                    ]
-                ],
-            ]
+                ]
+            ],
+            "fulfillment_availability" => [
+                [
+                    'fulfillment_channel_code' => 'DEFAULT',
+                    'lead_time_to_ship_max_days' => 2,
+                    'quantity' => (int) $product->quantity
+                ]
+            ],
+            "supplier_declared_dg_hz_regulation" => [
+                [
+                    "value" => "not_applicable",
+                    "marketplace_id" => $this->marketplaceId
+                ]
+            ],
+            "batteries_required" => [
+                [
+                    "value" => false,
+                    "marketplace_id" => $this->marketplaceId
+                ]
+            ],
         ];
     }
 
@@ -211,50 +241,88 @@ class ListingService
             Log::info("Submitting new listing to Amazon", ['sku' => $product->sku]);
 
             $attributes = [
-                "productType" => $product->productType->name ?? "PRODUCT",
-                "requirements" => "LISTING",
-                "attributes" => [
-                    "condition_type" => [
-                        [
-                            "value" => "new_new",
-                            "marketplace_id" => $this->marketplaceId
+                "condition_type" => [
+                    [
+                        "value" => "new_new",
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ],
+                "product_name" => [
+                    [
+                        "value" => $product->name,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ],
+                "brand" => [
+                    [
+                        "value" => $product->brand->name,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ],
+                "externally_assigned_product_identifier" => [
+                    [
+                        "type" => "ean",
+                        "value" => $product->ean,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ],
+                "fulfillment_availability" => [
+                    [
+                        'fulfillment_channel_code' => 'DEFAULT',
+                        'lead_time_to_ship_max_days' => 2,
+                        'quantity' => (int) $product->quantity
+                    ]
+                ],
+                "purchasable_offer" => [
+                    [
+                        "audience" => "ALL",
+                        "currency" => "AUD",
+                        "our_price" => [
+                            [
+                                "schedule" => [
+                                    [
+                                        "value_with_tax" => floatval($product->retail_price),
+                                    ]
+                                ]
+                            ]
                         ]
-                    ],
-                    "product_name" => [
-                        [
-                            "value" => $product->name,
-                            "marketplace_id" => $this->marketplaceId
-                        ]
-                    ],
-                    "brand" => [
-                        [
-                            "value" => $product->brand->name,
-                            "marketplace_id" => $this->marketplaceId
-                        ]
-                    ],
-                    "externally_assigned_product_identifier" => [
-                        [
-                            "type" => "ean",
-                            "value" => $product->ean,
-                            "marketplace_id" => $this->marketplaceId
-                        ]
-                    ],
-                    "fulfillment_availability" => [
-                        [
-                            'fulfillment_channel_code' => 'DEFAULT',
-                            'lead_time_to_ship_max_days' => 2,
-                            'quantity' => (int) $product->quantity
-                        ]
-                    ],
+                    ]
                 ]
             ];
+
+            $mainImageUrl = null;
+            if ($product->images->count()) {
+                $mainImageUrl = $product->images[0]?->url;
+
+                if ($mainImageUrl) {
+                    $attributes['main_product_image_locator'] = [
+                        [
+                            "media_location" => $product->images[0]?->url,
+                            "marketplace_id" => $this->marketplaceId
+                        ]
+                    ];
+                }
+
+                $otherImageIndex = 1;
+                foreach ($product->images as $image) {
+                    $attributes["other_product_image_locator_{$otherImageIndex}"] = [
+                        [
+                            "media_location" => $image->url,
+                            "marketplace_id" => $this->marketplaceId
+                        ]
+                    ];
+
+                    $otherImageIndex++;
+                }
+            }
 
             $listingsItemSubmissionResponse = $this->listingsItemsApi->putListingsItem(
                 sellerId: $this->sellerId,
                 sku: $product->sku,
                 listingsItemPutRequest: new ListingsItemPutRequest(
-                    productType: $product->amz_product_type ?? "PRODUCT",
-                    attributes: $attributes
+                    productType: $product->productType->name,
+                    attributes: $attributes,
+                    requirements: 'LISTING',
                 ),
                 marketplaceIds: [$this->marketplaceId]
             );
