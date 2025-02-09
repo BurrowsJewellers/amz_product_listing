@@ -18,19 +18,15 @@ class ListingService
     private AmazonSpApiService $amazonService;
     private SellerConnector $sellerConnector;
 
-    public function __construct(
-        AmazonSpApiService $amazonService,
-        ?string $sellerId = null,
-        ?string $marketplaceId = null,
-        ?string $currency = null
-    ) {
-        $this->amazonService = $amazonService;
+    public function __construct()
+    {
+        $this->amazonService = new AmazonSpApiService();
         $this->sellerId = $sellerId ?? config('amazon.spapi.seller_id');
         $this->marketplaceId = $marketplaceId ?? config('amazon.spapi.marketplace_id');
         $this->currency = $currency ?? config('amazon.spapi.currency');
         $this->sellerConnector = $this->amazonService->getSellerConnector();
 
-        $this->validateConfiguration();
+        // $this->validateConfiguration();
     }
 
     /**
@@ -53,6 +49,8 @@ class ListingService
     public function initializeListingsApi(): void
     {
         try {
+            $this->validateConfiguration();
+
             if (!$this->listingsItemsApi) {
                 $this->listingsItemsApi = $this->sellerConnector->listingsItemsV20210801();
             }
@@ -199,7 +197,70 @@ class ListingService
      */
     public function submitNewListing(Product $product): bool
     {
-        // TODO: Implement new listing submission
-        throw new AmazonListingException("New listing submission not implemented yet");
+        try {
+            $this->initializeListingsApi();
+
+            Log::info("Submitting new listing to Amazon", ['sku' => $product->sku]);
+
+            $attributes = [
+                "productType" => $product->amz_product_type ?? "PRODUCT",
+                "requirements" => "LISTING",
+                "attributes" => [
+                    "condition_type" => [
+                        [
+                            "value" => "new_new",
+                            "marketplace_id" => $this->marketplaceId
+                        ]
+                    ],
+                    "product_name" => [
+                        [
+                            "value" => $product->name,
+                            "marketplace_id" => $this->marketplaceId
+                        ]
+                    ],
+                    "brand" => [
+                        [
+                            "value" => $product->brand->name,
+                            "marketplace_id" => $this->marketplaceId
+                        ]
+                    ],
+                    "externally_assigned_product_identifier" => [
+                        [
+                            "type" => "ean",
+                            "value" => $product->ean,
+                            "marketplace_id" => $this->marketplaceId
+                        ]
+                    ],
+                    "fulfillment_availability" => [
+                        [
+                            'fulfillment_channel_code' => 'DEFAULT',
+                            'lead_time_to_ship_max_days' => 2,
+                            'quantity' => (int) $product->quantity
+                        ]
+                    ],
+                ]
+            ];
+
+            $listingsItemSubmissionResponse = $this->listingsItemsApi->putListingsItem(
+                sellerId: $this->sellerId,
+                sku: $product->sku,
+                listingsItemPutRequest: new ListingsItemPutRequest(
+                    productType: $product->amz_product_type ?? "PRODUCT",
+                    attributes: $attributes
+                ),
+                marketplaceIds: [$this->marketplaceId]
+            );
+
+            $response = $listingsItemSubmissionResponse->dto();
+
+            return $this->handleSubmissionResponse($product, $response);
+        } catch (\Exception $e) {
+            $this->handleSubmissionError($product, $e);
+            throw new AmazonListingException(
+                "Failed to submit new listing for SKU {$product->sku}: {$e->getMessage()}",
+                0,
+                $e
+            );
+        }
     }
 }

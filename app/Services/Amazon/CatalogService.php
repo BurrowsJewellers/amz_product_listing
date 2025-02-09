@@ -15,20 +15,15 @@ class CatalogService
     private AmazonSpApiService $amazonService;
     private ListingService $listingService;
 
-    public function __construct(
-        AmazonSpApiService $amazonService,
-        ListingService $listingService,
-        ?string $sellerId = null,
-        ?string $marketplaceId = null,
-        ?string $currency = null
-    ) {
-        $this->amazonService = $amazonService;
-        $this->listingService = $listingService;
+    public function __construct()
+    {
+        $this->amazonService = new AmazonSpApiService();
+        $this->listingService = new ListingService();
         $this->sellerId = $sellerId ?? config('amazon.spapi.seller_id');
         $this->marketplaceId = $marketplaceId ?? config('amazon.spapi.marketplace_id');
         $this->currency = $currency ?? config('amazon.spapi.currency');
 
-        $this->validateConfiguration();
+        // $this->validateConfiguration();
     }
 
     /**
@@ -51,9 +46,11 @@ class CatalogService
      * @return array<string, mixed> Processing results
      * @throws AmazonApiException
      */
-    public function searchItem(string $identifier, string $identifiersType): array
+    public function searchItem(): array
     {
         try {
+            $this->validateConfiguration();
+
             $sellerConnector = $this->amazonService->getSellerConnector();
             $catalogItemsApi = $sellerConnector->catalogItemsV20220401();
 
@@ -67,6 +64,16 @@ class CatalogService
 
             foreach ($products as $product) {
                 try {
+                    // Skip products without EAN
+                    if (empty($product->ean)) {
+                        $results['failed']++;
+                        $results['errors'][] = [
+                            'sku' => $product->sku,
+                            'message' => 'Missing EAN code'
+                        ];
+                        continue;
+                    }
+
                     $response = $catalogItemsApi->searchCatalogItems(
                         marketplaceIds: [$this->marketplaceId],
                         identifiers: $product->ean,

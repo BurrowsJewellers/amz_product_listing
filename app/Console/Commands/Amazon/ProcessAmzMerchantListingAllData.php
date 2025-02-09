@@ -9,6 +9,9 @@ use App\Http\Controllers\SyncJobController;
 use App\Http\Controllers\AmzReportController;
 use App\Models\AmzRequestedReport;
 use App\Models\Product;
+use App\Services\Amazon\AmazonSpApiService;
+use App\Services\Amazon\CatalogService;
+use App\Services\Amazon\ListingService;
 use App\Services\Amazon\ListingsReportService;
 use Exception;
 use InvalidArgumentException;
@@ -44,6 +47,8 @@ class ProcessAmzMerchantListingAllData extends Command
         Log::info("$marketplace $jobType finished!");
 
         (new ListingsReportService)->processReports();
+
+        (new CatalogService())->searchItem();
     }
 
     private function processReport($job)
