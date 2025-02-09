@@ -211,7 +211,7 @@ class ListingService
             Log::info("Submitting new listing to Amazon", ['sku' => $product->sku]);
 
             $attributes = [
-                "productType" => $product->amz_product_type ?? "PRODUCT",
+                "productType" => $product->productType->name ?? "PRODUCT",
                 "requirements" => "LISTING",
                 "attributes" => [
                     "condition_type" => [
