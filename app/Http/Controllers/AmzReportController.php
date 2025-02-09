@@ -86,9 +86,11 @@ class AmzReportController extends Controller
                              * - The raw report data if this is a TXT or PDF report
                              * - A SimpleXMLElement object if this is an XML report
                              */
-                            $contents = $reportDocument->download(documentType: $report->report_type, postProcess: false);
+                            // $contents = $reportDocument->download(documentType: $report->report_type, postProcess: false);
+                            $contents = $reportDocument->download(postProcess: false);
 
-                            Storage::disk('local')->put($report->file_name, json_encode($contents));
+                            // Storage::disk('local')->put($report->file_name, json_encode($contents));
+                            Storage::disk('local')->put($report->file_name, $contents);
                             $report->update(['downloaded' => 1]);
                             Log::info("Downloaded $report->report_type");
                         } elseif ($processingStatus == 'CANCELLED' || $processingStatus == 'FATAL') {
@@ -98,7 +100,7 @@ class AmzReportController extends Controller
                 }
             }
         } catch (\Exception $e) {
-            report($e);
+            // report($e);
             throw $e;
         }
     }

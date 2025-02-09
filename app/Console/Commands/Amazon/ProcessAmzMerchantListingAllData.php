@@ -9,6 +9,7 @@ use App\Http\Controllers\SyncJobController;
 use App\Http\Controllers\AmzReportController;
 use App\Models\AmzRequestedReport;
 use App\Models\Product;
+use App\Services\Amazon\ListingsReportService;
 use Exception;
 use InvalidArgumentException;
 
@@ -21,6 +22,11 @@ class ProcessAmzMerchantListingAllData extends Command
     private const BATCH_SIZE = 1000; // Process records in batches
 
     public function handle()
+    {
+        (new ListingsReportService)->processReports();
+    }
+
+    public function handle1()
     {
         $marketplace = 'Amazon';
         $jobType = 'processAmzMerchantListingAllData';
