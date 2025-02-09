@@ -23,11 +23,6 @@ class ProcessAmzMerchantListingAllData extends Command
 
     public function handle()
     {
-        (new ListingsReportService)->processReports();
-    }
-
-    public function handle1()
-    {
         $marketplace = 'Amazon';
         $jobType = 'processAmzMerchantListingAllData';
         $job = SyncJobController::getJob($jobType, $marketplace);
@@ -47,6 +42,8 @@ class ProcessAmzMerchantListingAllData extends Command
         }
 
         Log::info("$marketplace $jobType finished!");
+
+        (new ListingsReportService)->processReports();
     }
 
     private function processReport($job)
@@ -173,7 +170,7 @@ class ProcessAmzMerchantListingAllData extends Command
                 $product->update([
                     'asin' => $productData['asin'],
                     'status' => $productData['status'],
-                    'published' => !empty($productData['asin']) ? 1 : 0,
+                    'exists_on_amazon' => !empty($productData['asin']) ? 1 : 0,
                     'price' => $productData['price'],
                     'quantity' => $productData['quantity']
                 ]);
@@ -184,9 +181,9 @@ class ProcessAmzMerchantListingAllData extends Command
     private function updateUnlistedProducts($skuArray)
     {
         $dataToBeUpdated = [
-            'xml_generated' => 0,
+            'json_generated' => 0,
             'submitted' => 0,
-            'published' => 0,
+            'exists_on_amazon' => 0,
             'price_feed_status' => 0,
             'image_feed_status' => 0,
             'inventory_feed_status' => 0,

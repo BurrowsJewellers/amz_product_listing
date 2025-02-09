@@ -67,7 +67,7 @@ class UpdateProduct extends Command
      */
     private function getProductsQuery()
     {
-        return Product::where(['published' => 1])
+        return Product::where(['exists_on_amazon' => 1])
             ->where(function ($query) {
                 $query->where('inventory_feed_status', 0)
                     ->orWhere('price_feed_status', 0);

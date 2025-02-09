@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\SyncJobController;
 use App\Http\Controllers\AmzReportController;
 use App\Models\AmzMarketplace;
+use Illuminate\Support\Facades\Artisan;
 
 class GetAmzMerchantListingAllData extends Command
 {
@@ -78,5 +79,9 @@ class GetAmzMerchantListingAllData extends Command
             report($e);
             Log::error("$marketplace $jobType failed: " . $e->getMessage());
         }
+
+        sleep(900);
+
+        Artisan::call('processAmzMerchantListingAllData');
     }
 }

@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Amazon;
 
 use Illuminate\Console\Command;
 
@@ -11,7 +11,7 @@ class MainCommands extends Command
      *
      * @var string
      */
-    protected $signature = 'mainCommands';
+    protected $signature = 'mainCommandsAmazon';
 
     /**
      * The console command description.
@@ -25,7 +25,7 @@ class MainCommands extends Command
      */
     public function handle()
     {
-        $this->call('getProductsFromEWebMain');
+        // $this->call('getProductsFromEWebMain');
         $this->call('getProductsFromEWebAmazon');
     }
 }

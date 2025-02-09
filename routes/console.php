@@ -32,13 +32,15 @@ Schedule::command(GetProductsFromEWebMain::class)->everyFifteenMinutes()->after(
 });
 
 Schedule::command(GetBrandsFromEWeb::class)->dailyAt('00:05');
+Schedule::command(GetAmzMerchantListingAllData::class)->everyThreeHours();
 
-Schedule::command(GetAmzMerchantListingAllData::class)->everyThreeHours()->after(function () {
-    sleep(600);
-    Artisan::call(ProcessAmzMerchantListingAllData::class);
-});
+// Schedule::command(GetAmzMerchantListingAllData::class)->everyThreeHours()->after(function () {
+//     sleep(600);
+//     Artisan::call(ProcessAmzMerchantListingAllData::class);
+// });
 
-Schedule::command(ProcessAmzMerchantListingAllData::class)->cron('32 */3 * * *');
+// Schedule::command(ProcessAmzMerchantListingAllData::class)->cron('32 */3 * * *');
+
 
 Schedule::command(AmazonUpdateProduct::class)->everyFifteenMinutes();
 

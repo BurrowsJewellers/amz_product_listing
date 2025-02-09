@@ -7,6 +7,7 @@ use App\Models\Amazon\AmazonListings;
 use App\Models\AmzRequestedReport;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use InvalidArgumentException;
 
@@ -99,26 +100,65 @@ class ListingsReportService
 
     public function processReports(): void
     {
-        $reportType = 'GET_MERCHANT_LISTINGS_ALL_DATA';
+        try {
+            $reportType = 'GET_MERCHANT_LISTINGS_ALL_DATA';
 
-        $reportController = new AmzReportController();
-        $reportController->downloadReports();
+            $reportController = new AmzReportController();
+            $reportController->downloadReports();
 
-        $report = AmzRequestedReport::where([
-            'report_type' => $reportType,
-            'downloaded' => 1,
-            'processed' => 0
-        ])->orderBy('id', 'desc')->first();
+            $report = AmzRequestedReport::where([
+                'report_type' => $reportType,
+                'downloaded' => 1,
+                // 'processed' => 0
+            ])
+                ->where('created_at', '>', now()->subHours(4))
+                ->orderBy('id', 'desc')->first();
 
-        if (!$report) {
-            Log::info('No unprocessed reports found.');
-            return;
+            if (!$report) {
+                Log::info('No unprocessed reports found.');
+                return;
+            }
+
+            if (!Storage::exists($report->file_name)) {
+                throw new InvalidArgumentException("ListingsReportService: Report file not found: {$report->file_name}");
+            }
+
+            $this->importListingsFromTsv($report->file_name, $report);
+
+            // -- Query 1: Update products that need to be submitted to Amazon
+            // -- This finds SKUs with web_option_boolean7=1 that aren't in amazon_listings
+            DB::select(
+                "UPDATE retail_edge_products rep
+                    JOIN products p ON p.sku = rep.sku
+                    LEFT JOIN amazon_listings al ON al.seller_sku = rep.sku
+                    SET 
+                        rep.uploaded_to_amazon = 0,
+                        p.json_generated = 0,
+                        p.price_feed_status = 0,
+                        p.image_feed_status = 0,
+                        p.inventory_feed_status = 0,
+                        p.submitted = 0,
+                        p.exists_on_amazon = 0
+                    WHERE 
+                        rep.web_option_boolean7 = 1 
+                        AND al.seller_sku IS NULL;
+            "
+            );
+
+            // -- Query 2: Update products that should not be on Amazon
+            // -- This updates products where web_option_boolean7=0
+            DB::select(
+                "UPDATE products p
+                    JOIN retail_edge_products rep ON rep.sku = p.sku
+                    SET 
+                        p.quantity = 0,
+                        p.inventory_feed_status = 0
+                    WHERE 
+                        rep.web_option_boolean7 = 0;
+            "
+            );
+        } catch (\Exception $e) {
+            throw $e;
         }
-
-        if (!Storage::exists($report->file_name)) {
-            throw new InvalidArgumentException("Report file not found: {$report->file_name}");
-        }
-
-        $this->importListingsFromTsv($report->file_name, $report);
     }
 }
