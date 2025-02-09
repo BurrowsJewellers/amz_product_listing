@@ -10,6 +10,8 @@ use SellingPartnerApi\Seller\ListingsItemsV20210801\Dto\ListingsItemPatchRequest
 use SellingPartnerApi\Seller\ListingsItemsV20210801\Dto\PatchOperation;
 use App\Models\Product;
 
+use function Illuminate\Log\log;
+
 class AmazonSpApiService
 {
     private const MAX_RETRIES = 3;
@@ -141,6 +143,8 @@ class AmazonSpApiService
                 'inventory_feed_status' => 1,
                 'price_feed_status' => 1
             ]);
+
+            log("Product {$product->sku} updated successfully on Amazon.");
         } elseif ($response->status === 'INVALID') {
             throw new Exception("Invalid submission for SKU {$product->sku}: " . json_encode($response));
         } else {
