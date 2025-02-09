@@ -73,6 +73,8 @@ class ListingService
 
             Log::info("Submitting offer to Amazon", ['sku' => $product->sku]);
 
+            echo "Submitting offer to Amazon: sku : {$product->sku}\n";
+
             $attributes = $this->prepareOfferAttributes($product);
 
             $listingsItemSubmissionResponse = $this->listingsItemsApi->putListingsItem(
@@ -149,6 +151,8 @@ class ListingService
             ]);
 
             Log::info("Listing successfully submitted", ['sku' => $product->sku]);
+            echo "Listing successfully submitted: sku : {$product->sku}\n";
+
             return true;
         }
 
@@ -163,6 +167,8 @@ class ListingService
             'status' => $response->status,
             'message' => $message
         ]);
+
+        echo "Listing submission failed. SKU: {$product->sku}. Status: {$response->status}. Message: {$message}\n";
 
         return false;
     }
@@ -186,6 +192,8 @@ class ListingService
             'error' => $e->getMessage(),
             'trace' => $e->getTraceAsString()
         ]);
+
+        echo "Listing submission error. SKU: {$product->sku}. Error : {$e->getMessage()}\n";
     }
 
     /**

@@ -76,7 +76,7 @@ class CatalogService
 
                     $response = $catalogItemsApi->searchCatalogItems(
                         marketplaceIds: [$this->marketplaceId],
-                        identifiers: $product->ean,
+                        identifiers: [$product->ean],
                         identifiersType: 'EAN',
                         includedData: ['summaries'],
                         sellerId: $this->sellerId,
