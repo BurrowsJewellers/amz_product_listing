@@ -9,6 +9,7 @@ use SellingPartnerApi\Seller\SellerConnector;
 use SellingPartnerApi\Seller\ListingsItemsV20210801\Dto\ListingsItemPatchRequest;
 use SellingPartnerApi\Seller\ListingsItemsV20210801\Dto\PatchOperation;
 use App\Models\Product;
+use SellingPartnerApi\Seller\ListingsItemsV20210801\Api;
 
 use function Illuminate\Log\log;
 
@@ -18,7 +19,7 @@ class AmazonSpApiService
     private ?string $sellerId;
     private ?string $marketplaceId;
     private ?string $currency;
-    private $listingsItemsApi;
+    private Api $listingsItemsApi;
 
     public function __construct()
     {
