@@ -5,31 +5,110 @@ namespace App\Console\Commands\Shopify;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\SyncJobController;
-use Shopify\Clients\Rest;
+use Shopify\Clients\Graphql;
 use App\Models\Brand;
 use App\Models\RetailEdgeProduct;
 use App\Services\ShopifyService;
 use Illuminate\Support\Facades\DB;
 
-class CreateProduct extends Command
+class CreateProductBackup extends Command
 {
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
-    protected $signature = 'shopifyCreateProduct';
+    protected $signature = 'shopifyCreateProductBackup';
+    protected $description = 'Create Shopify products using GraphQL';
 
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
-    protected $description = 'Command description';
+    private $client;
+    private $shopifyService;
 
-    /**
-     * Execute the console command.
-     */
+    public function __construct()
+    {
+        parent::__construct();
+        $this->shopifyService = new ShopifyService();
+    }
+
+    private function checkResponseForErrors($response)
+    {
+        $responseBody = $response->getDecodedBody();
+
+        if (isset($responseBody['errors'])) {
+            throw new \Exception(json_encode($responseBody['errors']));
+        }
+
+        if (
+            isset($responseBody['data']['productCreate']['userErrors'])
+            && !empty($responseBody['data']['productCreate']['userErrors'])
+        ) {
+            throw new \Exception(json_encode($responseBody['data']['productCreate']['userErrors']));
+        }
+
+        return $responseBody;
+    }
+
+    private function createProduct($productData)
+    {
+        $mutation = <<<'GRAPHQL'
+        mutation productCreate($input: ProductInput!) {
+            productCreate(input: $input) {
+                product {
+                    id
+                    title
+                    handle
+                    status
+                    variants(first: 100) {
+                        edges {
+                            node {
+                                id
+                                title
+                                sku
+                                price
+                                compareAtPrice
+                                inventoryItem {
+                                    id
+                                }
+                            }
+                        }
+                    }
+                }
+                userErrors {
+                    field
+                    message
+                }
+            }
+        }
+        GRAPHQL;
+
+        $variables = [
+            'input' => [
+                'title' => $productData['product']['title'],
+                'descriptionHtml' => $productData['product']['body_html'],
+                'productType' => $productData['product']['product_type'],
+                'vendor' => $productData['product']['vendor'],
+                'options' => $productData['product']['options'],
+                'variants' => array_map(function ($variant) {
+                    return [
+                        'sku' => $variant['sku'],
+                        'price' => $variant['price'],
+                        'compareAtPrice' => $variant['compare_at_price'],
+                        'barcode' => $variant['barcode'],
+                        'inventoryManagement' => 'SHOPIFY',
+                        'option1' => $variant['option1'] ?? null,
+                        'option2' => $variant['option2'] ?? null,
+                        'option3' => $variant['option3'] ?? null,
+                    ];
+                }, $productData['product']['variants']),
+                'tags' => explode(',', $productData['product']['tags']),
+                'status' => 'ACTIVE',
+            ]
+        ];
+
+        // Add template suffix if it exists
+        if (isset($productData['product']['template_suffix'])) {
+            $variables['input']['templateSuffix'] = $productData['product']['template_suffix'];
+        }
+
+        $response = $this->client->query(['query' => $mutation, 'variables' => $variables]);
+        return $this->checkResponseForErrors($response);
+    }
+
     public function handle()
     {
         $marketplace = 'Shopify';
@@ -48,27 +127,19 @@ class CreateProduct extends Command
                     WHERE spv.id IS NULL;
                 ");
 
-                $pendingProductIds = [];
+                $pendingProductIds = collect($pendingProducts)->pluck('id')->toArray();
 
-                foreach ($pendingProducts as $p) {
-                    $pendingProductIds[] = $p->id;
-                }
+                $session = $this->shopifyService->getSession();
+                $this->client = new Graphql($session->getShop(), $session->getAccessToken());
 
-                $session = (new ShopifyService)->getSession();
                 $variantTypes = ['vt1' => 'Size', 'vt2' => 'Color', 'vt3' => 'Material', 'vt4' => 'Style'];
+                $brands = Brand::all()->keyBy('brand_id');
 
-                $brands = Brand::all();
-
-                $brandsArray = [];
-
-                foreach ($brands as $brand) {
-                    $brandsArray[$brand->brand_id]['id'] = $brand->id;
-                    $brandsArray[$brand->brand_id]['name'] = $brand->name;
-                }
-
-                $countQuery = RetailEdgeProduct::whereIn('id', $pendingProductIds)->whereHas('children', function ($children) {
-                    $children->where('uploaded_to_shopify', 0);
-                })->where('quantity', '>', 0);
+                $countQuery = RetailEdgeProduct::whereIn('id', $pendingProductIds)
+                    ->whereHas('children', function ($children) {
+                        $children->where('uploaded_to_shopify', 0);
+                    })
+                    ->where('quantity', '>', 0);
 
                 $count = $countQuery->count();
 
@@ -82,6 +153,7 @@ class CreateProduct extends Command
                         $this->info('======================================');
                         $variants = [];
                         $variantOptions = [];
+
                         if ($product->children->count()) {
                             $optionIndex = 1;
                             foreach ($product->children as $child) {
@@ -182,7 +254,6 @@ class CreateProduct extends Command
                         $mktDescription = $product->marketing_description;
 
                         if ($product->brand?->name == 'Pandora') {
-                            // $mktDescription .= "Brand: " . $product->brand?->name;
                             $mktDescription .= " - Design number: " . $product->real_design_number;
                         }
 
@@ -192,9 +263,8 @@ class CreateProduct extends Command
                             'variants' => $variants,
                             'options' => $options,
                             'product_type' => $product->s_cat,
+                            'vendor' => $product->brand?->name,
                         ];
-
-                        $productData['product']['vendor'] = $product->brand?->name;
 
                         $productTags = $this->calculateTags($product);
 
@@ -205,19 +275,13 @@ class CreateProduct extends Command
 
                         $productData['product']['tags'] = implode(",", $productTags);
 
-                        $data = json_encode($productData);
-
-                        $this->info($data);
                         try {
-                            $client = new Rest($session->getShop(), $session->getAccessToken());
+                            $response = $this->createProduct($productData);
 
-                            /** @var RestResponse */
-                            $response = $client->post(path: 'products', body: $data);
-                            $body = $response->getDecodedBody();
-
-                            if (isset($body['product'])) {
-                                (new ShopifyService)->saveProductToDb($body['product']);
-                                $this->info($body['product']['title'] . ' - saved to database');
+                            if (isset($response['data']['productCreate']['product'])) {
+                                $shopifyProduct = $response['data']['productCreate']['product'];
+                                $this->shopifyService->saveProductToDb($shopifyProduct);
+                                $this->info($shopifyProduct['title'] . ' - saved to database');
                                 Log::debug('Shopify product ' . $product->sku . ' created successfully!');
 
                                 foreach ($product->children as $child) {
@@ -228,14 +292,18 @@ class CreateProduct extends Command
                                     $child->update(['uploaded_to_shopify' => 2]);
                                 }
 
-                                $message = 'Error while creating product. Sku :' . $product->sku . ', title: '  . $product->title;
+                                $message = 'Error while creating product. Sku :' . $product->sku . ', title: ' . $product->title;
                                 Log::debug($message);
-                                Log::debug($data);
-                                Log::debug($body);
+                                Log::debug(json_encode($productData));
+                                Log::debug(json_encode($response));
                                 $this->info($message);
                             }
                         } catch (\Exception $e) {
+                            foreach ($product->children as $child) {
+                                $child->update(['uploaded_to_shopify' => 2]);
+                            }
                             report($e);
+                            Log::debug("Error creating product {$product->sku}: " . $e->getMessage());
                         }
                         usleep(1500000);
                     }
@@ -244,7 +312,6 @@ class CreateProduct extends Command
                 }
 
                 $job->update(['status' => 0, 'message' => null]);
-
                 Log::info("$marketplace $jobType finished!");
             } catch (\Exception $e) {
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
