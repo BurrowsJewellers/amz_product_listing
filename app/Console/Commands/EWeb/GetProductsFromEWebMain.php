@@ -38,10 +38,10 @@ class GetProductsFromEWebMain extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if ($job->isRunning()) {
-            Log::info("$marketplace $jobType is already running.");
-            return;
-        }
+        // if ($job->isRunning()) {
+        //     Log::info("$marketplace $jobType is already running.");
+        //     return;
+        // }
 
         Log::info("$marketplace $jobType started!");
         $job->update(['status' => 1]);
