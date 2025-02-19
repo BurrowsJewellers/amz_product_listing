@@ -24,6 +24,10 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
 
+
+
+Schedule::command('telescope:prune --hours=48')->daily();
+
 /**
  * Main job to fetch products from eWeb
  */
