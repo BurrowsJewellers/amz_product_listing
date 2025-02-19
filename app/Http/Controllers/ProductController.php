@@ -14,36 +14,38 @@ use Illuminate\Support\Facades\Log;
 class ProductController extends Controller
 {
 
-    public function index() {
+    public function index()
+    {
         if (request()->ajax()) {
             return datatables()->eloquent(Product::query())
-            ->addColumn('action', function($row){
-                $btn = '<a href="'.route('product.edit', [$row->id]).'" class="edit btn btn-primary btn-sm">View</a>';
-                return $btn;
-            })
-            ->editColumn('message', function($row){
-                // return $row->message == null ? 'No' : 'Yes';
-                if ($row->message) {
-                    // $html = '<button type="button" class="btn btn-secondary" data-coreui-toggle="tooltip" data-coreui-placement="top" title="'. $row->message. '">View Error</button>';
-                    $html = $row->message;
-                } else {
-                    $html = '';
-                }
-                return $html;
-            })
-            ->rawColumns(['action', 'message'])
-            // ->make(true);
-            ->toJson();
+                ->addColumn('action', function ($row) {
+                    $btn = '<a href="' . route('product.edit', [$row->id]) . '" class="edit btn btn-primary btn-sm">View</a>';
+                    return $btn;
+                })
+                ->editColumn('message', function ($row) {
+                    // return $row->message == null ? 'No' : 'Yes';
+                    if ($row->message) {
+                        // $html = '<button type="button" class="btn btn-secondary" data-coreui-toggle="tooltip" data-coreui-placement="top" title="'. $row->message. '">View Error</button>';
+                        $html = $row->message;
+                    } else {
+                        $html = '';
+                    }
+                    return $html;
+                })
+                ->rawColumns(['action', 'message'])
+                // ->make(true);
+                ->toJson();
         }
         return view('product.index');
     }
 
 
-    public function edit($id) {
+    public function edit($id)
+    {
         try {
-            $product = Product::with(['categoryFields.value' => function($query) use($id) {
+            $product = Product::with(['categoryFields.value' => function ($query) use ($id) {
                 $query->where('product_id', $id);
-            }, 'productTypeFields.value'  => function($query) use($id) {
+            }, 'productTypeFields.value'  => function ($query) use ($id) {
                 $query->where('product_id', $id);
             }])->findOrFail($id);
 
@@ -54,12 +56,13 @@ class ProductController extends Controller
             // return $product;
             return view('product.edit', compact('product', 'brands', 'categories', 'productTypes'));
         } catch (\Exception $e) {
-            Log::debug('ProdicyController@edit '. $e->getMessage());
+            Log::debug('ProdictController@edit ' . $e->getMessage());
         }
     }
 
 
-    public function save() {
+    public function save()
+    {
         try {
             $product = Product::findOrFail(request()->id);
             $categoryHasChanged = $product->category_id !== intval(request()->category_id) ? true : false;
@@ -118,11 +121,8 @@ class ProductController extends Controller
             return redirect('products')->with('success', 'Product details saved successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::debug('ProdicyController@edit '. $e->getMessage() . ' at line '. $e->getLine());
+            Log::debug('ProdictController@edit ' . $e->getMessage() . ' at line ' . $e->getLine());
             return back()->with('error', 'Counld not save product details.');
         }
-
     }
-
-
 }
