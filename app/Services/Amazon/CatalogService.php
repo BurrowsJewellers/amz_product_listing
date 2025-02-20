@@ -66,36 +66,54 @@ class CatalogService
                 try {
                     // Skip products without EAN
 
-                    /*
-                    if (empty($product->ean)) {
-                        $results['failed']++;
-                        $results['errors'][] = [
-                            'sku' => $product->sku,
-                            'message' => 'Missing EAN code'
-                        ];
-                        continue;
-                    }
-                    */
+                    // if (empty($product->ean)) {
+                    //     $results['failed']++;
+                    //     $results['errors'][] = [
+                    //         'sku' => $product->sku,
+                    //         'message' => 'Missing EAN code'
+                    //     ];
+                    //     continue;
+                    // }
 
-                    $response = $catalogItemsApi->searchCatalogItems(
-                        marketplaceIds: [$this->marketplaceId],
-                        identifiers: [$product->ean],
-                        identifiersType: 'EAN',
-                        includedData: ['summaries', 'productTypes'],
-                        sellerId: $this->sellerId,
-                    );
 
-                    $itemSearchResults = $response->dto();
+                    $response = null;
 
-                    if ($itemSearchResults->numberOfResults > 0) {
-                        echo "{$product->sku} found in Amazon Catalog.\n";
-                        // dd($itemSearchResults->items[0]);
-                        $this->processExistingProduct($product, $itemSearchResults->items[0]);
-                        $results['success']++;
+                    if ($product->ean) {
+                        Log::error("{$product->sku}, searching in Amazon Catalog with EAN");
+                        $response = $catalogItemsApi->searchCatalogItems(
+                            marketplaceIds: [$this->marketplaceId],
+                            identifiers: [$product->ean],
+                            identifiersType: 'EAN',
+                            includedData: ['summaries', 'productTypes'],
+                            sellerId: $this->sellerId,
+                        );
+                    } elseif ($product->upc) {
+                        Log::error("{$product->sku}, searching in Amazon Catalog with UPC");
+                        $response = $catalogItemsApi->searchCatalogItems(
+                            marketplaceIds: [$this->marketplaceId],
+                            identifiers: [$product->upc],
+                            identifiersType: 'UPC',
+                            includedData: ['summaries', 'productTypes'],
+                            sellerId: $this->sellerId,
+                        );
                     } else {
+                        Log::error("{$product->sku}, submitting new product to Amazon");
                         $this->processNewProduct($product);
                         $results['success']++;
                     }
+
+                    if ($response) {
+                        $itemSearchResults = $response->dto();
+
+                        if ($itemSearchResults->numberOfResults > 0) {
+                            Log::error("{$product->sku}, found in Amazon Catalog");
+                            echo "{$product->sku} found in Amazon Catalog.\n";
+                            // dd($itemSearchResults->items[0]);
+                            $this->processExistingProduct($product, $itemSearchResults->items[0]);
+                            $results['success']++;
+                        }
+                    }
+
                     sleep(1);
                 } catch (\Exception $e) {
                     $results['failed']++;
