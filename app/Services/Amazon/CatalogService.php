@@ -65,6 +65,8 @@ class CatalogService
             foreach ($products as $product) {
                 try {
                     // Skip products without EAN
+
+                    /*
                     if (empty($product->ean)) {
                         $results['failed']++;
                         $results['errors'][] = [
@@ -73,6 +75,7 @@ class CatalogService
                         ];
                         continue;
                     }
+                    */
 
                     $response = $catalogItemsApi->searchCatalogItems(
                         marketplaceIds: [$this->marketplaceId],

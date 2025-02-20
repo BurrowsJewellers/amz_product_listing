@@ -240,14 +240,14 @@ class ListingService
 
             Log::info("Submitting new listing to Amazon", ['sku' => $product->sku]);
 
+            if ($product->ean) {
+                $brandName = $product->brand->name;
+            } else {
+                $brandName = "GENERIC";
+            }
+
             $attributes = [
-                "condition_type" => [
-                    [
-                        "value" => "new_new",
-                        "marketplace_id" => $this->marketplaceId
-                    ]
-                ],
-                "product_name" => [
+                "item_name" => [
                     [
                         "value" => $product->name,
                         "marketplace_id" => $this->marketplaceId
@@ -255,7 +255,7 @@ class ListingService
                 ],
                 "brand" => [
                     [
-                        "value" => $product->brand->name,
+                        "value" => $brandName,
                         "marketplace_id" => $this->marketplaceId
                     ]
                 ],
@@ -263,6 +263,19 @@ class ListingService
                     [
                         "type" => "ean",
                         "value" => $product->ean,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ],
+                "recommended_browse_nodes" => [
+                    [
+                        "value" => $product->eWebCode->amz_recommended_browse_node,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+
+                ],
+                "manufacturer" => [
+                    [
+                        "value" => $brandName,
                         "marketplace_id" => $this->marketplaceId
                     ]
                 ],
@@ -287,8 +300,56 @@ class ListingService
                             ]
                         ]
                     ]
-                ]
+                ],
+                "condition_type" => [
+                    [
+                        "value" => "new_new",
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ],
+
+                "merchant_shipping_group" => [
+                    [
+                        "value" => $product->retail_price2 > 100 ? 'Over $100' : 'Sub $100 order',
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ],
+                "supplier_declared_dg_hz_regulation" => [
+                    [
+                        "value" => "not_applicable",
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ],
+                "batteries_required" => [
+                    [
+                        "value" => false,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ],
+                "batteries_included" => [
+                    [
+                        "value" => 'No',
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ],
+
+                "country_of_origin" => [
+                    [
+                        "value" => $product->country_of_origin,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ],
+
             ];
+
+            if (!$product->ean) {
+                $attributes["supplier_declared_has_product_identifier_exemption"] = [
+                    [
+                        "value" => true,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+            }
 
             $mainImageUrl = null;
             if ($product->images->count()) {
@@ -315,6 +376,73 @@ class ListingService
                     $otherImageIndex++;
                 }
             }
+
+            $productDescription = str_replace("Product Description:", '', $product->description);
+
+
+            $attributes["product_description"] = [
+                [
+                    "value" => $productDescription,
+                    "marketplace_id" => $this->marketplaceId
+                ]
+            ];
+
+            $dataBulletPoint1 = $productDescription;
+
+            if (strlen($dataBulletPoint1) > 500) {
+                $dataBulletPoint1 = substr($dataBulletPoint1, 0, 490) . '...';
+            }
+
+            $attributes["bullet_point"] = [
+                [
+                    "value" => $dataBulletPoint1,
+                    "marketplace_id" => $this->marketplaceId
+                ]
+            ];
+
+            if ($product->brand?->name) {
+                $attributes["manufacturer"] = [
+                    [
+                        "value" => $product->brand?->name,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+            }
+
+            if ($product->real_design_number) {
+                $attributes["part_number"] = [
+                    [
+                        "value" => $product->part_number,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+            }
+
+            if ($product->department_name) {
+                $attributes["department"] = [
+                    [
+                        "value" => $product->department_name,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+            }
+
+            if ($product->size_name) {
+                $attributes["size"] = [
+                    [
+                        "value" => $product->size_name,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+            }
+
+            $attributes["gift_options"] = [
+                [
+                    "can_be_wrapped" => true,
+                    "marketplace_id" => $this->marketplaceId
+                ]
+            ];
+
 
             $listingsItemSubmissionResponse = $this->listingsItemsApi->putListingsItem(
                 sellerId: $this->sellerId,
