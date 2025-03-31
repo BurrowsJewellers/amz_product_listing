@@ -57,15 +57,19 @@ class AmazonSpApiService
             $this->initializeListingsApi();
         }
 
-        // Echo the current product being processed
-        echo PHP_EOL . "Processing SKU: {$product->sku} - Price: {$product->retail_price} - Inventory: {$product->quantity}" . PHP_EOL;
+        // Log the current product being processed
+        $message = "Processing SKU: {$product->sku} - Price: {$product->retail_price} - Inventory: {$product->quantity}";
+        Log::info($message);
+        echo PHP_EOL . $message . PHP_EOL;
 
         $retryCount = 0;
 
         while ($retryCount < self::MAX_RETRIES) {
             try {
                 $patches = $this->buildProductPatches($product);
-                echo "► Submitting update to Amazon..." . PHP_EOL;
+                $submitMessage = "Submitting update to Amazon for SKU: {$product->sku}";
+                Log::info($submitMessage);
+                echo $submitMessage . PHP_EOL;
                 $response = $this->submitProductUpdate($product->sku, $patches);
 
                 $this->handleUpdateResponse($product, $response->dto());
@@ -80,11 +84,13 @@ class AmazonSpApiService
                 if (strpos($message, 'Too Many Requests (429)') !== false) {
                     // Exponential backoff for rate limit errors
                     $sleepTime = pow(2, $retryCount);
-                    Log::warning("Rate limit exceeded for product {$product->sku}. Waiting {$sleepTime} seconds before retry {$retryCount}.");
-                    echo "⚠ RATE LIMIT: Product {$product->sku} - Waiting {$sleepTime} seconds before retry {$retryCount}." . PHP_EOL;
+                    $rateLimitMessage = "Rate limit exceeded for product {$product->sku}. Waiting {$sleepTime} seconds before retry {$retryCount}.";
+                    Log::warning($rateLimitMessage);
+                    echo $rateLimitMessage . PHP_EOL;
                 } else {
-                    Log::warning("Retry {$retryCount} for product {$product->sku}: {$message}");
-                    echo "⚠ RETRY {$retryCount}: Product {$product->sku} - {$message}" . PHP_EOL;
+                    $retryMessage = "Retry {$retryCount} for product {$product->sku}: {$message}";
+                    Log::warning($retryMessage);
+                    echo $retryMessage . PHP_EOL;
                 }
 
                 if ($retryCount === self::MAX_RETRIES) {
@@ -161,12 +167,15 @@ class AmazonSpApiService
                 'price_feed_status' => 1
             ]);
 
-            Log::debug("Product {$product->sku} updated successfully on Amazon.");
-            echo "✓ SUCCESS: Product {$product->sku} updated successfully on Amazon." . PHP_EOL;
+            $successMessage = "Product {$product->sku} updated successfully on Amazon.";
+            Log::info($successMessage);
+            echo $successMessage . PHP_EOL;
         } elseif ($response->status === 'INVALID') {
             throw new Exception("Invalid submission for SKU {$product->sku}: " . json_encode($response));
         } else {
-            echo "⚠ WARNING: Unexpected status for SKU {$product->sku}: {$response->status}" . PHP_EOL;
+            $unexpectedMessage = "Unexpected status for SKU {$product->sku}: {$response->status}";
+            Log::warning($unexpectedMessage);
+            echo $unexpectedMessage . PHP_EOL;
             throw new Exception("Unexpected status for SKU {$product->sku}: {$response->status}");
         }
     }
@@ -178,7 +187,7 @@ class AmazonSpApiService
     {
         $errorMessage = "Error updating product {$product->sku}: {$e->getMessage()}";
         Log::error($errorMessage);
-        echo "✗ ERROR: {$errorMessage}" . PHP_EOL;
+        echo $errorMessage . PHP_EOL;
         report($e);
 
         $product->update([
