@@ -26,7 +26,7 @@ use Illuminate\Support\Facades\Schedule;
 
 
 
-Schedule::command('telescope:prune --hours=48')->daily();
+Schedule::command('telescope:prune --hours=3')->everyFourHours();
 
 /**
  * Main job to fetch products from eWeb
