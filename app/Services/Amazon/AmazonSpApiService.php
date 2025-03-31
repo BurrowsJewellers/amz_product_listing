@@ -19,7 +19,7 @@ class AmazonSpApiService
     private ?string $sellerId;
     private ?string $marketplaceId;
     private ?string $currency;
-    private Api $listingsItemsApi;
+    private ?Api $listingsItemsApi = null;
 
     public function __construct()
     {
@@ -54,7 +54,7 @@ class AmazonSpApiService
      */
     public function updateProduct(Product $product): bool
     {
-        if (!$this->listingsItemsApi) {
+        if ($this->listingsItemsApi === null) {
             $this->initializeListingsApi();
         }
 
