@@ -31,6 +31,7 @@ class ListProducts extends Command
 
         try {
             (new CatalogService())->searchItem();
+            $job->update(['status' => 0]);
         } catch (\Exception $e) {
             $this->handleError($job, $e);
         }

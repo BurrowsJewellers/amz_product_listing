@@ -79,7 +79,7 @@ class CatalogService
                     $response = null;
 
                     if ($product->ean) {
-                        Log::error("{$product->sku}, searching in Amazon Catalog with EAN");
+                        Log::info("{$product->sku}, searching in Amazon Catalog with EAN");
                         $response = $catalogItemsApi->searchCatalogItems(
                             marketplaceIds: [$this->marketplaceId],
                             identifiers: [$product->ean],
@@ -88,7 +88,7 @@ class CatalogService
                             sellerId: $this->sellerId,
                         );
                     } elseif ($product->upc) {
-                        Log::error("{$product->sku}, searching in Amazon Catalog with UPC");
+                        Log::info("{$product->sku}, searching in Amazon Catalog with UPC");
                         $response = $catalogItemsApi->searchCatalogItems(
                             marketplaceIds: [$this->marketplaceId],
                             identifiers: [$product->upc],
@@ -97,7 +97,7 @@ class CatalogService
                             sellerId: $this->sellerId,
                         );
                     } else {
-                        Log::error("{$product->sku}, submitting new product to Amazon");
+                        Log::info("{$product->sku}, submitting new product to Amazon");
                         $this->processNewProduct($product);
                         $results['success']++;
                     }
