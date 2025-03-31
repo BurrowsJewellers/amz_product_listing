@@ -11,8 +11,7 @@ use SellingPartnerApi\Seller\ListingsItemsV20210801\Dto\PatchOperation;
 use App\Models\Product;
 use SellingPartnerApi\Seller\ListingsItemsV20210801\Api;
 
-use function Illuminate\Log\log;
-
+// Removed duplicate log import
 class AmazonSpApiService
 {
     private const MAX_RETRIES = 3;
@@ -58,25 +57,42 @@ class AmazonSpApiService
             $this->initializeListingsApi();
         }
 
+        // Echo the current product being processed
+        echo PHP_EOL . "Processing SKU: {$product->sku} - Price: {$product->retail_price} - Inventory: {$product->quantity}" . PHP_EOL;
+
         $retryCount = 0;
 
         while ($retryCount < self::MAX_RETRIES) {
             try {
                 $patches = $this->buildProductPatches($product);
+                echo "► Submitting update to Amazon..." . PHP_EOL;
                 $response = $this->submitProductUpdate($product->sku, $patches);
 
                 $this->handleUpdateResponse($product, $response->dto());
                 return true;
             } catch (Exception $e) {
                 $retryCount++;
-                Log::warning("Retry {$retryCount} for product {$product->sku}: {$e->getMessage()}");
+
+                // Check for 429 Too Many Requests error
+                $message = $e->getMessage();
+                $sleepTime = 1; // Default delay
+
+                if (strpos($message, 'Too Many Requests (429)') !== false) {
+                    // Exponential backoff for rate limit errors
+                    $sleepTime = pow(2, $retryCount);
+                    Log::warning("Rate limit exceeded for product {$product->sku}. Waiting {$sleepTime} seconds before retry {$retryCount}.");
+                    echo "⚠ RATE LIMIT: Product {$product->sku} - Waiting {$sleepTime} seconds before retry {$retryCount}." . PHP_EOL;
+                } else {
+                    Log::warning("Retry {$retryCount} for product {$product->sku}: {$message}");
+                    echo "⚠ RETRY {$retryCount}: Product {$product->sku} - {$message}" . PHP_EOL;
+                }
 
                 if ($retryCount === self::MAX_RETRIES) {
                     $this->handleProductError($product, $e);
                     return false;
                 }
 
-                sleep(1); // Add delay between retries
+                sleep($sleepTime); // Dynamic delay between retries
             }
         }
 
@@ -145,10 +161,12 @@ class AmazonSpApiService
                 'price_feed_status' => 1
             ]);
 
-            log("Product {$product->sku} updated successfully on Amazon.");
+            Log::debug("Product {$product->sku} updated successfully on Amazon.");
+            echo "✓ SUCCESS: Product {$product->sku} updated successfully on Amazon." . PHP_EOL;
         } elseif ($response->status === 'INVALID') {
             throw new Exception("Invalid submission for SKU {$product->sku}: " . json_encode($response));
         } else {
+            echo "⚠ WARNING: Unexpected status for SKU {$product->sku}: {$response->status}" . PHP_EOL;
             throw new Exception("Unexpected status for SKU {$product->sku}: {$response->status}");
         }
     }
@@ -160,6 +178,7 @@ class AmazonSpApiService
     {
         $errorMessage = "Error updating product {$product->sku}: {$e->getMessage()}";
         Log::error($errorMessage);
+        echo "✗ ERROR: {$errorMessage}" . PHP_EOL;
         report($e);
 
         $product->update([
