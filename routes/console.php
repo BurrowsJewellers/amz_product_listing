@@ -57,20 +57,20 @@ Schedule::command(AmazonUpdateProduct::class)->everyFifteenMinutes();
 // Schedule::command('catchCheckIfExists')->dailyAt('00:50');
 // Schedule::command('catchListOffersOfShop')->dailyAt('01:20');
 
-Schedule::command(GetProductsFromEWebCatch::class)->dailyAt('00:20')->after(function () {
-    $this->call(CheckIfExists::class);
-});
-Schedule::command(ListOffersOfShop::class)->dailyAt('01:20');
+// Schedule::command(GetProductsFromEWebCatch::class)->dailyAt('00:20')->after(function () {
+//     $this->call(CheckIfExists::class);
+// });
+// Schedule::command(ListOffersOfShop::class)->dailyAt('01:20');
 
 
 
-Schedule::command(GetProductsFromEWebCatch::class)->everyFifteenMinutes()->between('02:00', '23:59');
+// Schedule::command(GetProductsFromEWebCatch::class)->everyFifteenMinutes()->between('02:00', '23:59');
 // Schedule::command('catchGenerateProductsCsv')->everyTwoHours()->between('02:00','23:59');
-Schedule::command(GenerateProductsCsv::class)->cron('18 2 */4 * *');
-Schedule::command(GenerateOffersCsv::class)->everyFifteenMinutes()->between('02:00', '23:59')
-    ->after(function () {
-        $this->call(SubmitImports::class);
-    });
+// Schedule::command(GenerateProductsCsv::class)->cron('18 2 */4 * *');
+// Schedule::command(GenerateOffersCsv::class)->everyFifteenMinutes()->between('02:00', '23:59')
+//     ->after(function () {
+//         $this->call(SubmitImports::class);
+//     });
 
 // Schedule::command('catchSubmitImports')->everyThirtyMinutes()->between('02:00', '23:59');
 
