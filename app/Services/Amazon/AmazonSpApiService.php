@@ -114,6 +114,8 @@ class AmazonSpApiService
             throw new Exception("Invalid price or quantity for SKU {$product->sku}");
         }
 
+        $qty = $product->quantity < 0 ? 0 : $product->quantity;
+
         return [
             new PatchOperation(
                 op: 'replace',
@@ -134,7 +136,7 @@ class AmazonSpApiService
                 value: [[
                     'fulfillment_channel_code' => 'DEFAULT',
                     'lead_time_to_ship_max_days' => 2,
-                    'quantity' => (int) $product->quantity
+                    'quantity' => (int) $qty
                 ]]
             )
         ];
