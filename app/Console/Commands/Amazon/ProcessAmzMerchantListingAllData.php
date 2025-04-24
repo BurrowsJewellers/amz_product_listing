@@ -157,12 +157,16 @@ class ProcessAmzMerchantListingAllData extends Command
             throw new InvalidArgumentException("Row has insufficient columns");
         }
 
+        $qty = (int) $row[$headers['quantity']];
+
+        $qty = $qty < 0 ? 0 : $qty;
+
         return [
             'sku' => $row[$headers['seller-sku']],
             'asin' => $row[$headers['asin1']],
             'status' => $row[$headers['status']],
             'price' => $row[$headers['price']],
-            'quantity' => $row[$headers['quantity']]
+            'quantity' => $qty,
         ];
     }
 
