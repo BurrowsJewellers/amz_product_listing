@@ -38,21 +38,55 @@ class UpdateInventory extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        // if (!$job->isRunning()) {
-        try {
-            Log::info("$marketplace $jobType started!");
-            $job->update(['status' => 1]);
+        if (!$job->isRunning()) {
+            try {
+                Log::info("$marketplace $jobType started!");
+                $job->update(['status' => 1]);
 
-            $location = ShopifyLocation::first();
-            $session = (new ShopifyService)->getSession();
+                $location = ShopifyLocation::first();
+                if (!$location) {
+                    Log::error("$marketplace $jobType failed: No Shopify location found");
+                    $job->update(['status' => 0, 'message' => 'No Shopify location found']);
+                    return;
+                }
 
-            $count = ShopifyProductVariant::whereNotNull('inventory_item_id')->where('inventory_requires_update', 1)->count();
-            $this->info("Remaining {$count}");
+                $session = (new ShopifyService)->getSession();
 
-            while ($count) {
-                $variant = ShopifyProductVariant::with(['retailEdgeProduct', 'product'])->whereNotNull('inventory_item_id')->where('inventory_requires_update', 1)->first();
+                // Process regular updates
+                $this->processRegularUpdates($location, $session);
 
-                if ($variant) {
+                // Process failed updates
+                $this->processFailedUpdates($location, $session);
+
+                $job->update(['status' => 0, 'message' => null]);
+                Log::info("$marketplace $jobType finished!");
+            } catch (\Exception $e) {
+                $job->update(['status' => 0, 'message' => $e->getMessage()]);
+                report($e);
+                $this->error($e->getMessage());
+            }
+        } else {
+            Log::info("$marketplace $jobType is already running.");
+        }
+    }
+
+    /**
+     * Process regular inventory updates
+     */
+    private function processRegularUpdates($location, $session)
+    {
+        $count = ShopifyProductVariant::whereNotNull('inventory_item_id')->where('inventory_requires_update', 1)->count();
+        $this->info("Remaining regular updates: {$count}");
+
+        while ($count) {
+            $variant = ShopifyProductVariant::with(['retailEdgeProduct', 'product'])->whereNotNull('inventory_item_id')->where('inventory_requires_update', 1)->first();
+
+            if ($variant) {
+                if (!$variant->retailEdgeProduct) {
+                    Log::warning("Missing RetailEdgeProduct for variant with SKU: {$variant->sku}");
+                    $variant->update(['inventory_requires_update' => 2]);
+                    $this->info("Marked variant {$variant->sku} for review due to missing RetailEdgeProduct");
+                } else {
                     try {
                         $inventoryLevel = new InventoryLevel($session);
                         $inventoryLevel->set(
@@ -67,7 +101,7 @@ class UpdateInventory extends Command
                         $variant->update(['inventory_quantity' => $variant->retailEdgeProduct->quantity, 'inventory_requires_update' => 0]);
                         $this->info("Inventory updated for sku {$variant->sku}, variant id {$variant->variant_id}");
 
-                        if ($variant->retailEdgeProduct->quantity > 0 && $variant->product->status == 'archived') {
+                        if ($variant->retailEdgeProduct->quantity > 0 && $variant->product && $variant->product->status == 'archived') {
                             try {
                                 $status = 'active';
                                 $product = new Product($session);
@@ -90,25 +124,63 @@ class UpdateInventory extends Command
                         }
                     } catch (\Exception $e) {
                         $variant->update(['inventory_requires_update' => 2]);
-                        Log::debug("There was an error while updating the inventory for {$variant->sku}. Error message : {$e->getMessage()}");
+                        Log::error("Error updating inventory for {$variant->sku}. Error: {$e->getMessage()}");
+                        $this->error("Error updating inventory for {$variant->sku}");
                     }
-                    usleep(1500000);
                 }
 
-                $count = ShopifyProductVariant::whereNotNull('inventory_item_id')->where('inventory_requires_update', 1)->count();
-                $this->info("Remaining {$count}");
+                // Add delay to avoid rate limiting
+                usleep(1500000);
             }
 
-            $job->update(['status' => 0, 'message' => null]);
-
-            Log::info("$marketplace $jobType finished!");
-        } catch (\Exception $e) {
-            $job->update(['status' => 0, 'message' => $e->getMessage()]);
-            report($e);
-            $this->error($e->getMessage());
+            $count = ShopifyProductVariant::whereNotNull('inventory_item_id')->where('inventory_requires_update', 1)->count();
+            $this->info("Remaining regular updates: {$count}");
         }
-        // } else {
-        //     Log::info("$marketplace $jobType is already running.");
-        // }
+    }
+
+    /**
+     * Process previously failed inventory updates
+     */
+    private function processFailedUpdates($location, $session)
+    {
+        $failedCount = ShopifyProductVariant::whereNotNull('inventory_item_id')->where('inventory_requires_update', 2)->count();
+
+        if ($failedCount > 0) {
+            $this->info("Processing {$failedCount} previously failed updates");
+
+            $failedVariants = ShopifyProductVariant::with(['retailEdgeProduct', 'product'])
+                ->whereNotNull('inventory_item_id')
+                ->where('inventory_requires_update', 2)
+                ->limit(10) // Process in smaller batches
+                ->get();
+
+            foreach ($failedVariants as $variant) {
+                if (!$variant->retailEdgeProduct) {
+                    Log::warning("Still missing RetailEdgeProduct for variant with SKU: {$variant->sku}");
+                    continue;
+                }
+
+                try {
+                    $inventoryLevel = new InventoryLevel($session);
+                    $inventoryLevel->set(
+                        [], // Params
+                        [
+                            'location_id' => $location->location_id,
+                            'inventory_item_id' => $variant->inventory_item_id,
+                            'available' => $variant->retailEdgeProduct->quantity
+                        ],
+                    );
+
+                    $variant->update(['inventory_quantity' => $variant->retailEdgeProduct->quantity, 'inventory_requires_update' => 0]);
+                    $this->info("Retry successful: Inventory updated for sku {$variant->sku}");
+
+                    // Add delay to avoid rate limiting
+                    usleep(2000000); // Longer delay for retries
+                } catch (\Exception $e) {
+                    Log::error("Retry failed for {$variant->sku}. Error: {$e->getMessage()}");
+                    $this->error("Retry failed for {$variant->sku}");
+                }
+            }
+        }
     }
 }

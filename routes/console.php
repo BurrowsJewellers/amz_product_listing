@@ -92,6 +92,7 @@ Schedule::command(GetProducts::class)->cron("5 */2 * * *")->after(function () {
 
 Schedule::command(UpdateInventory::class)->everyFifteenMinutes();
 Schedule::command(UpdatePrice::class)->everyFifteenMinutes();
+Schedule::command('shopifyRetryFailedInventoryUpdates')->hourly(); // Retry failed inventory updates hourly
 Schedule::command(UploadImages::class)->everyThreeHours();
 Schedule::command(ArchiveProducts::class)->cron('20 */3 * * *');
 

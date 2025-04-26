@@ -38,34 +38,40 @@ class GetProductsFromEWebMain extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        // if ($job->isRunning()) {
-        //     Log::info("$marketplace $jobType is already running.");
-        //     return;
-        // }
+        if ($job->isRunning()) {
+            Log::info("$marketplace $jobType is already running.");
+            return;
+        }
 
         Log::info("$marketplace $jobType started!");
         $job->update(['status' => 1]);
 
         try {
+            // Start transaction for all database operations
+            DB::beginTransaction();
+
+            // Backup existing Shopify SKUs before truncating
             $shopifySkus = RetailEdgeProduct::where('uploaded_to_shopify', 1)
                 ->pluck('sku')
                 ->toArray();
 
+            // Store backup in ShopifySku table
             ShopifySku::truncate();
-
             foreach ($shopifySkus as $shopifySku) {
                 ShopifySku::create(['sku' => $shopifySku]);
             }
 
-            // Clear existing data
+            // Clear existing data - now inside transaction
             RetailEdgeProduct::truncate();
             RetailEdgeProductImage::truncate();
 
-            DB::beginTransaction();
-
+            // Process products from RetailEdge
             $this->processProducts();
+
+            // Update Shopify products with new data
             $this->updateShopifyProducts();
 
+            // Commit all changes
             DB::commit();
 
             $job->update(['status' => 0, 'message' => null]);
@@ -80,21 +86,41 @@ class GetProductsFromEWebMain extends Command
 
     private function processProducts()
     {
-        $activeItems = (new RetailEdgeService)->getAllActiveItems();
-        foreach ($activeItems as $item) {
-            try {
-                $this->processItem($item);
-            } catch (\Exception $e) {
-                report($e);
-                Log::warning("Failed to process item: " . json_encode($item->SKU) . " Error: " . $e->getMessage());
-                continue;
+        try {
+            $activeItems = (new RetailEdgeService)->getAllActiveItems();
+            $totalItems = count($activeItems);
+            $processedCount = 0;
+            $errorCount = 0;
+
+            $this->info("Processing {$totalItems} items from RetailEdge");
+
+            foreach ($activeItems as $item) {
+                try {
+                    $this->processItem($item);
+                    $processedCount++;
+
+                    if ($processedCount % 100 === 0) {
+                        $this->info("Processed {$processedCount}/{$totalItems} items");
+                    }
+                } catch (\Exception $e) {
+                    $errorCount++;
+                    report($e);
+                    Log::warning("Failed to process item: " . json_encode($item->SKU ?? 'Unknown SKU') . " Error: " . $e->getMessage());
+                    continue;
+                }
             }
+
+            $this->info("Completed processing {$processedCount}/{$totalItems} items with {$errorCount} errors");
+        } catch (\Exception $e) {
+            Log::error("Error fetching items from RetailEdge: " . $e->getMessage());
+            throw $e;
         }
     }
 
     private function processItem($item)
     {
-        if (!preg_match('/^\d{3}-\d{3}-\d{5}$/', $item->SKU)) {
+        // Validate SKU format
+        if (!isset($item->SKU) || !preg_match('/^\d{3}-\d{3}-\d{5}$/', $item->SKU)) {
             return;
         }
 
@@ -103,7 +129,11 @@ class GetProductsFromEWebMain extends Command
 
         $processedItem = $this->processItemAttributes($item, $skuArray);
         $this->createProduct($processedItem, $sku);
-        $this->processImages($item->Images->ItemImage ?? [], $sku);
+
+        // Process images if they exist
+        if (isset($item->Images) && isset($item->Images->ItemImage)) {
+            $this->processImages($item->Images->ItemImage ?? [], $sku);
+        }
     }
 
     private function processItemAttributes($item, $skuArray)
