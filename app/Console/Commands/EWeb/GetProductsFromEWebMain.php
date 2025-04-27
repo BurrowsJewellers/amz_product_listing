@@ -47,23 +47,23 @@ class GetProductsFromEWebMain extends Command
         $job->update(['status' => 1]);
 
         try {
-            // Start transaction for all database operations
-            DB::beginTransaction();
-
-            // Backup existing Shopify SKUs before truncating
+            // Backup existing Shopify SKUs before clearing data
             $shopifySkus = RetailEdgeProduct::where('uploaded_to_shopify', 1)
                 ->pluck('sku')
                 ->toArray();
 
-            // Store backup in ShopifySku table
+            // Clear existing data - truncate operations must be outside transaction
             ShopifySku::truncate();
+            RetailEdgeProduct::truncate();
+            RetailEdgeProductImage::truncate();
+
+            // Store backup in ShopifySku table
             foreach ($shopifySkus as $shopifySku) {
                 ShopifySku::create(['sku' => $shopifySku]);
             }
 
-            // Clear existing data - now inside transaction
-            RetailEdgeProduct::truncate();
-            RetailEdgeProductImage::truncate();
+            // Start transaction for all database operations
+            DB::beginTransaction();
 
             // Process products from RetailEdge
             $this->processProducts();
