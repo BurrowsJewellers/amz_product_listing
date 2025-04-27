@@ -125,7 +125,7 @@ class UpdateInventory extends Command
                     } catch (\Exception $e) {
                         $variant->update(['inventory_requires_update' => 2]);
                         Log::error("Error updating inventory for {$variant->sku}. Error: {$e->getMessage()}");
-                        $this->error("Error updating inventory for {$variant->sku}");
+                        $this->error("Error updating inventory for {$variant->sku}. Error: {$e->getMessage()}");
                     }
                 }
 
@@ -178,7 +178,7 @@ class UpdateInventory extends Command
                     usleep(2000000); // Longer delay for retries
                 } catch (\Exception $e) {
                     Log::error("Retry failed for {$variant->sku}. Error: {$e->getMessage()}");
-                    $this->error("Retry failed for {$variant->sku}");
+                    $this->error("Retry failed for {$variant->sku}. Error: {$e->getMessage()}");
                 }
             }
         }
