@@ -15,13 +15,13 @@ class CatalogService
     private AmazonSpApiService $amazonService;
     private ListingService $listingService;
 
-    public function __construct()
+    public function __construct(?AmazonSpApiService $amazonService = null, ?ListingService $listingService = null)
     {
-        $this->amazonService = new AmazonSpApiService();
-        $this->listingService = new ListingService();
-        $this->sellerId = $sellerId ?? config('amazon.spapi.seller_id');
-        $this->marketplaceId = $marketplaceId ?? config('amazon.spapi.marketplace_id');
-        $this->currency = $currency ?? config('amazon.spapi.currency');
+        $this->amazonService = $amazonService ?? new AmazonSpApiService();
+        $this->listingService = $listingService ?? new ListingService();
+        $this->sellerId = config('amazon.spapi.seller_id');
+        $this->marketplaceId = config('amazon.spapi.marketplace_id');
+        $this->currency = config('amazon.spapi.currency');
 
         // $this->validateConfiguration();
     }
@@ -39,10 +39,78 @@ class CatalogService
     }
 
     /**
+     * Process a single product - search in catalog and submit as appropriate
+     *
+     * @param Product $product
+     * @return bool
+     * @throws AmazonApiException
+     */
+    public function processProduct(Product $product): bool
+    {
+        try {
+            $this->validateConfiguration();
+
+            $sellerConnector = $this->amazonService->getSellerConnector();
+            $catalogItemsApi = $sellerConnector->catalogItemsV20220401();
+
+            // First check if the product has identifiers to search in the catalog
+            if ($product->ean) {
+                Log::info("{$product->sku}, searching in Amazon Catalog with EAN");
+                $response = $catalogItemsApi->searchCatalogItems(
+                    marketplaceIds: [$this->marketplaceId],
+                    identifiers: [$product->ean],
+                    identifiersType: 'EAN',
+                    includedData: ['summaries', 'productTypes'],
+                    sellerId: $this->sellerId,
+                );
+
+                $itemSearchResults = $response->dto();
+
+                if ($itemSearchResults->numberOfResults > 0) {
+                    Log::info("{$product->sku}, found in Amazon Catalog");
+                    echo "{$product->sku} found in Amazon Catalog.\n";
+                    return $this->processExistingProduct($product, $itemSearchResults->items[0]);
+                }
+            } elseif ($product->upc) {
+                Log::info("{$product->sku}, searching in Amazon Catalog with UPC");
+                $response = $catalogItemsApi->searchCatalogItems(
+                    marketplaceIds: [$this->marketplaceId],
+                    identifiers: [$product->upc],
+                    identifiersType: 'UPC',
+                    includedData: ['summaries', 'productTypes'],
+                    sellerId: $this->sellerId,
+                );
+
+                $itemSearchResults = $response->dto();
+
+                if ($itemSearchResults->numberOfResults > 0) {
+                    Log::info("{$product->sku}, found in Amazon Catalog");
+                    echo "{$product->sku} found in Amazon Catalog.\n";
+                    return $this->processExistingProduct($product, $itemSearchResults->items[0]);
+                }
+            }
+
+            // If we get here, either the product wasn't found in the catalog or it doesn't have EAN/UPC
+            // Submit as a new product
+            Log::info("{$product->sku}, submitting new product to Amazon");
+            return $this->processNewProduct($product);
+        } catch (\Exception $e) {
+            Log::error("Failed to process product {$product->sku}", [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            throw new AmazonApiException(
+                "Failed to process product {$product->sku}: {$e->getMessage()}",
+                $e->getCode(),
+                $e
+            );
+        }
+    }
+
+    /**
      * Search and process items in Amazon catalog
      *
-     * @param string $identifier
-     * @param string $identifiersType
      * @return array<string, mixed> Processing results
      * @throws AmazonApiException
      */
@@ -50,9 +118,6 @@ class CatalogService
     {
         try {
             $this->validateConfiguration();
-
-            $sellerConnector = $this->amazonService->getSellerConnector();
-            $catalogItemsApi = $sellerConnector->catalogItemsV20220401();
 
             $products = $this->getUnsubmittedProducts();
 
@@ -64,57 +129,19 @@ class CatalogService
 
             foreach ($products as $product) {
                 try {
-                    // Skip products without EAN
+                    $success = $this->processProduct($product);
 
-                    // if (empty($product->ean)) {
-                    //     $results['failed']++;
-                    //     $results['errors'][] = [
-                    //         'sku' => $product->sku,
-                    //         'message' => 'Missing EAN code'
-                    //     ];
-                    //     continue;
-                    // }
-
-
-                    $response = null;
-
-                    if ($product->ean) {
-                        Log::info("{$product->sku}, searching in Amazon Catalog with EAN");
-                        $response = $catalogItemsApi->searchCatalogItems(
-                            marketplaceIds: [$this->marketplaceId],
-                            identifiers: [$product->ean],
-                            identifiersType: 'EAN',
-                            includedData: ['summaries', 'productTypes'],
-                            sellerId: $this->sellerId,
-                        );
-                    } elseif ($product->upc) {
-                        Log::info("{$product->sku}, searching in Amazon Catalog with UPC");
-                        $response = $catalogItemsApi->searchCatalogItems(
-                            marketplaceIds: [$this->marketplaceId],
-                            identifiers: [$product->upc],
-                            identifiersType: 'UPC',
-                            includedData: ['summaries', 'productTypes'],
-                            sellerId: $this->sellerId,
-                        );
-                    } else {
-                        Log::info("{$product->sku}, submitting new product to Amazon");
-                        $this->processNewProduct($product);
+                    if ($success) {
                         $results['success']++;
+                    } else {
+                        $results['failed']++;
+                        $results['errors'][] = [
+                            'sku' => $product->sku,
+                            'message' => 'Failed to process product'
+                        ];
                     }
 
-                    if ($response) {
-                        $itemSearchResults = $response->dto();
-
-                        if ($itemSearchResults->numberOfResults > 0) {
-                            Log::error("{$product->sku}, found in Amazon Catalog");
-                            echo "{$product->sku} found in Amazon Catalog.\n";
-                            // dd($itemSearchResults->items[0]);
-                            $this->processExistingProduct($product, $itemSearchResults->items[0]);
-                            $results['success']++;
-                        }
-                    }
-
-                    sleep(1);
+                    sleep(1); // Rate limiting
                 } catch (\Exception $e) {
                     $results['failed']++;
                     $results['errors'][] = [
@@ -157,27 +184,37 @@ class CatalogService
      *
      * @param Product $product
      * @param object $item
-     * @return void
+     * @return bool
      */
-    private function processExistingProduct(Product $product, object $item): void
+    private function processExistingProduct(Product $product, object $item): bool
     {
-        $product->update([
-            'exists_on_amazon' => 1,
-            'asin' => $item->asin,
-            'amz_product_type' => $item->productTypes[0]->productType
-        ]);
+        try {
+            $product->update([
+                'exists_on_amazon' => 1,
+                'asin' => $item->asin,
+                'amz_product_type' => $item->productTypes[0]->productType
+            ]);
 
-        $this->listingService->submitOfferOnly($product);
+            return $this->listingService->submitOfferOnly($product);
+        } catch (\Exception $e) {
+            Log::error("Failed to process existing product {$product->sku}: {$e->getMessage()}");
+            return false;
+        }
     }
 
     /**
      * Process new product for Amazon
      *
      * @param Product $product
-     * @return void
+     * @return bool
      */
-    private function processNewProduct(Product $product): void
+    private function processNewProduct(Product $product): bool
     {
-        $this->listingService->submitNewListing($product);
+        try {
+            return $this->listingService->submitNewListing($product);
+        } catch (\Exception $e) {
+            Log::error("Failed to process new product {$product->sku}: {$e->getMessage()}");
+            return false;
+        }
     }
 }

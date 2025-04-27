@@ -24,18 +24,22 @@ class Kernel extends ConsoleKernel
         $schedule->command('getProductsFromEWeb')->everyFifteenMinutes();
 
         // $schedule->command('generateAmzProductsXml')->cron('10,25,40,55 * * * *');
-        $schedule->command('generateAmzProductsXml')->cron('44 */3 * * *');
+        // $schedule->command('generateAmzProductsXml')->cron('44 */3 * * *'); // XML-based command (deprecated)
+        $schedule->command('generateAmzProductsJson')->cron('44 */3 * * *'); // New JSON-based command
+
         // $schedule->command('submitAmzXmlFeed POST_PRODUCT_DATA')->cron('12,27,42,57 * * * *');
-        $schedule->command('submitAmzXmlFeed POST_PRODUCT_DATA')->cron('47 */3 * * *');
+        // $schedule->command('submitAmzXmlFeed POST_PRODUCT_DATA')->cron('47 */3 * * *'); // XML feed submission (deprecated)
 
-        $schedule->command('generateAmzInventoryXml')->cron('13,28,43,58 * * * *');
-        $schedule->command('generateAmzPriceXml')->hourly();
-        $schedule->command('generateAmzImagesXml')->hourly();
+        // $schedule->command('generateAmzInventoryXml')->cron('13,28,43,58 * * * *'); // XML-based inventory (deprecated)
+        // $schedule->command('generateAmzPriceXml')->hourly(); // XML-based price (deprecated)
+        $schedule->command('amazonUpdateInventoryPrice')->cron('13,28,43,58 * * * *'); // New JSON-based inventory and price updates
 
-        $schedule->command('submitAmzXmlFeed POST_PRODUCT_IMAGE_DATA')->hourlyAt(20);
-        $schedule->command('submitAmzXmlFeed POST_PRODUCT_PRICING_DATA')->hourlyAt(25);
-        $schedule->command('submitAmzXmlFeed POST_INVENTORY_AVAILABILITY_DATA')->everyTenMinutes();
-        $schedule->command('checkAmzFeedStatus')->everyFifteenMinutes();
+        // $schedule->command('generateAmzImagesXml')->hourly();
+
+        // $schedule->command('submitAmzXmlFeed POST_PRODUCT_IMAGE_DATA')->hourlyAt(20); // XML feed submission (deprecated)
+        // $schedule->command('submitAmzXmlFeed POST_PRODUCT_PRICING_DATA')->hourlyAt(25); // XML feed submission (deprecated)
+        // $schedule->command('submitAmzXmlFeed POST_INVENTORY_AVAILABILITY_DATA')->everyTenMinutes(); // XML feed submission (deprecated)
+        // $schedule->command('checkAmzFeedStatus')->everyFifteenMinutes();
 
         $schedule->command('getAmzMerchantListingAllData')->everyThreeHours();
         $schedule->command('processAmzMerchantListingAllData')->cron('32 */3 * * *');
@@ -50,20 +54,20 @@ class Kernel extends ConsoleKernel
         // $schedule->command('catchCheckIfExists')->dailyAt('00:50');
         // $schedule->command('catchListOffersOfShop')->dailyAt('01:20');
 
-        $schedule->command('getProductsFromEWebCatch')->dailyAt('00:20')->after(function () {
-            $this->call('catchCheckIfExists');
-        });
-        $schedule->command('catchListOffersOfShop')->dailyAt('01:20');
+        // $schedule->command('getProductsFromEWebCatch')->dailyAt('00:20')->after(function () {
+        //     $this->call('catchCheckIfExists');
+        // });
+        // $schedule->command('catchListOffersOfShop')->dailyAt('01:20');
 
 
 
-        $schedule->command('getProductsFromEWebCatch')->everyFifteenMinutes()->between('02:00', '23:59');
+        // $schedule->command('getProductsFromEWebCatch')->everyFifteenMinutes()->between('02:00', '23:59');
         // $schedule->command('catchGenerateProductsCsv')->everyTwoHours()->between('02:00','23:59');
-        $schedule->command('catchGenerateProductsCsv')->cron('18 2 */4 * *');
-        $schedule->command('catchGenerateOffersCsv')->everyFifteenMinutes()->between('02:00', '23:59')
-            ->after(function () {
-                $this->call('catchSubmitImports');
-            });
+        // $schedule->command('catchGenerateProductsCsv')->cron('18 2 */4 * *');
+        // $schedule->command('catchGenerateOffersCsv')->everyFifteenMinutes()->between('02:00', '23:59')
+        //     ->after(function () {
+        //         $this->call('catchSubmitImports');
+        //     });
 
         // $schedule->command('catchSubmitImports')->everyThirtyMinutes()->between('02:00', '23:59');
 

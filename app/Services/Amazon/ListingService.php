@@ -18,12 +18,12 @@ class ListingService
     private AmazonSpApiService $amazonService;
     private SellerConnector $sellerConnector;
 
-    public function __construct()
+    public function __construct(?AmazonSpApiService $amazonService = null)
     {
-        $this->amazonService = new AmazonSpApiService();
-        $this->sellerId = $sellerId ?? config('amazon.spapi.seller_id');
-        $this->marketplaceId = $marketplaceId ?? config('amazon.spapi.marketplace_id');
-        $this->currency = $currency ?? config('amazon.spapi.currency');
+        $this->amazonService = $amazonService ?? new AmazonSpApiService();
+        $this->sellerId = config('amazon.spapi.seller_id');
+        $this->marketplaceId = config('amazon.spapi.marketplace_id');
+        $this->currency = config('amazon.spapi.currency');
         $this->sellerConnector = $this->amazonService->getSellerConnector();
 
         // $this->validateConfiguration();
@@ -246,10 +246,11 @@ class ListingService
                 $brandName = "GENERIC";
             }
 
+            // Base attributes that are common for all product types
             $attributes = [
                 "item_name" => [
                     [
-                        "value" => $product->name,
+                        "value" => $product->title ?? $product->name,
                         "marketplace_id" => $this->marketplaceId
                     ]
                 ],
@@ -258,20 +259,6 @@ class ListingService
                         "value" => $brandName,
                         "marketplace_id" => $this->marketplaceId
                     ]
-                ],
-                "externally_assigned_product_identifier" => [
-                    [
-                        "type" => "ean",
-                        "value" => $product->ean,
-                        "marketplace_id" => $this->marketplaceId
-                    ]
-                ],
-                "recommended_browse_nodes" => [
-                    [
-                        "value" => $product->eWebCode->amz_recommended_browse_node,
-                        "marketplace_id" => $this->marketplaceId
-                    ]
-
                 ],
                 "manufacturer" => [
                     [
@@ -307,13 +294,6 @@ class ListingService
                         "marketplace_id" => $this->marketplaceId
                     ]
                 ],
-
-                "merchant_shipping_group" => [
-                    [
-                        "value" => $product->retail_price2 > 100 ? 'Over $100' : 'Sub $100 order',
-                        "marketplace_id" => $this->marketplaceId
-                    ]
-                ],
                 "supplier_declared_dg_hz_regulation" => [
                     [
                         "value" => "not_applicable",
@@ -332,17 +312,24 @@ class ListingService
                         "marketplace_id" => $this->marketplaceId
                     ]
                 ],
-
-                "country_of_origin" => [
+                "gift_options" => [
                     [
-                        "value" => $product->country_of_origin,
+                        "can_be_wrapped" => true,
                         "marketplace_id" => $this->marketplaceId
                     ]
-                ],
-
+                ]
             ];
 
-            if (!$product->ean) {
+            // Add EAN if available
+            if ($product->ean) {
+                $attributes["externally_assigned_product_identifier"] = [
+                    [
+                        "type" => "ean",
+                        "value" => $product->ean,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+            } else {
                 $attributes["supplier_declared_has_product_identifier_exemption"] = [
                     [
                         "value" => true,
@@ -351,35 +338,37 @@ class ListingService
                 ];
             }
 
-            $mainImageUrl = null;
-            if ($product->images->count()) {
-                $mainImageUrl = $product->images[0]?->url;
-
-                if ($mainImageUrl) {
-                    $attributes['main_product_image_locator'] = [
-                        [
-                            "media_location" => $product->images[0]?->url,
-                            "marketplace_id" => $this->marketplaceId
-                        ]
-                    ];
-                }
-
-                $otherImageIndex = 1;
-                foreach ($product->images as $image) {
-                    $attributes["other_product_image_locator_{$otherImageIndex}"] = [
-                        [
-                            "media_location" => $image->url,
-                            "marketplace_id" => $this->marketplaceId
-                        ]
-                    ];
-
-                    $otherImageIndex++;
-                }
+            // Add recommended browse nodes if available
+            if ($product->eWebCode && $product->eWebCode->amz_recommended_browse_node) {
+                $attributes["recommended_browse_nodes"] = [
+                    [
+                        "value" => $product->eWebCode->amz_recommended_browse_node,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
             }
 
+            // Add country of origin if available
+            if ($product->country_of_origin) {
+                $attributes["country_of_origin"] = [
+                    [
+                        "value" => $product->country_of_origin,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+            }
+
+            // Add merchant shipping group
+            // Note: Based on logs, 'Sub $100 order' was causing issues, so we're using standard values
+            $attributes["merchant_shipping_group"] = [
+                [
+                    "value" => $product->retail_price2 > 100 ? 'Standard' : 'Standard',
+                    "marketplace_id" => $this->marketplaceId
+                ]
+            ];
+
+            // Add product description
             $productDescription = str_replace("Product Description:", '', $product->description);
-
-
             $attributes["product_description"] = [
                 [
                     "value" => $productDescription,
@@ -387,12 +376,11 @@ class ListingService
                 ]
             ];
 
+            // Add bullet points
             $dataBulletPoint1 = $productDescription;
-
             if (strlen($dataBulletPoint1) > 500) {
                 $dataBulletPoint1 = substr($dataBulletPoint1, 0, 490) . '...';
             }
-
             $attributes["bullet_point"] = [
                 [
                     "value" => $dataBulletPoint1,
@@ -400,24 +388,17 @@ class ListingService
                 ]
             ];
 
-            if ($product->brand?->name) {
-                $attributes["manufacturer"] = [
-                    [
-                        "value" => $product->brand?->name,
-                        "marketplace_id" => $this->marketplaceId
-                    ]
-                ];
-            }
-
+            // Add part number if available
             if ($product->real_design_number) {
                 $attributes["part_number"] = [
                     [
-                        "value" => $product->part_number,
+                        "value" => $product->real_design_number,
                         "marketplace_id" => $this->marketplaceId
                     ]
                 ];
             }
 
+            // Add department if available
             if ($product->department_name) {
                 $attributes["department"] = [
                     [
@@ -427,6 +408,7 @@ class ListingService
                 ];
             }
 
+            // Add size if available
             if ($product->size_name) {
                 $attributes["size"] = [
                     [
@@ -436,14 +418,36 @@ class ListingService
                 ];
             }
 
-            $attributes["gift_options"] = [
-                [
-                    "can_be_wrapped" => true,
-                    "marketplace_id" => $this->marketplaceId
-                ]
-            ];
+            // Add images if available
+            if ($product->images->count()) {
+                $mainImageUrl = $product->images[0]?->url;
+                if ($mainImageUrl) {
+                    $attributes['main_product_image_locator'] = [
+                        [
+                            "media_location" => $mainImageUrl,
+                            "marketplace_id" => $this->marketplaceId
+                        ]
+                    ];
+                }
 
+                $otherImageIndex = 1;
+                foreach ($product->images as $image) {
+                    if ($otherImageIndex > 1 || $image->url !== $mainImageUrl) {
+                        $attributes["other_product_image_locator_{$otherImageIndex}"] = [
+                            [
+                                "media_location" => $image->url,
+                                "marketplace_id" => $this->marketplaceId
+                            ]
+                        ];
+                        $otherImageIndex++;
+                    }
+                }
+            }
 
+            // Add required fields based on product type
+            $this->addRequiredFieldsByProductType($product, $attributes);
+
+            // Submit the listing
             $listingsItemSubmissionResponse = $this->listingsItemsApi->putListingsItem(
                 sellerId: $this->sellerId,
                 sku: $product->sku,
@@ -465,6 +469,198 @@ class ListingService
                 0,
                 $e
             );
+        }
+    }
+
+    /**
+     * Add required fields based on product type
+     *
+     * @param Product $product
+     * @param array $attributes
+     * @return void
+     */
+    private function addRequiredFieldsByProductType(Product $product, array &$attributes): void
+    {
+        // Get product type name
+        $productTypeName = $product->productType->name ?? '';
+
+        // Get product fields
+        $productFields = $product->fields;
+
+        // Default values for common required fields
+        $gemType = 'No Gemstone';
+        $metalType = 'Sterling Silver';
+        $material = 'Sterling Silver';
+        $color = 'Silver';
+        $claspType = 'Lobster Claw';
+
+        // Extract values from product fields if available
+        foreach ($productFields as $field) {
+            if ($field->productTypeField && $field->productTypeField->amz_name === 'GemType') {
+                $gemType = $field->value;
+            }
+
+            if ($field->categoryField && $field->categoryField->amz_name === 'MetalType') {
+                $metalType = $field->value;
+            }
+        }
+
+        // Add fields based on product type
+        switch ($productTypeName) {
+            case 'NECKLACE':
+            case 'BRACELET':
+                // Add gem type
+                $attributes['gem_type'] = [
+                    [
+                        "value" => $gemType,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+
+                // Add metal type
+                $attributes['metal_type'] = [
+                    [
+                        "value" => $metalType,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+
+                // Add material
+                $attributes['material_type'] = [
+                    [
+                        "value" => $material,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+
+                // Add color
+                $attributes['color_name'] = [
+                    [
+                        "value" => $color,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+
+                // Add clasp type
+                $attributes['clasp_type'] = [
+                    [
+                        "value" => $claspType,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+
+                // Add metals
+                $attributes['metal_type'] = [
+                    [
+                        "value" => $metalType,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+
+                // Add stones
+                $attributes['stone'] = [
+                    [
+                        "value" => $gemType,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+                break;
+
+            case 'EARRING':
+                // Add gem type
+                $attributes['gem_type'] = [
+                    [
+                        "value" => $gemType,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+
+                // Add metal type
+                $attributes['metal_type'] = [
+                    [
+                        "value" => $metalType,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+
+                // Add material
+                $attributes['material_type'] = [
+                    [
+                        "value" => $material,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+
+                // Add color
+                $attributes['color_name'] = [
+                    [
+                        "value" => $color,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+                break;
+
+            case 'RING':
+                // Add gem type
+                $attributes['gem_type'] = [
+                    [
+                        "value" => $gemType,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+
+                // Add metal type
+                $attributes['metal_type'] = [
+                    [
+                        "value" => $metalType,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+
+                // Add material
+                $attributes['material_type'] = [
+                    [
+                        "value" => $material,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+
+                // Add ring size if available
+                if ($product->ring_size) {
+                    $attributes['size'] = [
+                        [
+                            "value" => $product->ring_size,
+                            "marketplace_id" => $this->marketplaceId
+                        ]
+                    ];
+                }
+                break;
+
+            case 'WATCH':
+                // Add dial color
+                $attributes['dial_color'] = [
+                    [
+                        "value" => $color,
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+
+                // Add movement type
+                $attributes['movement_type'] = [
+                    [
+                        "value" => 'quartz',
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+
+                // Add warranty type
+                $attributes['warranty_description'] = [
+                    [
+                        "value" => 'Manufacturer warranty',
+                        "marketplace_id" => $this->marketplaceId
+                    ]
+                ];
+                break;
         }
     }
 }

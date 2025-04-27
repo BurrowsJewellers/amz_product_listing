@@ -29,7 +29,7 @@ class AmazonSpApiService
         // $this->validateConfig();
     }
 
-    public function getSellerConnector($region = 'FE', $debug = false): SellerConnector
+    public function getSellerConnector(?string $region = 'FE', ?bool $debug = false): SellerConnector
     {
         return SellingPartnerApi::seller(
             clientId: config('amazon.spapi.client_id'),
