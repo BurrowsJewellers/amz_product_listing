@@ -83,9 +83,10 @@ class UpdateInventory extends Command
 
             if ($variant) {
                 if (!$variant->retailEdgeProduct) {
-                    Log::warning("Missing RetailEdgeProduct for variant with SKU: {$variant->sku}");
+                    $skuValue = $variant->sku ? $variant->sku : '[EMPTY SKU]';
+                    Log::warning("Missing RetailEdgeProduct for variant with SKU: {$skuValue} (Variant ID: {$variant->id})");
                     $variant->update(['inventory_requires_update' => 2]);
-                    $this->info("Marked variant {$variant->sku} for review due to missing RetailEdgeProduct");
+                    $this->info("Marked variant {$skuValue} (Variant ID: {$variant->id}) for review due to missing RetailEdgeProduct");
                 } else {
                     try {
                         $inventoryLevel = new InventoryLevel($session);
@@ -99,7 +100,8 @@ class UpdateInventory extends Command
                         );
 
                         $variant->update(['inventory_quantity' => $variant->retailEdgeProduct->quantity, 'inventory_requires_update' => 0]);
-                        $this->info("Inventory updated for sku {$variant->sku}, variant id {$variant->variant_id}");
+                        $skuValue = $variant->sku ? $variant->sku : '[EMPTY SKU]';
+                        $this->info("Inventory updated for sku {$skuValue}, variant id {$variant->variant_id}");
 
                         if ($variant->retailEdgeProduct->quantity > 0 && $variant->product && $variant->product->status == 'archived') {
                             try {
@@ -124,8 +126,9 @@ class UpdateInventory extends Command
                         }
                     } catch (\Exception $e) {
                         $variant->update(['inventory_requires_update' => 2]);
-                        Log::error("Error updating inventory for {$variant->sku}. Error: {$e->getMessage()}");
-                        $this->error("Error updating inventory for {$variant->sku}. Error: {$e->getMessage()}");
+                        $skuValue = $variant->sku ? $variant->sku : '[EMPTY SKU]';
+                        Log::error("Error updating inventory for {$skuValue} (Variant ID: {$variant->id}). Error: {$e->getMessage()}");
+                        $this->error("Error updating inventory for {$skuValue} (Variant ID: {$variant->id}). Error: {$e->getMessage()}");
                     }
                 }
 
@@ -156,7 +159,8 @@ class UpdateInventory extends Command
 
             foreach ($failedVariants as $variant) {
                 if (!$variant->retailEdgeProduct) {
-                    Log::warning("Still missing RetailEdgeProduct for variant with SKU: {$variant->sku}");
+                    $skuValue = $variant->sku ? $variant->sku : '[EMPTY SKU]';
+                    Log::warning("Still missing RetailEdgeProduct for variant with SKU: {$skuValue} (Variant ID: {$variant->id})");
                     continue;
                 }
 
@@ -172,13 +176,15 @@ class UpdateInventory extends Command
                     );
 
                     $variant->update(['inventory_quantity' => $variant->retailEdgeProduct->quantity, 'inventory_requires_update' => 0]);
-                    $this->info("Retry successful: Inventory updated for sku {$variant->sku}");
+                    $skuValue = $variant->sku ? $variant->sku : '[EMPTY SKU]';
+                    $this->info("Retry successful: Inventory updated for sku {$skuValue} (Variant ID: {$variant->id})");
 
                     // Add delay to avoid rate limiting
                     usleep(2000000); // Longer delay for retries
                 } catch (\Exception $e) {
-                    Log::error("Retry failed for {$variant->sku}. Error: {$e->getMessage()}");
-                    $this->error("Retry failed for {$variant->sku}. Error: {$e->getMessage()}");
+                    $skuValue = $variant->sku ? $variant->sku : '[EMPTY SKU]';
+                    Log::error("Retry failed for {$skuValue} (Variant ID: {$variant->id}). Error: {$e->getMessage()}");
+                    $this->error("Retry failed for {$skuValue} (Variant ID: {$variant->id}). Error: {$e->getMessage()}");
                 }
             }
         }
