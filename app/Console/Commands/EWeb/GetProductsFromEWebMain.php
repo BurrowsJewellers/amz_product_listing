@@ -47,40 +47,62 @@ class GetProductsFromEWebMain extends Command
         $job->update(['status' => 1]);
 
         try {
-            // Backup existing Shopify SKUs before clearing data
-            $shopifySkus = RetailEdgeProduct::where('uploaded_to_shopify', 1)
-                ->pluck('sku')
-                ->toArray();
+            try {
+                // Backup existing Shopify SKUs before clearing data
+                $shopifySkus = RetailEdgeProduct::where('uploaded_to_shopify', 1)
+                    ->pluck('sku')
+                    ->toArray();
 
-            // Clear existing data - truncate operations must be outside transaction
-            ShopifySku::truncate();
-            RetailEdgeProduct::truncate();
-            RetailEdgeProductImage::truncate();
+                Log::info("Backed up " . count($shopifySkus) . " Shopify SKUs");
 
-            // Store backup in ShopifySku table
-            foreach ($shopifySkus as $shopifySku) {
-                ShopifySku::create(['sku' => $shopifySku]);
+                // Clear existing data - truncate operations must be outside transaction
+                ShopifySku::truncate();
+                RetailEdgeProduct::truncate();
+                RetailEdgeProductImage::truncate();
+
+                Log::info("Truncated tables successfully");
+
+                // Store backup in ShopifySku table
+                foreach ($shopifySkus as $shopifySku) {
+                    ShopifySku::create(['sku' => $shopifySku]);
+                }
+
+                Log::info("Restored Shopify SKUs to ShopifySku table");
+            } catch (\Exception $e) {
+                // If there's an error during truncate or backup operations
+                report($e);
+                $job->update(['status' => 0, 'message' => "Error during data preparation: " . $e->getMessage()]);
+                Log::error("$marketplace $jobType failed during data preparation: " . $e->getMessage());
+                return;
             }
 
-            // Start transaction for all database operations
-            DB::beginTransaction();
+            try {
+                // Start transaction for all database operations
+                DB::beginTransaction();
 
-            // Process products from RetailEdge
-            $this->processProducts();
+                // Process products from RetailEdge
+                $this->processProducts();
 
-            // Update Shopify products with new data
-            $this->updateShopifyProducts();
+                // Update Shopify products with new data
+                $this->updateShopifyProducts();
 
-            // Commit all changes
-            DB::commit();
+                // Commit all changes
+                DB::commit();
 
-            $job->update(['status' => 0, 'message' => null]);
-            Log::info("$marketplace $jobType finished!");
+                $job->update(['status' => 0, 'message' => null]);
+                Log::info("$marketplace $jobType finished successfully!");
+            } catch (\Exception $e) {
+                // If there's an error during transaction operations
+                DB::rollBack();
+                report($e);
+                $job->update(['status' => 0, 'message' => "Error during transaction: " . $e->getMessage()]);
+                Log::error("$marketplace $jobType failed during transaction: " . $e->getMessage());
+            }
         } catch (\Exception $e) {
-            DB::rollBack();
+            // Catch any other unexpected errors
             report($e);
-            $job->update(['status' => 0, 'message' => $e->getMessage()]);
-            Log::error("$marketplace $jobType failed: " . $e->getMessage());
+            $job->update(['status' => 0, 'message' => "Unexpected error: " . $e->getMessage()]);
+            Log::error("$marketplace $jobType failed with unexpected error: " . $e->getMessage());
         }
     }
 

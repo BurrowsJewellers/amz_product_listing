@@ -19,12 +19,14 @@ class AmazonSpApiService
     private ?string $marketplaceId;
     private ?string $currency;
     private ?Api $listingsItemsApi = null;
+    private array $dataElements;
 
-    public function __construct()
+    public function __construct(array $dataElements = [])
     {
         $this->sellerId = config('amazon.spapi.seller_id');
         $this->marketplaceId = config('amazon.spapi.marketplace_id');
         $this->currency = config('amazon.spapi.currency');
+        $this->dataElements = $dataElements;
 
         // $this->validateConfig();
     }
@@ -36,6 +38,7 @@ class AmazonSpApiService
             clientSecret: config('amazon.spapi.client_secret'),
             refreshToken: config('amazon.spapi.refresh_token'),
             endpoint: constant("SellingPartnerApi\Enums\Endpoint::$region"),
+            dataElements: $this->dataElements,
         );
     }
 
