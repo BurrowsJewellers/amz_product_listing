@@ -175,7 +175,7 @@ class GetOrders extends Command
                 'payment_method_details' => $paymentMethodDetails,
                 'last_update_date' => isset($order->lastUpdateDate) ? Carbon::parse($order->lastUpdateDate) : null,
                 'shipment_service_level_category' => $order->shipmentServiceLevelCategory ?? null,
-                'pushed_to_retail_edge' => 0, // Default to not pushed
+                // 'pushed_to_retail_edge' => 0, // Default to not pushed
             ]
         );
     }
