@@ -34,7 +34,6 @@ class GetOrders extends Command
      */
     public function handle()
     {
-
         $marketplace = 'Amazon';
         $jobType = 'amazonGetOrders';
         $job = SyncJobController::getJob($jobType, $marketplace);
@@ -44,14 +43,15 @@ class GetOrders extends Command
             return;
         }
 
-        Log::info("$marketplace $jobType started!");
-        // $job->update(['status' => 1]);
-
         try {
+            Log::info("$marketplace $jobType started!");
+            $job->update(['status' => 1]);
+
             $this->getOrders();
             $this->pushOrdersToRetailEdge();
         } catch (\Exception $e) {
             report($e);
+            $job->update(['status' => 0, 'message' => $e->getMessage()]);
             var_dump($e->getMessage());
         }
     }
@@ -219,9 +219,9 @@ class GetOrders extends Command
                 $shippingTaxAmount = $item->shippingTax->amount ?? null;
             }
 
-            var_dump($item);
-            Log::debug(print_r($item, true));
-            $this->info('$item->sellerSku' . $item->sellerSku);
+            // var_dump($item);
+            // Log::debug(print_r($item, true));
+            // $this->info('$item->sellerSku' . $item->sellerSku);
 
             AmazonOrderItem::updateOrCreate(
                 [
@@ -275,7 +275,7 @@ class GetOrders extends Command
                 $product = RetailEdgeProduct::where('sku', $item->seller_sku)->first();
 
                 if (!$product) {
-                    $this->warn("Product with SKU {$item->seller_sku} not found in RetailEdge");
+                    Log::warn("Product with SKU {$item->seller_sku} not found in RetailEdge");
                     continue;
                 }
 
@@ -299,7 +299,7 @@ class GetOrders extends Command
             }
 
             if (empty($webOrderLines)) {
-                $this->warn("No valid order lines found for order {$amazonOrder->amazon_order_id}");
+                Log::warn("No valid order lines found for order {$amazonOrder->amazon_order_id}");
                 continue;
             }
 
