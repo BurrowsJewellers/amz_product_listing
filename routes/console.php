@@ -1,6 +1,7 @@
 <?php
 
 use App\Console\Commands\Amazon\GetAmzMerchantListingAllData;
+use App\Console\Commands\Amazon\GetOrders;
 use App\Console\Commands\Amazon\GetProductsFromEWeb;
 use App\Console\Commands\Amazon\ProcessAmzMerchantListingAllData;
 use App\Console\Commands\Amazon\UpdateProduct as AmazonUpdateProduct;
@@ -47,6 +48,7 @@ Schedule::command(GetAmzMerchantListingAllData::class)->everyThreeHours();
 
 
 Schedule::command(AmazonUpdateProduct::class)->everyFifteenMinutes();
+Schedule::command(GetOrders::class)->everyFifteenMinutes();
 
 /**
  * Catch Crons
