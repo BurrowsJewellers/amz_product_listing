@@ -48,7 +48,7 @@ class GetOrders extends Command
             $job->update(['status' => 1]);
 
             $this->getOrders();
-            $this->pushOrdersToRetailEdge();
+            $this->pushOrdersToRetailEdge($job);
         } catch (\Exception $e) {
             report($e);
             $job->update(['status' => 0, 'message' => $e->getMessage()]);
@@ -262,7 +262,7 @@ class GetOrders extends Command
         }
     }
 
-    private function pushOrdersToRetailEdge()
+    private function pushOrdersToRetailEdge($job)
     {
         $amazonOrders = AmazonOrder::where('pushed_to_retail_edge', 0)->with('orderItems')->get();
 
@@ -377,6 +377,8 @@ class GetOrders extends Command
                     $amazonOrder->update(['pushed_to_retail_edge' => 1]);
                 }
             } catch (\SoapFault $e) {
+                $job->update(['status' => 0, 'message' => $e->faultstring]);
+
                 $this->error("SOAP Fault for order {$amazonOrder->amazon_order_id}:");
                 $this->error("Fault code: " . $e->faultcode);
                 $this->error("Fault string: " . $e->faultstring);
@@ -395,6 +397,8 @@ class GetOrders extends Command
                     'response' => $lastResponse
                 ]);
             } catch (\Exception $e) {
+                $job->update(['status' => 0, 'message' => $e->getMessage()]);
+
                 $this->error("General Exception for order {$amazonOrder->amazon_order_id}: " . $e->getMessage());
                 Log::error("General error pushing Amazon order to Retail Edge", [
                     'order_id' => $amazonOrder->amazon_order_id,
