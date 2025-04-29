@@ -110,7 +110,6 @@ class GetOrders extends Command
         }
     }
 
-
     private function updateOrCreateAmazonOrder($order): AmazonOrder
     {
         // Extract shipping address data if available
@@ -297,7 +296,7 @@ class GetOrders extends Command
 
                 $webOrderLines[] = [
                     "CategoryID" => $product->CategoryID ?? 1,
-                    "SKU" => $item->seller_sku,
+                    "SKU" => $product->SKU,
                     "StockNum" => $stockNum,
                     "LineNum" => $stockNum,
                     "Quantity" => $item->quantity_ordered,
