@@ -47,16 +47,21 @@ class GetOrders extends Command
             Log::info("$marketplace $jobType started!");
             $job->update(['status' => 1]);
 
-            $this->getOrders();
+            $this->getOrders($job);
             $this->pushOrdersToRetailEdge($job);
+
+            // Set job status back to 0 after successful completion
+            $job->update(['status' => 0, 'message' => 'Completed successfully']);
+            Log::info("$marketplace $jobType completed successfully!");
         } catch (\Exception $e) {
             report($e);
             $job->update(['status' => 0, 'message' => $e->getMessage()]);
+            Log::error("$marketplace $jobType failed: " . $e->getMessage());
             var_dump($e->getMessage());
         }
     }
 
-    public function getOrders()
+    public function getOrders($job)
     {
         try {
             $this->info('getOrders');
@@ -103,10 +108,16 @@ class GetOrders extends Command
                         'order_id' => $order->amazonOrderId ?? 'unknown',
                         'exception' => $e
                     ]);
+                    // Update job status to 0 on error
+                    $job->update(['status' => 0, 'message' => "Error processing order {$order->amazonOrderId}: {$e->getMessage()}"]);
+                    throw $e; // Re-throw to be caught by the handle method
                 }
             }
         } catch (\Exception $e) {
             report($e);
+            // Update job status to 0 on error
+            $job->update(['status' => 0, 'message' => "Error in getOrders: {$e->getMessage()}"]);
+            throw $e; // Re-throw to be caught by the handle method
         }
     }
 
@@ -270,7 +281,7 @@ class GetOrders extends Command
             $this->info("Processing order {$amazonOrder->amazon_order_id} for Retail Edge");
 
             if (isset($amazonOrder->shipping_name)) {
-                $firstName = $$amazonOrder->shipping_name;
+                $firstName = $amazonOrder->shipping_name;
                 $lastName = $amazonOrder->shipping_name;
             } else {
                 $firstName = 'Amazon';
@@ -283,12 +294,18 @@ class GetOrders extends Command
                 // Find the product in RetailEdge by SKU
                 // $product = RetailEdgeProduct::where('sku', $item->seller_sku)->first();
 
-                // Get the product from RetailEdge API by SKU
-                $product = (new RetailEdgeService)->getActiveItemBySKU($item->seller_sku);
+                try {
+                    // Get the product from RetailEdge API by SKU
+                    $product = (new RetailEdgeService)->getActiveItemBySKU($item->seller_sku);
 
-                if (!$product) {
-                    Log::warn("Product with SKU {$item->seller_sku} not found in RetailEdge");
-                    continue;
+                    if (!$product) {
+                        Log::warn("Product with SKU {$item->seller_sku} not found in RetailEdge");
+                        continue;
+                    }
+                } catch (\Exception $e) {
+                    Log::error("Error retrieving product with SKU {$item->seller_sku} from RetailEdge: {$e->getMessage()}");
+                    $job->update(['status' => 0, 'message' => "Error retrieving product: {$e->getMessage()}"]);
+                    throw $e; // Re-throw to be caught by the handle method
                 }
 
                 $skuParts = explode("-", $item->seller_sku);
@@ -312,6 +329,8 @@ class GetOrders extends Command
 
             if (empty($webOrderLines)) {
                 Log::warn("No valid order lines found for order {$amazonOrder->amazon_order_id}");
+                // We'll continue to the next order, but we won't set job status to 0 here
+                // as this might be a valid case (e.g., all items in the order are not in RetailEdge)
                 continue;
             }
 

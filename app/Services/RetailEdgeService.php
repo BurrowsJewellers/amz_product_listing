@@ -36,9 +36,7 @@ class RetailEdgeService extends RetailEdgeConnectionService
         }
 
         $resp = $this->call('GetActiveItemBySKU', ['SKU' => $sku]);
-        // $item = $resp->GetActiveItemBySKUResult;
-        $item = $resp;
-        return $item;
+        return $resp->GetActiveItemBySKUResult;
     }
 
     private function hasValidCache(): bool
