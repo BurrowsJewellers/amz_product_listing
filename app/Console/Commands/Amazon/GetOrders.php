@@ -62,9 +62,8 @@ class GetOrders extends Command
             $this->info('getOrders');
 
             // $dataElements = ['buyerInfo', 'shippingAddress'];
-            // $dataElements = ['shippingAddress'];
-            // $dataElements = ['buyerInfo'];
             // $amazonService = new AmazonSpApiService($dataElements);
+
             $amazonService = new AmazonSpApiService();
             $sellerConnector = $amazonService->getSellerConnector();
             $ordersApi = $sellerConnector->ordersV0();
@@ -115,12 +114,18 @@ class GetOrders extends Command
     private function updateOrCreateAmazonOrder($order): AmazonOrder
     {
         // Extract shipping address data if available
+        $shippingName = null;
+        $shippingAddress1 = null;
+        $shippingAddress2 = null;
         $shippingState = null;
         $shippingPostalCode = null;
         $shippingCity = null;
         $shippingCountryCode = null;
 
         if (isset($order->shippingAddress)) {
+            $shippingName = $order->shippingAddress->name ?? null;
+            $shippingAddress1 = $order->shippingAddress->addressLine1 ?? null;
+            $shippingAddress2 = $order->shippingAddress->addressLine2 ?? null;
             $shippingState = $order->shippingAddress->stateOrRegion ?? null;
             $shippingPostalCode = $order->shippingAddress->postalCode ?? null;
             $shippingCity = $order->shippingAddress->city ?? null;
@@ -140,7 +145,11 @@ class GetOrders extends Command
         $paymentMethodDetails = null;
 
         if (isset($order->paymentMethodDetails)) {
-            $paymentMethodDetails = json_encode($order->paymentMethodDetails);
+            if (is_array($order->paymentMethodDetails)) {
+                $paymentMethodDetails = (string) $order->paymentMethodDetails[0];
+            } else {
+                $paymentMethodDetails = $order->paymentMethodDetails;
+            }
         }
 
         return AmazonOrder::updateOrCreate(
@@ -163,7 +172,11 @@ class GetOrders extends Command
                 'ship_service_level' => $order->shipServiceLevel ?? null,
                 'is_ispu' => isset($order->isISPU) ? filter_var($order->isISPU, FILTER_VALIDATE_BOOLEAN) : null,
                 'marketplace_id' => $order->marketplaceId ?? null,
+                'buyer_email' => isset($order->buyerInfo) ? $order->buyerInfo?->buyerEmail : null,
                 'purchase_date' => isset($order->purchaseDate) ? Carbon::parse($order->purchaseDate) : null,
+                'shipping_name' => $shippingName,
+                'shipping_address1' => $shippingAddress1,
+                'shipping_address2' => $shippingAddress2,
                 'shipping_state_or_region' => $shippingState,
                 'shipping_postal_code' => $shippingPostalCode,
                 'shipping_city' => $shippingCity,
@@ -257,12 +270,9 @@ class GetOrders extends Command
         foreach ($amazonOrders as $amazonOrder) {
             $this->info("Processing order {$amazonOrder->amazon_order_id} for Retail Edge");
 
-            // Extract customer name from shipping address if available
-            $customerName = '';
-            if (isset($amazonOrder->shipping_address) && isset($amazonOrder->shipping_address['Name'])) {
-                $nameParts = explode(' ', $amazonOrder->shipping_address['Name']);
-                $firstName = $nameParts[0] ?? '';
-                $lastName = count($nameParts) > 1 ? end($nameParts) : '';
+            if (isset($amazonOrder->shipping_name)) {
+                $firstName = $$amazonOrder->shipping_name;
+                $lastName = $amazonOrder->shipping_name;
             } else {
                 $firstName = 'Amazon';
                 $lastName = 'Customer';
@@ -272,7 +282,10 @@ class GetOrders extends Command
 
             foreach ($amazonOrder->orderItems as $item) {
                 // Find the product in RetailEdge by SKU
-                $product = RetailEdgeProduct::where('sku', $item->seller_sku)->first();
+                // $product = RetailEdgeProduct::where('sku', $item->seller_sku)->first();
+
+                // Get the product from RetailEdge API by SKU
+                $product = (new RetailEdgeService)->getActiveItemBySKU($item->seller_sku);
 
                 if (!$product) {
                     Log::warn("Product with SKU {$item->seller_sku} not found in RetailEdge");
@@ -283,8 +296,8 @@ class GetOrders extends Command
                 $stockNum = end($skuParts);
 
                 $webOrderLines[] = [
-                    "CategoryID" => $product->category_id ?? 1,
-                    "SKU" => $product->origional_sku ?? $item->seller_sku,
+                    "CategoryID" => $product->CategoryID ?? 1,
+                    "SKU" => $item->seller_sku,
                     "StockNum" => $stockNum,
                     "LineNum" => $stockNum,
                     "Quantity" => $item->quantity_ordered,
@@ -294,7 +307,7 @@ class GetOrders extends Command
                     "UnitFullTax" => $item->item_tax_amount ?? 0,
                     "ItemDescription" => $item->title ?? $product->title ?? '',
                     "IsNote" => false,
-                    "DesignNumber" => $product->real_design_number ?? '',
+                    "DesignNumber" => $product->RealDesignNum ?? '',
                 ];
             }
 
@@ -320,7 +333,7 @@ class GetOrders extends Command
                     "CustomerLastName" => $lastName,
                     "CustomerEmail" => $amazonOrder->buyer_email ?? '',
                     "CustomerPhone" => $amazonOrder->buyer_phone ?? '',
-                    "CustomerAddress" => $amazonOrder->shipping_address['AddressLine1'] ?? '',
+                    "CustomerAddress" => $amazonOrder->shipping_address1 ?? 'Default',
                     "CustomerSuburb" => $amazonOrder->shipping_city ?? '',
                     "CustomerState" => $amazonOrder->shipping_state_or_region ?? '',
                     "CustomerPostcode" => $amazonOrder->shipping_postal_code ?? '',

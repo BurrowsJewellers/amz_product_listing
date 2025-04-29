@@ -27,6 +27,20 @@ class RetailEdgeService extends RetailEdgeConnectionService
         return $this->fetchAndCacheItems();
     }
 
+    public function getActiveItemBySKU(string $sku)
+    {
+        $skuParts = explode("-", $sku);
+
+        if (count($skuParts) == 2) {
+            $sku = "001-" . $skuParts[0] . "-" . $skuParts[1];
+        }
+
+        $resp = $this->call('GetActiveItemBySKU', ['SKU' => $sku]);
+        // $item = $resp->GetActiveItemBySKUResult;
+        $item = $resp;
+        return $item;
+    }
+
     private function hasValidCache(): bool
     {
         // First check if the cache file exists

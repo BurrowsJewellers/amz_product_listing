@@ -2,7 +2,8 @@
 
 namespace App\Services;
 
-class RetailEdgeConnectionService {
+class RetailEdgeConnectionService
+{
 
     private $webServiceUrl;
     private $options;
@@ -17,11 +18,13 @@ class RetailEdgeConnectionService {
         ];
     }
 
-    public function getEwebSoapClient(): \SoapClient {
+    public function getEwebSoapClient(): \SoapClient
+    {
         return new \SoapClient($this->webServiceUrl, $this->options);
     }
 
-    public function getEwebAuthenticationInfo() {
+    public function getEwebAuthenticationInfo()
+    {
         return [
             "AuthenticationInfo" => [
                 "ClientNum" => config('marketplace.eweb.client_num'),
@@ -31,7 +34,8 @@ class RetailEdgeConnectionService {
         ];
     }
 
-    public function call($method, $params = [], $auth = true) {
+    public function call($method, $params = [], $auth = true)
+    {
         ini_set("default_socket_timeout", 600);
         $client = $this->getEwebSoapClient();
         $resp = $client->__soapCall($method, [$this->formatParams($params, $auth)]);
@@ -40,8 +44,8 @@ class RetailEdgeConnectionService {
         return $resp;
     }
 
-    public function formatParams($params, $auth) {
+    public function formatParams($params, $auth)
+    {
         return $auth ? array_merge($this->getEwebAuthenticationInfo(), $params) : $params;
     }
-
 }
