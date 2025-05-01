@@ -60,8 +60,10 @@ class AmazonSpApiService
             $this->initializeListingsApi();
         }
 
+        $qty = $product->quantity < 0 ? 0 : $product->quantity;
+
         // Log the current product being processed
-        $message = "Processing SKU: {$product->sku} - Price: {$product->retail_price} - Inventory: {$product->quantity}";
+        $message = "Processing SKU: {$product->sku} - Price: {$product->retail_price} - Inventory: {$qty}";
         Log::info($message);
         echo PHP_EOL . $message . PHP_EOL;
 
