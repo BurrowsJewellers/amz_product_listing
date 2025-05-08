@@ -218,7 +218,7 @@ class CreateProduct extends Command
                             if (isset($body['product'])) {
                                 (new ShopifyService)->saveProductToDb($body['product']);
                                 $this->info($body['product']['title'] . ' - saved to database');
-                                Log::debug('Shopify product ' . $product->sku . ' created successfully!');
+                                Log::info('Shopify product ' . $product->sku . ' created successfully!');
 
                                 foreach ($product->children as $child) {
                                     $child->update(['uploaded_to_shopify' => 1]);
@@ -234,8 +234,8 @@ class CreateProduct extends Command
 
                                 $logMessage = '';
 
-                                if (isset($data['errors']['base'][0])) {
-                                    $logMessage = $message . " - " . $data['errors']['base'][0];
+                                if (isset($body['errors']['base'][0])) {
+                                    $logMessage = $message . " - " . $body['errors']['base'][0];
                                 }
 
                                 Log::debug($body);
