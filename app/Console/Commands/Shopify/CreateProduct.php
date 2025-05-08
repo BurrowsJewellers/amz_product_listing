@@ -228,11 +228,19 @@ class CreateProduct extends Command
                                     $child->update(['uploaded_to_shopify' => 2]);
                                 }
 
-                                $message = 'Error while creating product. Sku :' . $product->sku . ', title: '  . $product->title;
+                                $message = 'Shopify error while creating product. Sku :' . $product->sku . ', title: '  . $product->title;
                                 Log::debug($message);
                                 Log::debug($data);
+
+                                $logMessage = '';
+
+                                if (isset($data['errors']['base'][0])) {
+                                    $logMessage = $message . " - " . $data['errors']['base'][0];
+                                }
+
                                 Log::debug($body);
-                                $this->info($message);
+                                Log::error($logMessage);
+                                $this->info($logMessage);
                             }
                         } catch (\Exception $e) {
                             report($e);
