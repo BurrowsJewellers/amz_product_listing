@@ -44,69 +44,98 @@ class GetProductsFromEWebMain extends Command
         }
 
         Log::info("$marketplace $jobType started!");
-        // $job->update(['status' => 1]);
+        $job->update(['status' => 1]); // Mark job as running
+
+        $tempProductTable = 'retail_edge_products_temp';
+        $tempImageTable = 'retail_edge_product_images_temp';
 
         try {
+            // Backup and restore ShopifySku logic (kept outside main product data transaction as per original structure)
             try {
-                // Backup existing Shopify SKUs before clearing data
+                // Note: This references RetailEdgeProduct before it's cleared and repopulated.
+                // This assumes that the state of 'uploaded_to_shopify' in RetailEdgeProduct before this job run
+                // is the source of truth for what *was* on Shopify.
                 $shopifySkus = RetailEdgeProduct::where('uploaded_to_shopify', 1)
                     ->pluck('sku')
                     ->toArray();
+                Log::info("Backed up " . count($shopifySkus) . " Shopify SKUs for ShopifySku table restoration.");
 
-                Log::info("Backed up " . count($shopifySkus) . " Shopify SKUs");
-
-                // Clear existing data - truncate operations must be outside transaction
                 ShopifySku::truncate();
-                RetailEdgeProduct::truncate();
-                RetailEdgeProductImage::truncate();
+                Log::info("Truncated ShopifySku table successfully.");
 
-                Log::info("Truncated tables successfully");
-
-                // Store backup in ShopifySku table
-                foreach ($shopifySkus as $shopifySku) {
-                    ShopifySku::create(['sku' => $shopifySku]);
+                if (!empty($shopifySkus)) {
+                    foreach ($shopifySkus as $shopifySku) {
+                        ShopifySku::create(['sku' => $shopifySku]);
+                    }
+                    Log::info("Restored Shopify SKUs to ShopifySku table.");
+                } else {
+                    Log::info("No Shopify SKUs to restore to ShopifySku table.");
                 }
-
-                Log::info("Restored Shopify SKUs to ShopifySku table");
             } catch (\Exception $e) {
-                // If there's an error during truncate or backup operations
                 report($e);
-                $job->update(['status' => 0, 'message' => "Error during data preparation: " . $e->getMessage()]);
-                Log::error("$marketplace $jobType failed during data preparation: " . $e->getMessage());
-                return;
+                $job->update(['status' => 0, 'message' => "Error during ShopifySku preparation: " . $e->getMessage()]);
+                Log::error("$marketplace $jobType failed during ShopifySku preparation: " . $e->getMessage());
+                // return; // Exit if ShopifySku preparation fails
             }
 
-            try {
-                // Start transaction for all database operations
-                DB::beginTransaction();
+            // Drop temporary tables if they exist from a previous failed run
+            DB::statement("DROP TABLE IF EXISTS {$tempProductTable}");
+            DB::statement("DROP TABLE IF EXISTS {$tempImageTable}");
 
-                // Process products from RetailEdge
-                $this->processProducts();
+            // Create temporary tables by copying the structure of the main tables
+            // This ensures all columns, types, and nullability match. Indexes are typically not copied with this method.
+            DB::statement("CREATE TEMPORARY TABLE {$tempProductTable} AS SELECT * FROM retail_edge_products WHERE 1=0");
+            DB::statement("CREATE TEMPORARY TABLE {$tempImageTable} AS SELECT * FROM retail_edge_product_images WHERE 1=0");
+            // Optionally, add indexes to temporary tables if read performance from them is critical
+            // DB::statement("ALTER TABLE {$tempProductTable} ADD INDEX sku_index (sku)"); // Example for MySQL
+            // DB::statement("CREATE INDEX IF NOT EXISTS idx_sku_temp_product ON {$tempProductTable} (sku)"); // Example for PostgreSQL
 
-                // Update Shopify products with new data
-                $this->updateShopifyProducts();
+            Log::info("Temporary tables {$tempProductTable} and {$tempImageTable} created.");
 
-                // Commit all changes
-                DB::commit();
+            // Process products from RetailEdge into temporary tables
+            $this->processProducts($tempProductTable, $tempImageTable);
 
-                $job->update(['status' => 0, 'message' => null]);
-                Log::info("$marketplace $jobType finished successfully!");
-            } catch (\Exception $e) {
-                // If there's an error during transaction operations
-                DB::rollBack();
-                report($e);
-                $job->update(['status' => 0, 'message' => "Error during transaction: " . $e->getMessage()]);
-                Log::error("$marketplace $jobType failed during transaction: " . $e->getMessage());
-            }
+            // Start transaction for main database operations
+            DB::beginTransaction();
+            Log::info("Main transaction started for updating main product tables.");
+
+            // Clear main tables (RetailEdgeProduct, RetailEdgeProductImage)
+            RetailEdgeProduct::truncate();
+            RetailEdgeProductImage::truncate();
+            Log::info("Truncated main tables: retail_edge_products and retail_edge_product_images.");
+
+            // Copy data from temporary tables to main tables
+            DB::statement("INSERT INTO retail_edge_products SELECT * FROM {$tempProductTable}");
+            DB::statement("INSERT INTO retail_edge_product_images SELECT * FROM {$tempImageTable}");
+            Log::info("Copied data from temporary tables to main tables.");
+
+            // Update Shopify products with new data from main tables
+            // This method uses the now-populated main tables.
+            $this->updateShopifyProducts();
+
+            DB::commit();
+            Log::info("Main transaction committed successfully.");
+
+            $job->update(['status' => 0, 'message' => null]); // Reset job status to success
+            Log::info("$marketplace $jobType finished successfully!");
         } catch (\Exception $e) {
-            // Catch any other unexpected errors
+            if (DB::connection()->transactionLevel() > 0) {
+                DB::rollBack();
+                Log::info("Main transaction rolled back due to error.");
+            }
             report($e);
-            $job->update(['status' => 0, 'message' => "Unexpected error: " . $e->getMessage()]);
-            Log::error("$marketplace $jobType failed with unexpected error: " . $e->getMessage());
+            // Ensure job status is updated to reflect failure
+            $job->update(['status' => 0, 'message' => "Error during main processing: " . $e->getMessage()]);
+            Log::error("$marketplace $jobType failed: " . $e->getMessage() . " at " . $e->getFile() . ":" . $e->getLine());
+        } finally {
+            // Drop temporary tables regardless of success or failure
+            DB::statement("DROP TABLE IF EXISTS {$tempProductTable}");
+            DB::statement("DROP TABLE IF EXISTS {$tempImageTable}");
+            Log::info("Temporary tables {$tempProductTable} and {$tempImageTable} dropped.");
         }
     }
 
-    private function processProducts()
+    private function processProducts($tempProductTable, $tempImageTable)
     {
         try {
             $activeItems = (new RetailEdgeService)->getAllActiveItems();
@@ -118,28 +147,28 @@ class GetProductsFromEWebMain extends Command
 
             foreach ($activeItems as $item) {
                 try {
-                    $this->processItem($item);
+                    $this->processItem($item, $tempProductTable, $tempImageTable);
                     $processedCount++;
 
                     if ($processedCount % 100 === 0) {
-                        $this->info("Processed {$processedCount}/{$totalItems} items");
+                        $this->info("Processed {$processedCount}/{$totalItems} items into temporary tables");
                     }
                 } catch (\Exception $e) {
                     $errorCount++;
                     report($e);
-                    Log::warning("Failed to process item: " . json_encode($item->SKU ?? 'Unknown SKU') . " Error: " . $e->getMessage());
-                    continue;
+                    Log::warning("Failed to process item into temporary table: " . json_encode($item->SKU ?? 'Unknown SKU') . " Error: " . $e->getMessage());
+                    // Continue with the next item, error for this one is logged
                 }
             }
 
-            $this->info("Completed processing {$processedCount}/{$totalItems} items with {$errorCount} errors");
+            $this->info("Completed processing {$processedCount}/{$totalItems} items into temporary tables with {$errorCount} errors.");
         } catch (\Exception $e) {
-            Log::error("Error in processProducts: " . $e->getMessage());
-            throw $e; // Re-throw to be caught by the handle method
+            Log::error("Error in processProducts (populating temporary tables): " . $e->getMessage());
+            throw $e; // Re-throw to be caught by the handle method's main try-catch
         }
     }
 
-    private function processItem($item)
+    private function processItem($item, $tempProductTable, $tempImageTable)
     {
         // Validate SKU format
         if (!isset($item->SKU) || !preg_match('/^\d{3}-\d{3}-\d{5}$/', $item->SKU)) {
@@ -150,11 +179,11 @@ class GetProductsFromEWebMain extends Command
         $sku = $skuArray[1] . "-" . $skuArray[2];
 
         $processedItem = $this->processItemAttributes($item, $skuArray);
-        $this->createProduct($processedItem, $sku);
+        $this->createProduct($processedItem, $sku, $tempProductTable);
 
         // Process images if they exist
         if (isset($item->Images) && isset($item->Images->ItemImage)) {
-            $this->processImages($item->Images->ItemImage ?? [], $sku);
+            $this->processImages($item->Images->ItemImage ?? [], $sku, $tempImageTable);
         }
     }
 
@@ -195,9 +224,9 @@ class GetProductsFromEWebMain extends Command
         return $item;
     }
 
-    private function createProduct($item, $sku)
+    private function createProduct($item, $sku, $tempProductTable)
     {
-        RetailEdgeProduct::create([
+        DB::table($tempProductTable)->insert([
             'sku' => $sku,
             'title' => trim($item->ShortMarketingDescription),
             'marketing_description' => $item->MarketingDescription,
@@ -236,7 +265,7 @@ class GetProductsFromEWebMain extends Command
         ]);
     }
 
-    private function processImages($images, $sku)
+    private function processImages($images, $sku, $tempImageTable)
     {
         if (empty($images)) {
             return;
@@ -245,7 +274,7 @@ class GetProductsFromEWebMain extends Command
         $images = is_object($images) ? [$images] : $images;
 
         foreach ($images as $image) {
-            RetailEdgeProductImage::create([
+            DB::table($tempImageTable)->insert([
                 'sku' => $sku,
                 'e_web_index' => $image->Index,
                 'width' => $image->Width,
