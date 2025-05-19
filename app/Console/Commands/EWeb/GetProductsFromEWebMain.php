@@ -75,7 +75,7 @@ class GetProductsFromEWebMain extends Command
                 report($e);
                 $job->update(['status' => 0, 'message' => "Error during ShopifySku preparation: " . $e->getMessage()]);
                 Log::error("$marketplace $jobType failed during ShopifySku preparation: " . $e->getMessage());
-                // return; // Exit if ShopifySku preparation fails
+                return; // Exit if ShopifySku preparation fails
             }
 
             // Drop temporary tables if they exist from a previous failed run
@@ -95,10 +95,10 @@ class GetProductsFromEWebMain extends Command
             DB::beginTransaction();
             Log::info("Main transaction started for updating main product tables.");
 
-            // Clear main tables (RetailEdgeProduct, RetailEdgeProductImage)
-            RetailEdgeProduct::truncate();
-            RetailEdgeProductImage::truncate();
-            Log::info("Truncated main tables: retail_edge_products and retail_edge_product_images.");
+            // Clear main tables (RetailEdgeProduct, RetailEdgeProductImage) using DELETE to be transaction-safe
+            RetailEdgeProduct::query()->delete();
+            RetailEdgeProductImage::query()->delete();
+            Log::info("Deleted data from main tables: retail_edge_products and retail_edge_product_images.");
 
             // Copy data from temporary tables to main tables
             DB::statement("INSERT INTO retail_edge_products SELECT * FROM {$tempProductTable}");
@@ -258,6 +258,8 @@ class GetProductsFromEWebMain extends Command
             'web_option_boolean7' => $item->WebOptionBoolean7,
             'web_option_boolean8' => $item->WebOptionBoolean8,
             'update_date_time' => isset($item->UpdateDateTime) ? Carbon::parse($item->UpdateDateTime) : null,
+            'created_at' => Carbon::now(),
+            'updated_at' => Carbon::now(),
         ]);
     }
 
@@ -276,6 +278,8 @@ class GetProductsFromEWebMain extends Command
                 'width' => $image->Width,
                 'height' => $image->Height,
                 'url' => htmlspecialchars_decode($image->URL),
+                'created_at' => Carbon::now(),
+                'updated_at' => Carbon::now(),
             ]);
         }
     }
@@ -283,18 +287,25 @@ class GetProductsFromEWebMain extends Command
     private function updateShopifyProducts()
     {
         $shopifySkus = ShopifySku::pluck('sku')->toArray();
+        $updatedCount1 = 0;
+        $updatedCount2 = 0;
+        $updatedCount3 = 0;
 
         if (!empty($shopifySkus)) {
-            RetailEdgeProduct::whereIn('sku', $shopifySkus)
+            $updatedCount1 = RetailEdgeProduct::whereIn('sku', $shopifySkus)
                 ->update(['uploaded_to_shopify' => 1]);
+            Log::info("Marked {$updatedCount1} RetailEdgeProducts as 'uploaded_to_shopify' based on ShopifySku backup.");
+        } else {
+            Log::info("No SKUs found in ShopifySku backup to update uploaded_to_shopify flag.");
         }
 
-        DB::update("UPDATE retail_edge_products
+        $sql2 = "UPDATE retail_edge_products
             SET uploaded_to_shopify = 1
-            WHERE sku IN (SELECT sku FROM shopify_product_variants)
-        ");
+            WHERE sku IN (SELECT sku FROM shopify_product_variants)";
+        $updatedCount2 = DB::update($sql2);
+        Log::info("Marked {$updatedCount2} RetailEdgeProducts as 'uploaded_to_shopify' based on existing shopify_product_variants.");
 
-        DB::update("UPDATE shopify_product_variants spv
+        $sql3 = "UPDATE shopify_product_variants spv
             JOIN retail_edge_products rep ON spv.sku = rep.sku
             SET
                 spv.price = rep.price,
@@ -307,11 +318,14 @@ class GetProductsFromEWebMain extends Command
                 spv.price_requires_update = CASE
                     WHEN spv.price <> rep.price OR spv.compare_at_price <> rep.compare_at_price THEN 1
                     ELSE spv.price_requires_update
-                END
+                END,
+                spv.updated_at = CURRENT_TIMESTAMP
             WHERE
                 spv.inventory_quantity <> rep.quantity
-                OR spv.price <> rep.price 
+                OR spv.price <> rep.price
                 OR spv.compare_at_price <> rep.compare_at_price
-        ");
+        ";
+        $updatedCount3 = DB::update($sql3);
+        Log::info("Updated {$updatedCount3} shopify_product_variants with new price/quantity from RetailEdgeProducts.");
     }
 }
