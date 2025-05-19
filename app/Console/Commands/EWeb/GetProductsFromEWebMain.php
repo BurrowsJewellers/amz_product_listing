@@ -82,15 +82,11 @@ class GetProductsFromEWebMain extends Command
             DB::statement("DROP TABLE IF EXISTS {$tempProductTable}");
             DB::statement("DROP TABLE IF EXISTS {$tempImageTable}");
 
-            // Create temporary tables by copying the structure of the main tables
-            // This ensures all columns, types, and nullability match. Indexes are typically not copied with this method.
-            DB::statement("CREATE TEMPORARY TABLE {$tempProductTable} AS SELECT * FROM retail_edge_products WHERE 1=0");
-            DB::statement("CREATE TEMPORARY TABLE {$tempImageTable} AS SELECT * FROM retail_edge_product_images WHERE 1=0");
-            // Optionally, add indexes to temporary tables if read performance from them is critical
-            // DB::statement("ALTER TABLE {$tempProductTable} ADD INDEX sku_index (sku)"); // Example for MySQL
-            // DB::statement("CREATE INDEX IF NOT EXISTS idx_sku_temp_product ON {$tempProductTable} (sku)"); // Example for PostgreSQL
+            // Create temporary tables by copying the structure (including primary keys) of the main tables
+            DB::statement("CREATE TEMPORARY TABLE {$tempProductTable} LIKE retail_edge_products");
+            DB::statement("CREATE TEMPORARY TABLE {$tempImageTable} LIKE retail_edge_product_images");
 
-            Log::info("Temporary tables {$tempProductTable} and {$tempImageTable} created.");
+            Log::info("Temporary tables {$tempProductTable} and {$tempImageTable} created with structure like main tables.");
 
             // Process products from RetailEdge into temporary tables
             $this->processProducts($tempProductTable, $tempImageTable);
