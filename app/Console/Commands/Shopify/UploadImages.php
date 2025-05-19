@@ -124,113 +124,24 @@ class UploadImages extends Command
 
                     $this->info("Uploading images for {$variant->sku}");
 
-                    if ($variant->product->vendor == 'Pandora') {
-                        $this->info("{$variant->sku} belongs to Pandora.");
-                        $retailEdgeProduct = RetailEdgeProduct::where('sku', $variant->sku)->first();
+                    if ($variant->images) {
+                        foreach ($variant->images as $i) {
+                            try {
+                                $image = new Image($session);
+                                $image->product_id = $variant->product_id;
+                                $image->src = $i->url;
+                                $image->variant_ids = [
+                                    $variant->variant_id
+                                ];
 
-                        if (!$retailEdgeProduct) {
-                            $variant->update(['images_requires_update' => 2]);
-                            continue;
-                        }
-
-                        try {
-                            $images = [];
-                            $sleep = 600;
-
-                            $result = PandoraList::selectRaw("DISTINCT CASE 
-                                                WHEN INSTR(`design_no`, '-') > 0 
-                                                THEN LEFT(`design_no`, INSTR(`design_no`, '-') - 1)
-                                                ELSE `design_no`
-                                            END AS `design_no`, 
-                                            `design_no` AS `org_design_no`, 
-                                            `id`, `sku`, `product_name`, `product_url`, `search_response`, `discontinued`, `images`, `created_at`, `updated_at`")
-                                ->whereNotNull('product_url')
-                                ->whereNotNull('images')
-                                ->where('design_no', $retailEdgeProduct->real_design_number)
-                                ->first();
-
-                            if ($result) {
-                                $this->info("{$variant->sku} already scraped.");
-
-                                $images = json_decode($result->images);
-                                $sleep = 0;
-
-                                PandoraList::create([
-                                    'design_no' => $retailEdgeProduct->real_design_number,
-                                    'sku' => $retailEdgeProduct->sku,
-                                    'search_response' => $result->search_response,
-                                    'product_name' => $result->product_name,
-                                    'product_url' => $result->product_url,
-                                    'product_response' => $result->product_response,
-                                    'discontinued' => 0,
-                                    'images' => $result->images,
-                                ]);
-                            } else {
-                                $this->info("Scraping images for sku: {$variant->sku}, design no: {$retailEdgeProduct->real_design_number}");
-
-                                $pandoraService = new PandoraScraperService();
-                                // $pandoraProduct = $pandoraService->getPandoraProductByDesignNo($retailEdgeProduct->real_design_number);
-                                $pandoraProduct = null;
-
-                                if (!$pandoraProduct) {
-                                    $this->error("Couldn't scrape the sku: {$variant->sku}, design no: {$retailEdgeProduct->real_design_number}");
-                                    $variant->update(['images_requires_update' => 2]);
-                                    sleep(20);
-                                    continue;
-                                }
-
-                                $images = json_decode($pandoraProduct->images);
-                            }
-
-                            if (is_array($images) && count($images)) {
-                                foreach ($images as $i) {
-                                    try {
-                                        $image = new Image($session);
-                                        $image->product_id = $variant->product_id;
-                                        $image->src = $i;
-                                        $image->variant_ids = [
-                                            $variant->variant_id
-                                        ];
-
-                                        $image->save(
-                                            true, // Update Object
-                                        );
-                                        $this->info("Image uploaded for sku {$variant->sku}, variant id  {$variant->variant_id}");
-                                        $variant->update(['images_requires_update' => 0]);
-                                    } catch (\Exception $e) {
-                                        Log::debug("There was an error while uploading the images for {$variant->sku}. Error message : {$e->getMessage()}");
-                                        $variant->update(['images_requires_update' => 2]);
-                                    }
-                                }
-                                $this->info("Sleeping for {$sleep} seconds after scraping Pandora.");
-                            } else {
-                                $this->error("images is not array");
-                            }
-                        } catch (\Exception $e) {
-                            report($e);
-                            $variant->update(['images_requires_update' => 2]);
-                            sleep(20);
-                        }
-                    } else {
-                        if ($variant->images) {
-                            foreach ($variant->images as $i) {
-                                try {
-                                    $image = new Image($session);
-                                    $image->product_id = $variant->product_id;
-                                    $image->src = $i->url;
-                                    $image->variant_ids = [
-                                        $variant->variant_id
-                                    ];
-
-                                    $image->save(
-                                        true, // Update Object
-                                    );
-                                    $this->info("Image uploaded for sku {$variant->sku}, variant id  {$variant->variant_id}");
-                                    $variant->update(['images_requires_update' => 0]);
-                                } catch (\Exception $e) {
-                                    Log::debug("There was an error while uploading the images for {$variant->sku}. Error message : {$e->getMessage()}");
-                                    $variant->update(['images_requires_update' => 2]);
-                                }
+                                $image->save(
+                                    true, // Update Object
+                                );
+                                $this->info("Image uploaded for sku {$variant->sku}, variant id  {$variant->variant_id}");
+                                $variant->update(['images_requires_update' => 0]);
+                            } catch (\Exception $e) {
+                                Log::debug("There was an error while uploading the images for {$variant->sku}. Error message : {$e->getMessage()}");
+                                $variant->update(['images_requires_update' => 2]);
                             }
                         }
                     }
