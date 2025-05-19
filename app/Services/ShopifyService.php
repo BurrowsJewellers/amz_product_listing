@@ -9,7 +9,7 @@ use App\Models\ShopifyInventoryLevel;
 use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
 use Illuminate\Support\Facades\Log;
-use Shopify\Rest\Admin2024_01\Image;
+use Shopify\Rest\Admin2025_04\Image;
 
 class ShopifyService extends ShopifyConnectionService
 {

@@ -9,7 +9,7 @@ use App\Models\Brand;
 use App\Models\RetailEdgeProduct;
 use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyService;
-use Shopify\Rest\Admin2024_10\Product;
+use Shopify\Rest\Admin2025_04\Product;
 
 class UpdateProduct extends Command
 {

@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\SyncJobController;
 use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyService;
-use Shopify\Rest\Admin2024_10\Variant;
+use Shopify\Rest\Admin2025_04\Variant;
 
 class UpdatePrice extends Command
 {

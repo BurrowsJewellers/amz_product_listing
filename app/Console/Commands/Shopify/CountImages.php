@@ -4,7 +4,7 @@ namespace App\Console\Commands\Shopify;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
-use Shopify\Rest\Admin2024_10\Image;
+use Shopify\Rest\Admin2025_04\Image;
 use App\Services\ShopifyService;
 use App\Http\Controllers\SyncJobController;
 use App\Models\ShopifyProductVariant;
