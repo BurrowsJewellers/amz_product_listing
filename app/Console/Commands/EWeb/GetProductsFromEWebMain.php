@@ -38,13 +38,7 @@ class GetProductsFromEWebMain extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if ($job->isRunning()) {
-            Log::info("$marketplace $jobType is already running.");
-            return;
-        }
-
         Log::info("$marketplace $jobType started!");
-        $job->update(['status' => 1]); // Mark job as running
 
         $tempProductTable = 'retail_edge_products_temp';
         $tempImageTable = 'retail_edge_product_images_temp';
@@ -71,7 +65,7 @@ class GetProductsFromEWebMain extends Command
                 } else {
                     Log::info("No Shopify SKUs to restore to ShopifySku table.");
                 }
-            } catch (\Exception $e) {
+            } catch (\Throwable $e) {
                 report($e);
                 $job->update(['status' => 0, 'message' => "Error during ShopifySku preparation: " . $e->getMessage()]);
                 Log::error("$marketplace $jobType failed during ShopifySku preparation: " . $e->getMessage());
@@ -114,7 +108,7 @@ class GetProductsFromEWebMain extends Command
 
             $job->update(['status' => 0, 'message' => null]); // Reset job status to success
             Log::info("$marketplace $jobType finished successfully!");
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             if (DB::connection()->transactionLevel() > 0) {
                 DB::rollBack();
                 Log::info("Main transaction rolled back due to error.");
