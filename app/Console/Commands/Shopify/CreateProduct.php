@@ -237,7 +237,6 @@ class CreateProduct extends Command
 
                         $this->info($data);
 
-                        exit;
                         try {
                             $client = new Rest($session->getShop(), $session->getAccessToken());
 
