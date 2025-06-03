@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\SyncJobController;
 use App\Models\RetailEdgeProduct;
 use App\Models\RetailEdgeProductImage;
+use App\Models\RetailEdgeProductIsd;
 use App\Models\Shopify\ShopifySku;
 use App\Services\RetailEdgeService;
 use Carbon\Carbon;
@@ -42,6 +43,7 @@ class GetProductsFromEWebMain extends Command
 
         $tempProductTable = 'retail_edge_products_temp';
         $tempImageTable = 'retail_edge_product_images_temp';
+        $tempIsdTable = 'retail_edge_product_isds_temp';
 
         try {
             // Backup and restore ShopifySku logic (kept outside main product data transaction as per original structure)
@@ -75,28 +77,32 @@ class GetProductsFromEWebMain extends Command
             // Drop temporary tables if they exist from a previous failed run
             DB::statement("DROP TABLE IF EXISTS {$tempProductTable}");
             DB::statement("DROP TABLE IF EXISTS {$tempImageTable}");
+            DB::statement("DROP TABLE IF EXISTS {$tempIsdTable}");
 
             // Create temporary tables by copying the structure (including primary keys) of the main tables
             DB::statement("CREATE TEMPORARY TABLE {$tempProductTable} LIKE retail_edge_products");
             DB::statement("CREATE TEMPORARY TABLE {$tempImageTable} LIKE retail_edge_product_images");
+            DB::statement("CREATE TEMPORARY TABLE {$tempIsdTable} LIKE retail_edge_product_isds");
 
-            Log::info("Temporary tables {$tempProductTable} and {$tempImageTable} created with structure like main tables.");
+            Log::info("Temporary tables {$tempProductTable}, {$tempImageTable} and {$tempIsdTable} created with structure like main tables.");
 
             // Process products from RetailEdge into temporary tables
-            $this->processProducts($tempProductTable, $tempImageTable);
+            $this->processProducts($tempProductTable, $tempImageTable, $tempIsdTable);
 
             // Start transaction for main database operations
             DB::beginTransaction();
             Log::info("Main transaction started for updating main product tables.");
 
-            // Clear main tables (RetailEdgeProduct, RetailEdgeProductImage) using DELETE to be transaction-safe
+            // Clear main tables (RetailEdgeProduct, RetailEdgeProductImage, RetailEdgeProductIsd) using DELETE to be transaction-safe
             RetailEdgeProduct::query()->delete();
             RetailEdgeProductImage::query()->delete();
-            Log::info("Deleted data from main tables: retail_edge_products and retail_edge_product_images.");
+            RetailEdgeProductIsd::query()->delete();
+            Log::info("Deleted data from main tables: retail_edge_products, retail_edge_product_images, and retail_edge_product_isds.");
 
             // Copy data from temporary tables to main tables
             DB::statement("INSERT INTO retail_edge_products SELECT * FROM {$tempProductTable}");
             DB::statement("INSERT INTO retail_edge_product_images SELECT * FROM {$tempImageTable}");
+            DB::statement("INSERT INTO retail_edge_product_isds SELECT * FROM {$tempIsdTable}");
             Log::info("Copied data from temporary tables to main tables.");
 
             // Update Shopify products with new data from main tables
@@ -121,11 +127,12 @@ class GetProductsFromEWebMain extends Command
             // Drop temporary tables regardless of success or failure
             DB::statement("DROP TABLE IF EXISTS {$tempProductTable}");
             DB::statement("DROP TABLE IF EXISTS {$tempImageTable}");
-            Log::info("Temporary tables {$tempProductTable} and {$tempImageTable} dropped.");
+            DB::statement("DROP TABLE IF EXISTS {$tempIsdTable}");
+            Log::info("Temporary tables {$tempProductTable}, {$tempImageTable} and {$tempIsdTable} dropped.");
         }
     }
 
-    private function processProducts($tempProductTable, $tempImageTable)
+    private function processProducts($tempProductTable, $tempImageTable, $tempIsdTable)
     {
         try {
             $activeItems = (new RetailEdgeService)->getAllActiveItems();
@@ -137,7 +144,7 @@ class GetProductsFromEWebMain extends Command
 
             foreach ($activeItems as $item) {
                 try {
-                    $this->processItem($item, $tempProductTable, $tempImageTable);
+                    $this->processItem($item, $tempProductTable, $tempImageTable, $tempIsdTable);
                     $processedCount++;
 
                     if ($processedCount % 100 === 0) {
@@ -158,7 +165,7 @@ class GetProductsFromEWebMain extends Command
         }
     }
 
-    private function processItem($item, $tempProductTable, $tempImageTable)
+    private function processItem($item, $tempProductTable, $tempImageTable, $tempIsdTable)
     {
         // Validate SKU format
         if (!isset($item->SKU) || !preg_match('/^\d{3}-\d{3}-\d{5}$/', $item->SKU)) {
@@ -174,6 +181,11 @@ class GetProductsFromEWebMain extends Command
         // Process images if they exist
         if (isset($item->Images) && isset($item->Images->ItemImage)) {
             $this->processImages($item->Images->ItemImage ?? [], $sku, $tempImageTable);
+        }
+
+        // Process ISDs if they exist
+        if (isset($item->ISDs) && isset($item->ISDs->ItemISD)) {
+            $this->processIsds($item->ISDs->ItemISD ?? [], $sku, $tempIsdTable);
         }
     }
 
@@ -275,6 +287,33 @@ class GetProductsFromEWebMain extends Command
                 'created_at' => Carbon::now(),
                 'updated_at' => Carbon::now(),
             ]);
+        }
+    }
+
+    private function processIsds($isds, $sku, $tempIsdTable)
+    {
+        if (empty($isds)) {
+            return;
+        }
+
+        $isds = is_object($isds) ? [$isds] : $isds;
+        $isdIndex = 0;
+
+        foreach ($isds as $isd) {
+            $isdName = isset($isd->Name) ? trim($isd->Name) : null;
+            $isdValue = isset($isd->Value) ? trim($isd->Value) : null;
+
+            if (!empty($isdName) && !empty($isdValue)) {
+                DB::table($tempIsdTable)->insert([
+                    'sku' => $sku,
+                    'isd_index' => $isdIndex,
+                    'isd_name' => $isdName,
+                    'isd_value' => $isdValue,
+                    'created_at' => Carbon::now(),
+                    'updated_at' => Carbon::now(),
+                ]);
+                $isdIndex++;
+            }
         }
     }
 
