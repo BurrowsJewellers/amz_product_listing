@@ -8,6 +8,7 @@ use App\Http\Controllers\SyncJobController;
 use Shopify\Clients\Rest;
 use App\Models\Brand;
 use App\Models\RetailEdgeProduct;
+use App\Models\RetailEdgeProductIsd;
 use App\Services\ShopifyService;
 use Illuminate\Support\Facades\DB;
 
@@ -205,9 +206,38 @@ class CreateProduct extends Command
 
                         $productData['product']['tags'] = implode(",", $productTags);
 
+                        // Fetch and add ISDs as metafields
+                        $isds = RetailEdgeProductIsd::where('sku', $product->sku)->get();
+                        $metafields = [];
+                        if ($isds->isNotEmpty()) {
+                            foreach ($isds as $isd) {
+                                // Sanitize ISD name for use as a metafield key
+                                $key = strtolower($isd->isd_name);
+                                $key = preg_replace('/[^a-z0-9\s]/', ' ', $key); // Replace non-alphanumeric/non-space with space
+                                $key = preg_replace('/\s+/', ' ', $key);       // Collapse multiple spaces to one
+                                $key = trim($key);                             // Trim leading/trailing spaces
+                                $metafieldKey = str_replace(' ', '_', $key);   // Replace spaces with underscores
+
+                                if (!empty($metafieldKey) && !empty($isd->isd_value)) {
+                                    $metafields[] = [
+                                        'key' => $metafieldKey,
+                                        'value' => $isd->isd_value,
+                                        'type' => 'single_line_text_field',
+                                        'namespace' => 'retail_edge_isd'
+                                    ];
+                                }
+                            }
+                        }
+
+                        if (!empty($metafields)) {
+                            $productData['product']['metafields'] = $metafields;
+                        }
+
                         $data = json_encode($productData);
 
                         $this->info($data);
+
+                        exit;
                         try {
                             $client = new Rest($session->getShop(), $session->getAccessToken());
 
