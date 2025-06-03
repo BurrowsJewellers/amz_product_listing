@@ -377,7 +377,8 @@ class UpdatePriceAndInventory extends Command
                         $skuValue = $variantForInventory->sku ?: '[EMPTY SKU]';
                         Log::error("Retry failed for inventory update on SKU {$skuValue} (Variant ID: {$variantForInventory->id}). Error: {$e->getMessage()}");
                         $this->error("Retry failed for SKU {$skuValue}. Error: {$e->getMessage()}");
-                        // Variant remains 'inventory_requires_update' => 2
+                        // Mark as a different status to prevent immediate re-processing in this run
+                        $variantForInventory->update(['inventory_requires_update' => 3]); // 3 = failed retry, investigate
                     }
                     usleep(config('shopify.delay_failed', 2000000)); // Use a potentially longer, configurable delay for retries
                 }
