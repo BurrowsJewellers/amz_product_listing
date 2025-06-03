@@ -42,6 +42,7 @@ class CreateProduct extends Command
             try {
                 Log::info("$marketplace $jobType started!");
                 $job->update(['status' => 1]);
+                $product_errors_occurred = false;
 
                 $pendingProducts = DB::select("SELECT rep.id, rep.sku
                     FROM retail_edge_products rep
@@ -272,7 +273,20 @@ class CreateProduct extends Command
                                 $this->info($logMessage);
                             }
                         } catch (\Exception $e) {
-                            report($e);
+                            $product_errors_occurred = true;
+                            Log::error("Shopify API Exception for SKU " . ($product ? $product->sku : 'N/A') . ": " . $e->getMessage());
+                            // Mark children as failed
+                            if ($product && $product->children) {
+                                foreach ($product->children as $child_item) {
+                                    try {
+                                        $child_item->update(['uploaded_to_shopify' => 2]);
+                                    } catch (\Exception $childUpdateException) {
+                                        Log::error("Failed to update child status for SKU " . ($child_item && isset($child_item->sku) ? $child_item->sku : 'N/A') . " after API error: " . $childUpdateException->getMessage());
+                                    }
+                                }
+                            }
+                            report($e); // Report the original exception
+                            // Do NOT rethrow, allow loop to continue
                         }
                         usleep(1500000);
                     }
@@ -280,7 +294,11 @@ class CreateProduct extends Command
                     $count = $countQuery->count();
                 }
 
-                $job->update(['status' => 0, 'message' => null]);
+                if ($product_errors_occurred) {
+                    $job->update(['status' => 0, 'message' => 'Completed with one or more product creation errors.']);
+                } else {
+                    $job->update(['status' => 0, 'message' => null]);
+                }
 
                 Log::info("$marketplace $jobType finished!");
             } catch (\Exception $e) {
