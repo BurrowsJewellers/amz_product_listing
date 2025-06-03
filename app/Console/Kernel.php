@@ -15,7 +15,10 @@ class Kernel extends ConsoleKernel
         /**
          * Main job to fetch products from eWeb
          */
-        $schedule->command('getProductsFromEWebMain')->everyFifteenMinutes();
+        $schedule->command('getProductsFromEWebMain')->everyFifteenMinutes()
+            ->after(function () {
+                $this->call('shopifyUpdatePriceInventory');
+            });
 
         /**
          * Amazon Crons
@@ -87,8 +90,9 @@ class Kernel extends ConsoleKernel
 
         // $schedule->command('shopifyCreateProduct')->everyThreeHours();
 
-        $schedule->command('shopifyUpdateInventory')->everyFifteenMinutes();
-        $schedule->command('shopifyUpdatePrice')->everyFifteenMinutes();
+        // $schedule->command('shopifyUpdateInventory')->everyFifteenMinutes(); // Replaced by shopifyUpdatePriceInventory
+        // $schedule->command('shopifyUpdatePrice')->everyFifteenMinutes(); // Replaced by shopifyUpdatePriceInventory
+        // $schedule->command('shopifyUpdatePriceInventory')->everyFifteenMinutes(); // Now runs after getProductsFromEWebMain
         $schedule->command('shopifyRetryFailedInventoryUpdates')->hourly(); // Retry failed inventory updates
         $schedule->command('shopifyUploadImages')->everyThreeHours();
         $schedule->command('shopifyArchiveProducts')->cron('20 */3 * * *');
