@@ -11,6 +11,7 @@ use App\Http\Controllers\Catch\ImportController;
 use App\Http\Controllers\Catch\ProductController as CatchProductController;
 use App\Http\Controllers\Shopify\PandoraController;
 use App\Http\Controllers\Shopify\WebhookController;
+use App\Http\Controllers\Admin\PriceInventoryLogController;
 
 /*
 |--------------------------------------------------------------------------
@@ -64,4 +65,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/imports', [ImportController::class, 'index'])->name('imports.index');
         Route::get('/import/download', [ImportController::class, 'downloadCsv'])->name('import.download');
     });
+
+    // Price Inventory Logs
+    Route::get('/price-inventory-logs', [PriceInventoryLogController::class, 'index'])->name('price_inventory_logs.index');
 });
