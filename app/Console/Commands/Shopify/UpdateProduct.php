@@ -238,7 +238,7 @@ class UpdateProduct extends Command
     private function buildProductDescription(RetailEdgeProduct $product): string
     {
         $mktDescription = $product->marketing_description ?? '';
-        if ($product->brand->name == 'Pandora') {
+        if ($product->brand?->name == 'Pandora') {
             $mktDescription .= " - Design number: " . $product->real_design_number;
         }
         return $mktDescription;
