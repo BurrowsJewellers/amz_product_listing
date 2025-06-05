@@ -326,7 +326,7 @@ class UpdateProduct extends Command
             $this->addProductPropertyTags($product, $propertyName, $tagPrefix, $tags);
         }
 
-        if ($product->brand->name == 'Pandora' && !in_array('Pandora', $tags)) {
+        if ($product->brand?->name == 'Pandora' && !in_array('Pandora', $tags)) {
             $tags[] = 'Pandora';
         }
 
