@@ -75,7 +75,7 @@ class UpdateProduct extends Command
             $client = new Graphql($this->shopifyConnectionService->getSession()->getShop(), $this->shopifyConnectionService->getSession()->getAccessToken());
 
             foreach ($variantsToUpdate as $variant) {
-                $this->info("Processing SKU: {$variant->sku} (Variant GID: {$variant->id}, Product GID: {$variant->shopify_product_id})");
+                $this->info("Processing SKU: {$variant->sku} (Variant GID: {$variant->variant_id}, Product GID: {$variant->shopify_product_id})");
 
                 $retailEdgeProduct = $variant->retailEdgeProduct;
                 if (!$retailEdgeProduct) {
@@ -89,9 +89,9 @@ class UpdateProduct extends Command
 
                 // 1. Prepare Product and Variant Core Data for productUpdate mutation
                 $productInput = [
-                    'id' => $variant->shopify_product_id, // Product GID
+                    'id' => "gid://shopify/Product/{$variant->shopify_product_id}", // Corrected GID
                     'title' => $retailEdgeProduct->title,
-                    'bodyHtml' => $this->buildProductDescription($retailEdgeProduct),
+                    'descriptionHtml' => $this->buildProductDescription($retailEdgeProduct), // Trying descriptionHtml
                     'vendor' => $retailEdgeProduct->brand?->name ?? null,
                     'productType' => $retailEdgeProduct->s_cat,
                     'tags' => $this->calculateTags($retailEdgeProduct, $variant->product->tags ?? ''),
@@ -103,7 +103,7 @@ class UpdateProduct extends Command
                 // Variant specific updates
                 $calculatedVariantPrice = $this->calculatePrice($retailEdgeChild);
                 $variantInput = [
-                    'id' => $variant->variant_id, // Variant GID
+                    'id' => "gid://shopify/ProductVariant/{$variant->variant_id}", // Corrected GID
                     'sku' => $retailEdgeChild->sku,
                     'price' => $calculatedVariantPrice,
                     'compareAtPrice' => $this->calculateCompareAtPrice($retailEdgeChild, $calculatedVariantPrice),
@@ -167,7 +167,7 @@ class UpdateProduct extends Command
                         $shopifyMetafieldDef = ShopifyMetafield::where('name', $isd->isd_name)->first();
                         if ($shopifyMetafieldDef && !empty($isd->isd_value)) {
                             $metafieldsToSet[] = [
-                                'ownerId' => $variant->variant_id, // Variant GID
+                                'ownerId' => "gid://shopify/ProductVariant/{$variant->variant_id}", // Corrected GID
                                 'namespace' => $shopifyMetafieldDef->namespace,
                                 'key' => $shopifyMetafieldDef->key,
                                 'type' => $shopifyMetafieldDef->type, // Ensure this type matches Shopify's expected type string
@@ -219,7 +219,7 @@ class UpdateProduct extends Command
                         }
                     }
                 }
-                sleep(180);
+                // Removed sleep(180); as it's likely unintended
                 usleep(1000000); // 1 second delay
             }
 
