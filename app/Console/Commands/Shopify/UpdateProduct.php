@@ -89,7 +89,7 @@ class UpdateProduct extends Command
 
                 // 1. Prepare Product and Variant Core Data for productUpdate mutation
                 $productInput = [
-                    'id' => "gid://shopify/Product/{$variant->shopify_product_id}", // Corrected GID
+                    'id' => "gid://shopify/Product/{$variant->product_id}",
                     'title' => $retailEdgeProduct->title,
                     'descriptionHtml' => $this->buildProductDescription($retailEdgeProduct), // Trying descriptionHtml
                     'vendor' => $retailEdgeProduct->brand?->name ?? null,
@@ -153,41 +153,34 @@ class UpdateProduct extends Command
                     Log::error("Exception during productUpdate for Product GID {$productInput['id']}: " . $e->getMessage(), ['exception' => $e]);
                 }
 
-                // Now, update the variant using productVariantUpdate
-                $productVariantUpdateMutation = <<<GRAPHQL
-                mutation productVariantUpdate(\$input: ProductVariantInput!) {
-                  productVariantUpdate(input: \$input) {
-                    productVariant {
-                      id
-                      sku
-                      price
-                    }
-                    userErrors {
-                      field
-                      message
-                    }
-                  }
-                }
-                GRAPHQL;
+                // Now, update the variant using productUpdate by targeting the specific variant
+                // Re-construct productInput to only contain the product ID and the variant to update
+                $variantUpdateProductInput = [
+                    'id' => "gid://shopify/Product/{$variant->product_id}", // Product GID
+                    'variants' => [$variantInput] // Array containing the single variant to update
+                ];
+
+                // Use the same productUpdateMutation
+                // $productUpdateMutation is already defined above
 
                 try {
-                    $this->line("Attempting to update variant data for Variant GID: {$variantInput['id']}");
-                    $response = $client->query(['query' => $productVariantUpdateMutation, 'variables' => ['input' => $variantInput]]);
+                    $this->line("Attempting to update variant data for Variant GID: {$variantInput['id']} within Product GID: {$variantUpdateProductInput['id']}");
+                    $response = $client->query(['query' => $productUpdateMutation, 'variables' => ['input' => $variantUpdateProductInput]]);
                     $resultBody = json_decode($response->getBody()->getContents(), true);
 
-                    $userErrors = $resultBody['data']['productVariantUpdate']['userErrors'] ?? ($resultBody['errors'] ?? []);
+                    $userErrors = $resultBody['data']['productUpdate']['userErrors'] ?? ($resultBody['errors'] ?? []); // Check productUpdate path
                     if (!empty($userErrors)) {
                         foreach ($userErrors as $error) {
-                            $this->error("Shopify Variant Update API Error for Variant GID {$variantInput['id']}: {$error['message']} " . (isset($error['field']) ? json_encode($error['field']) : ''));
-                            Log::error("Shopify Variant Update API Error for Variant GID {$variantInput['id']}: " . json_encode($error));
+                            $this->error("Shopify Variant Update (via productUpdate) API Error for Variant GID {$variantInput['id']}: {$error['message']} " . (isset($error['field']) ? json_encode($error['field']) : ''));
+                            Log::error("Shopify Variant Update (via productUpdate) API Error for Variant GID {$variantInput['id']}: " . json_encode($error));
                         }
                     } else {
                         $this->info("Successfully updated variant data for Variant GID: {$variantInput['id']}");
                         // $variant->update(['requires_update' => 0]); // Update local flag if successful
                     }
                 } catch (\Exception $e) {
-                    $this->error("Exception during productVariantUpdate for Variant GID {$variantInput['id']}: " . $e->getMessage());
-                    Log::error("Exception during productVariantUpdate for Variant GID {$variantInput['id']}: " . $e->getMessage(), ['exception' => $e]);
+                    $this->error("Exception during variant update (via productUpdate) for Variant GID {$variantInput['id']}: " . $e->getMessage());
+                    Log::error("Exception during variant update (via productUpdate) for Variant GID {$variantInput['id']}: " . $e->getMessage(), ['exception' => $e]);
                 }
 
                 // 2. Prepare and Set Variant Metafields
