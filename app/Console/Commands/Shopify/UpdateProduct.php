@@ -103,7 +103,7 @@ class UpdateProduct extends Command
                 // Variant specific updates
                 $calculatedVariantPrice = $this->calculatePrice($retailEdgeChild);
                 $variantInput = [
-                    'id' => $variant->id, // Variant GID
+                    'id' => $variant->variant_id, // Variant GID
                     'sku' => $retailEdgeChild->sku,
                     'price' => $calculatedVariantPrice,
                     'compareAtPrice' => $this->calculateCompareAtPrice($retailEdgeChild, $calculatedVariantPrice),
