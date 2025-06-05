@@ -8,6 +8,7 @@ use App\Http\Controllers\SyncJobController;
 use Shopify\Clients\Graphql;
 use App\Models\Brand;
 use App\Models\RetailEdgeProduct;
+use App\Models\RetailEdgeProductIsd; // Added this line
 use App\Services\ShopifyService;
 use Illuminate\Support\Facades\DB;
 
@@ -53,6 +54,16 @@ class CreateProductBackup extends Command
                     title
                     handle
                     status
+                    metafields(first: 10) { # Added to retrieve metafields for confirmation if needed
+                        edges {
+                            node {
+                                id
+                                namespace
+                                key
+                                value
+                            }
+                        }
+                    }
                     variants(first: 100) {
                         edges {
                             node {
@@ -76,34 +87,47 @@ class CreateProductBackup extends Command
         }
         GRAPHQL;
 
-        $variables = [
-            'input' => [
-                'title' => $productData['product']['title'],
-                'descriptionHtml' => $productData['product']['body_html'],
-                'productType' => $productData['product']['product_type'],
-                'vendor' => $productData['product']['vendor'],
-                'options' => $productData['product']['options'],
-                'variants' => array_map(function ($variant) {
-                    return [
-                        'sku' => $variant['sku'],
-                        'price' => $variant['price'],
-                        'compareAtPrice' => $variant['compare_at_price'],
-                        'barcode' => $variant['barcode'],
-                        'inventoryManagement' => 'SHOPIFY',
-                        'option1' => $variant['option1'] ?? null,
-                        'option2' => $variant['option2'] ?? null,
-                        'option3' => $variant['option3'] ?? null,
-                    ];
-                }, $productData['product']['variants']),
-                'tags' => explode(',', $productData['product']['tags']),
-                'status' => 'ACTIVE',
-            ]
+        $input = [
+            'title' => $productData['product']['title'],
+            'descriptionHtml' => $productData['product']['body_html'],
+            'productType' => $productData['product']['product_type'],
+            'vendor' => $productData['product']['vendor'],
+            'options' => $productData['product']['options'] ?? [], // Ensure options is an array
+            'variants' => array_map(function ($variant) {
+                $variantInput = [
+                    'sku' => $variant['sku'],
+                    'price' => $variant['price'],
+                    'compareAtPrice' => $variant['compare_at_price'],
+                    'barcode' => $variant['barcode'],
+                    'inventoryManagement' => 'SHOPIFY', // Corrected from 'shopify' to 'SHOPIFY' enum
+                ];
+                if (isset($variant['option1'])) $variantInput['options'][] = $variant['option1'];
+                if (isset($variant['option2'])) $variantInput['options'][] = $variant['option2'];
+                if (isset($variant['option3'])) $variantInput['options'][] = $variant['option3'];
+                return $variantInput;
+            }, $productData['product']['variants']),
+            'tags' => explode(',', $productData['product']['tags']),
+            'status' => 'ACTIVE', // Shopify expects 'ACTIVE', 'DRAFT', or 'ARCHIVED'
         ];
 
         // Add template suffix if it exists
         if (isset($productData['product']['template_suffix'])) {
-            $variables['input']['templateSuffix'] = $productData['product']['template_suffix'];
+            $input['templateSuffix'] = $productData['product']['template_suffix'];
         }
+
+        // Add metafields if they exist
+        if (!empty($productData['product']['metafields'])) {
+            $input['metafields'] = array_map(function ($metafield) {
+                return [
+                    'namespace' => $metafield['namespace'],
+                    'key' => $metafield['key'],
+                    'value' => $metafield['value'],
+                    'type' => $metafield['type'], // Assuming 'single_line_text_field' is a valid GraphQL type string
+                ];
+            }, $productData['product']['metafields']);
+        }
+
+        $variables = ['input' => $input];
 
         $response = $this->client->query(['query' => $mutation, 'variables' => $variables]);
         return $this->checkResponseForErrors($response);
@@ -275,7 +299,35 @@ class CreateProductBackup extends Command
 
                         $productData['product']['tags'] = implode(",", $productTags);
 
+                        // Fetch and add ISDs as metafields (Copied from CreateProduct.php and adapted)
+                        $isds = RetailEdgeProductIsd::where('sku', $product->sku)->get();
+                        $metafieldsData = [];
+                        if ($isds->isNotEmpty()) {
+                            foreach ($isds as $isd) {
+                                $key = strtolower($isd->isd_name);
+                                $key = preg_replace('/[^a-z0-9\s]/', ' ', $key);
+                                $key = preg_replace('/\s+/', ' ', $key);
+                                $key = trim($key);
+                                $metafieldKey = str_replace(' ', '_', $key);
+
+                                if (!empty($metafieldKey) && !empty($isd->isd_value)) {
+                                    $metafieldsData[] = [
+                                        'key' => $metafieldKey,
+                                        'value' => $isd->isd_value,
+                                        'type' => 'single_line_text_field', // This type needs to be valid for GraphQL MetafieldInput
+                                        'namespace' => 'retail_edge_isd'
+                                    ];
+                                }
+                            }
+                        }
+
+                        if (!empty($metafieldsData)) {
+                            $productData['product']['metafields'] = $metafieldsData;
+                        }
+                        // End of metafields logic
+
                         try {
+                            $this->info(json_encode($productData, JSON_PRETTY_PRINT)); // For debugging the payload
                             $response = $this->createProduct($productData);
 
                             if (isset($response['data']['productCreate']['product'])) {
