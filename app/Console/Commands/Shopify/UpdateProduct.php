@@ -101,11 +101,12 @@ class UpdateProduct extends Command
                 }
 
                 // Variant specific updates
+                $calculatedVariantPrice = $this->calculatePrice($retailEdgeChild);
                 $variantInput = [
-                    'id' => $variant->variant_id, // Variant GID
+                    'id' => $variant->id, // Variant GID
                     'sku' => $retailEdgeChild->sku,
-                    'price' => $this->calculatePrice($retailEdgeChild),
-                    'compareAtPrice' => $this->calculateCompareAtPrice($retailEdgeChild, $productInput['price']),
+                    'price' => $calculatedVariantPrice,
+                    'compareAtPrice' => $this->calculateCompareAtPrice($retailEdgeChild, $calculatedVariantPrice),
                     'barcode' => $retailEdgeChild->barcode,
                     // 'inventoryManagement' => 'shopify', // Usually set at creation
                     // 'inventoryQuantities' => [['availableQuantity' => $retailEdgeChild->quantity, 'locationId' => 'gid://shopify/Location/YOUR_LOCATION_ID']], // Requires Location GID
