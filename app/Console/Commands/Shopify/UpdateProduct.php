@@ -114,19 +114,15 @@ class UpdateProduct extends Command
                     // If you need to update selectedOptions, ensure they match existing option names.
                     // 'options' => $this->buildVariantOptionsInput($retailEdgeChild), // This is complex for updates
                 ];
-                $productInput['variants'] = [$variantInput];
+                // $productInput['variants'] = [$variantInput]; // Removed variants from productInput
 
-
-                // Call productUpdate mutation
+                // Call productUpdate mutation (Product-level fields only)
                 $productUpdateMutation = <<<GRAPHQL
                 mutation productUpdate(\$input: ProductInput!) {
                   productUpdate(input: \$input) {
                     product {
                       id
                       title
-                      variants(first: 5) {
-                        edges { node { id sku price } }
-                      }
                     }
                     userErrors {
                       field
@@ -137,26 +133,61 @@ class UpdateProduct extends Command
                 GRAPHQL;
 
                 try {
-                    $this->line("Attempting to update product/variant core data for SKU: {$variant->sku}");
+                    $this->line("Attempting to update product-level data for Product GID: {$productInput['id']}");
+                    // Remove variants from productInput before sending if it was added for some reason
+                    unset($productInput['variants']);
                     $response = $client->query(['query' => $productUpdateMutation, 'variables' => ['input' => $productInput]]);
                     $resultBody = json_decode($response->getBody()->getContents(), true);
 
                     $userErrors = $resultBody['data']['productUpdate']['userErrors'] ?? ($resultBody['errors'] ?? []);
                     if (!empty($userErrors)) {
                         foreach ($userErrors as $error) {
-                            $this->error("Shopify Product Update API Error for SKU {$variant->sku}: {$error['message']} " . (isset($error['field']) ? json_encode($error['field']) : ''));
-                            Log::error("Shopify Product Update API Error for SKU {$variant->sku}: " . json_encode($error));
+                            $this->error("Shopify Product Update API Error for Product GID {$productInput['id']}: {$error['message']} " . (isset($error['field']) ? json_encode($error['field']) : ''));
+                            Log::error("Shopify Product Update API Error for Product GID {$productInput['id']}: " . json_encode($error));
                         }
-                        // Decide if to continue to metafields or skip this SKU
-                        // continue;
                     } else {
-                        $this->info("Successfully updated core data for product/variant SKU: {$variant->sku}");
-                        // $variant->update(['requires_update' => 0]); // Update local flag
+                        $this->info("Successfully updated product-level data for Product GID: {$productInput['id']}");
                     }
                 } catch (\Exception $e) {
-                    $this->error("Exception during productUpdate for SKU {$variant->sku}: " . $e->getMessage());
-                    Log::error("Exception during productUpdate for SKU {$variant->sku}: " . $e->getMessage(), ['exception' => $e]);
-                    // continue; // Skip to next variant on critical error
+                    $this->error("Exception during productUpdate for Product GID {$productInput['id']}: " . $e->getMessage());
+                    Log::error("Exception during productUpdate for Product GID {$productInput['id']}: " . $e->getMessage(), ['exception' => $e]);
+                }
+
+                // Now, update the variant using productVariantUpdate
+                $productVariantUpdateMutation = <<<GRAPHQL
+                mutation productVariantUpdate(\$input: ProductVariantInput!) {
+                  productVariantUpdate(input: \$input) {
+                    productVariant {
+                      id
+                      sku
+                      price
+                    }
+                    userErrors {
+                      field
+                      message
+                    }
+                  }
+                }
+                GRAPHQL;
+
+                try {
+                    $this->line("Attempting to update variant data for Variant GID: {$variantInput['id']}");
+                    $response = $client->query(['query' => $productVariantUpdateMutation, 'variables' => ['input' => $variantInput]]);
+                    $resultBody = json_decode($response->getBody()->getContents(), true);
+
+                    $userErrors = $resultBody['data']['productVariantUpdate']['userErrors'] ?? ($resultBody['errors'] ?? []);
+                    if (!empty($userErrors)) {
+                        foreach ($userErrors as $error) {
+                            $this->error("Shopify Variant Update API Error for Variant GID {$variantInput['id']}: {$error['message']} " . (isset($error['field']) ? json_encode($error['field']) : ''));
+                            Log::error("Shopify Variant Update API Error for Variant GID {$variantInput['id']}: " . json_encode($error));
+                        }
+                    } else {
+                        $this->info("Successfully updated variant data for Variant GID: {$variantInput['id']}");
+                        // $variant->update(['requires_update' => 0]); // Update local flag if successful
+                    }
+                } catch (\Exception $e) {
+                    $this->error("Exception during productVariantUpdate for Variant GID {$variantInput['id']}: " . $e->getMessage());
+                    Log::error("Exception during productVariantUpdate for Variant GID {$variantInput['id']}: " . $e->getMessage(), ['exception' => $e]);
                 }
 
                 // 2. Prepare and Set Variant Metafields
@@ -167,7 +198,7 @@ class UpdateProduct extends Command
                         $shopifyMetafieldDef = ShopifyMetafield::where('name', $isd->isd_name)->first();
                         if ($shopifyMetafieldDef && !empty($isd->isd_value)) {
                             $metafieldsToSet[] = [
-                                'ownerId' => "gid://shopify/ProductVariant/{$variant->variant_id}", // Corrected GID
+                                'ownerId' => "gid://shopify/ProductVariant/{$variant->variant_id}", // Ensuring correct GID source
                                 'namespace' => $shopifyMetafieldDef->namespace,
                                 'key' => $shopifyMetafieldDef->key,
                                 'type' => $shopifyMetafieldDef->type, // Ensure this type matches Shopify's expected type string
