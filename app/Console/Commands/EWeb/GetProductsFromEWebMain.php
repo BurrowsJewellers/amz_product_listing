@@ -301,11 +301,10 @@ class GetProductsFromEWebMain extends Command
 
         foreach ($isds as $isd) {
             // $isdName = isset($isd->Name) ? trim($isd->Name) : null;
-            // $isdValue = isset($isd->Value) ? trim($isd->Value) : null;
-
             $isdName = isset($isd->Name) ? preg_replace('/\s+/', ' ', preg_replace('/[^a-zA-Z0-9 ]/', ' ', trim($isd->Name))) : null;
-            $isdValue = isset($isd->Value) ? preg_replace('/\s+/', ' ', preg_replace('/[^a-zA-Z0-9 ]/', ' ', trim($isd->Value))) : null;
 
+            // $isdValue = isset($isd->Value) ? preg_replace('/\s+/', ' ', preg_replace('/[^a-zA-Z0-9 ]/', ' ', trim($isd->Value))) : null;
+            $isdValue = isset($isd->Value) ? trim($isd->Value) : null;
 
             if (!empty($isdName) && !empty($isdValue)) {
                 DB::table($tempIsdTable)->insert([
