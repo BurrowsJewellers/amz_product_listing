@@ -92,11 +92,11 @@ class UpdateProduct extends Command
                     'id' => $variant->shopify_product_id, // Product GID
                     'title' => $retailEdgeProduct->title,
                     'bodyHtml' => $this->buildProductDescription($retailEdgeProduct),
-                    'vendor' => $retailEdgeProduct->brand->name ?? null,
+                    'vendor' => $retailEdgeProduct->brand?->name ?? null,
                     'productType' => $retailEdgeProduct->s_cat,
                     'tags' => $this->calculateTags($retailEdgeProduct, $variant->product->tags ?? ''),
                 ];
-                if ($retailEdgeProduct->brand->name === 'Pandora') {
+                if ($retailEdgeProduct->brand?->name === 'Pandora') {
                     $productInput['templateSuffix'] = 'no-buy';
                 }
 
