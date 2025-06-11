@@ -262,49 +262,9 @@ class UpdateProduct extends Command
                     }
                 }
 
-                // Batch process all metafields using metafieldsSet mutation
+                // Batch process metafields in chunks of 250 (Shopify's limit)
                 if (!empty($metafieldsToSet)) {
-                    $metafieldsSetMutation = <<<GRAPHQL
-                    mutation metafieldsSet(\$metafields: [MetafieldsSetInput!]!) {
-                      metafieldsSet(metafields: \$metafields) {
-                        metafields {
-                          id
-                          key
-                          namespace
-                          value
-                        }
-                        userErrors {
-                          field
-                          message
-                          elementIndex # Helps identify which metafield failed
-                        }
-                      }
-                    }
-                    GRAPHQL;
-
-                    try {
-                        $this->line("Attempting to set/update " . count($metafieldsToSet) . " metafields for SKU: {$variant->sku}");
-                        $response = $client->query(['query' => $metafieldsSetMutation, 'variables' => ['metafields' => $metafieldsToSet]]);
-                        $resultBody = json_decode($response->getBody()->getContents(), true);
-
-                        $userErrors = $resultBody['data']['metafieldsSet']['userErrors'] ?? ($resultBody['errors'] ?? []);
-                        if (!empty($userErrors)) {
-                            foreach ($userErrors as $error) {
-                                $failedMetafieldIndex = $error['elementIndex'] ?? 'N/A';
-                                $failedMetafield = ($failedMetafieldIndex !== 'N/A' && isset($metafieldsToSet[$failedMetafieldIndex])) ? $metafieldsToSet[$failedMetafieldIndex]['key'] : 'unknown';
-                                $this->error("Shopify MetafieldsSet API Error for SKU {$variant->sku} (Metafield: {$failedMetafield}): {$error['message']} " . (isset($error['field']) ? json_encode($error['field']) : ''));
-                                Log::error("Shopify MetafieldsSet API Error for SKU {$variant->sku}: " . json_encode($error) . " | Metafield data: " . json_encode($metafieldsToSet[$failedMetafieldIndex] ?? []));
-                            }
-                        } else {
-                            $this->info("Successfully set/updated " . count($metafieldsToSet) . " metafields for SKU: {$variant->sku}");
-
-                            // Save metafields to local database (both product and variant)
-                            $this->saveMetafieldsToDatabase($resultBody, $metafieldsToSet, $variant->sku, $retailEdgeProduct->sku);
-                        }
-                    } catch (\Exception $e) {
-                        $this->error("Exception during metafieldsSet for SKU {$variant->sku}: " . $e->getMessage());
-                        Log::error("Exception during metafieldsSet for SKU {$variant->sku}: " . $e->getMessage(), ['exception' => $e]);
-                    }
+                    $this->processMetafieldsInBatches($metafieldsToSet, $variant->sku, $retailEdgeProduct->sku, $client);
                 } else {
                     $this->line("No metafields to set for SKU: {$variant->sku}");
                 }
@@ -443,6 +403,92 @@ class UpdateProduct extends Command
                 }
             }
         }
+    }
+
+    /**
+     * Process metafields in batches of 250 (Shopify's limit)
+     */
+    private function processMetafieldsInBatches(array $metafieldsToSet, string $variantSku, string $productSku, $client): void
+    {
+        $batchSize = 250; // Shopify's limit
+        $totalMetafields = count($metafieldsToSet);
+        $batches = array_chunk($metafieldsToSet, $batchSize);
+
+        $this->line("Processing {$totalMetafields} metafields in " . count($batches) . " batches of {$batchSize} for SKU: {$variantSku}");
+
+        $metafieldsSetMutation = <<<GRAPHQL
+        mutation metafieldsSet(\$metafields: [MetafieldsSetInput!]!) {
+          metafieldsSet(metafields: \$metafields) {
+            metafields {
+              id
+              key
+              namespace
+              value
+            }
+            userErrors {
+              field
+              message
+              elementIndex
+            }
+          }
+        }
+        GRAPHQL;
+
+        $totalSuccessful = 0;
+        $totalFailed = 0;
+        $allResultBodies = [];
+
+        foreach ($batches as $batchIndex => $batch) {
+            $batchNumber = $batchIndex + 1;
+            $this->line("Processing batch {$batchNumber}/" . count($batches) . " (" . count($batch) . " metafields)");
+
+            try {
+                $response = $client->query(['query' => $metafieldsSetMutation, 'variables' => ['metafields' => $batch]]);
+                $resultBody = json_decode($response->getBody()->getContents(), true);
+
+                $userErrors = $resultBody['data']['metafieldsSet']['userErrors'] ?? ($resultBody['errors'] ?? []);
+                if (!empty($userErrors)) {
+                    foreach ($userErrors as $error) {
+                        $failedMetafieldIndex = $error['elementIndex'] ?? 'N/A';
+                        $failedMetafield = ($failedMetafieldIndex !== 'N/A' && isset($batch[$failedMetafieldIndex])) ? $batch[$failedMetafieldIndex]['key'] : 'unknown';
+                        $this->error("Shopify MetafieldsSet API Error in batch {$batchNumber} for SKU {$variantSku} (Metafield: {$failedMetafield}): {$error['message']}");
+                        Log::error("Shopify MetafieldsSet API Error for SKU {$variantSku}: " . json_encode($error) . " | Metafield data: " . json_encode($batch[$failedMetafieldIndex] ?? []));
+                        $totalFailed++;
+                    }
+                } else {
+                    $createdMetafields = $resultBody['data']['metafieldsSet']['metafields'] ?? [];
+                    $batchSuccessful = count($createdMetafields);
+                    $totalSuccessful += $batchSuccessful;
+                    $this->info("Batch {$batchNumber} successful: {$batchSuccessful} metafields updated");
+
+                    // Store result body for database saving
+                    $allResultBodies[] = [
+                        'resultBody' => $resultBody,
+                        'batch' => $batch,
+                        'batchOffset' => $batchIndex * $batchSize
+                    ];
+                }
+
+                // Small delay between batches to avoid rate limiting
+                if ($batchNumber < count($batches)) {
+                    usleep(500000); // 0.5 second delay
+                }
+            } catch (\Exception $e) {
+                $this->error("Exception during metafieldsSet batch {$batchNumber} for SKU {$variantSku}: " . $e->getMessage());
+                Log::error("Exception during metafieldsSet for SKU {$variantSku}: " . $e->getMessage(), ['exception' => $e]);
+                $totalFailed += count($batch);
+            }
+        }
+
+        // Save all successful metafields to local database
+        if (!empty($allResultBodies)) {
+            foreach ($allResultBodies as $batchData) {
+                $this->saveMetafieldsToDatabase($batchData['resultBody'], $batchData['batch'], $variantSku, $productSku);
+            }
+        }
+
+        // Final summary
+        $this->info("Metafield processing complete for SKU {$variantSku}: {$totalSuccessful} successful, {$totalFailed} failed out of {$totalMetafields} total");
     }
 
     /**

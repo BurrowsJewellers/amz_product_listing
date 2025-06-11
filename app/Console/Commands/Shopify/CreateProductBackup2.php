@@ -637,9 +637,83 @@ class CreateProduct extends Command
             }
         }
 
-        // Batch process metafields in chunks of 250 (Shopify's limit)
+        // Batch process all metafields using SAME mutation as UpdateProduct
         if (!empty($metafieldsToSet)) {
-            $this->processMetafieldsInBatches($metafieldsToSet, $product, $client);
+            $metafieldsSetMutation = <<<GRAPHQL
+            mutation metafieldsSet(\$metafields: [MetafieldsSetInput!]!) {
+              metafieldsSet(metafields: \$metafields) {
+                metafields {
+                  id
+                  key
+                  namespace
+                  value
+                }
+                userErrors {
+                  field
+                  message
+                  elementIndex
+                }
+              }
+            }
+            GRAPHQL;
+
+            try {
+                $this->line("Attempting to set/update " . count($metafieldsToSet) . " metafields for product: {$product->sku}");
+                $response = $client->query(['query' => $metafieldsSetMutation, 'variables' => ['metafields' => $metafieldsToSet]]);
+                $resultBody = json_decode($response->getBody()->getContents(), true);
+
+                $userErrors = $resultBody['data']['metafieldsSet']['userErrors'] ?? ($resultBody['errors'] ?? []);
+                if (!empty($userErrors)) {
+                    foreach ($userErrors as $error) {
+                        $failedMetafieldIndex = $error['elementIndex'] ?? 'N/A';
+                        $failedMetafield = ($failedMetafieldIndex !== 'N/A' && isset($metafieldsToSet[$failedMetafieldIndex])) ? $metafieldsToSet[$failedMetafieldIndex]['key'] : 'unknown';
+                        $this->error("Shopify MetafieldsSet API Error (Metafield: {$failedMetafield}): {$error['message']}");
+
+                        // Log metafield error
+                        PriceInventoryLog::create([
+                            'marketplace' => 'Shopify',
+                            'item_identifier' => $product->sku,
+                            'change_type' => 'metafield_create',
+                            'from_value' => null,
+                            'to_value' => 'failed',
+                            'status' => 'failed',
+                            'message' => "Metafield error: {$error['message']}",
+                            'job_name' => 'shopifyCreateProduct'
+                        ]);
+                    }
+                } else {
+                    $this->info("Successfully set/updated " . count($metafieldsToSet) . " metafields for product: {$product->sku}");
+
+                    // Save metafields to local database (both product and variant)
+                    $this->saveMetafieldsToDatabase($resultBody, $metafieldsToSet, $product);
+
+                    // Log metafield success
+                    PriceInventoryLog::create([
+                        'marketplace' => 'Shopify',
+                        'item_identifier' => $product->sku,
+                        'change_type' => 'metafield_create',
+                        'from_value' => null,
+                        'to_value' => count($metafieldsToSet) . '_metafields',
+                        'status' => 'success',
+                        'message' => "Successfully created " . count($metafieldsToSet) . " metafields",
+                        'job_name' => 'shopifyCreateProduct'
+                    ]);
+                }
+            } catch (\Exception $e) {
+                $this->error("Exception during metafieldsSet for product {$product->sku}: " . $e->getMessage());
+
+                // Log metafield exception
+                PriceInventoryLog::create([
+                    'marketplace' => 'Shopify',
+                    'item_identifier' => $product->sku,
+                    'change_type' => 'metafield_create',
+                    'from_value' => null,
+                    'to_value' => 'exception',
+                    'status' => 'failed',
+                    'message' => "Metafield exception: " . $e->getMessage(),
+                    'job_name' => 'shopifyCreateProduct'
+                ]);
+            }
         } else {
             $this->line("No metafields to set for product: {$product->sku}");
         }
@@ -921,126 +995,6 @@ class CreateProduct extends Command
             $this->warn("Failed to save metafields to database for product {$product->sku}: " . $e->getMessage());
             Log::warning("Failed to save metafields to database for product {$product->sku}: " . $e->getMessage());
         }
-    }
-
-    /**
-     * Process metafields in batches of 250 (Shopify's limit)
-     */
-    private function processMetafieldsInBatches(array $metafieldsToSet, RetailEdgeProduct $product, $client): void
-    {
-        $batchSize = 250; // Shopify's limit
-        $totalMetafields = count($metafieldsToSet);
-        $batches = array_chunk($metafieldsToSet, $batchSize);
-
-        $this->line("Processing {$totalMetafields} metafields in " . count($batches) . " batches of {$batchSize} for product: {$product->sku}");
-
-        $metafieldsSetMutation = <<<GRAPHQL
-        mutation metafieldsSet(\$metafields: [MetafieldsSetInput!]!) {
-          metafieldsSet(metafields: \$metafields) {
-            metafields {
-              id
-              key
-              namespace
-              value
-            }
-            userErrors {
-              field
-              message
-              elementIndex
-            }
-          }
-        }
-        GRAPHQL;
-
-        $totalSuccessful = 0;
-        $totalFailed = 0;
-        $allResultBodies = [];
-
-        foreach ($batches as $batchIndex => $batch) {
-            $batchNumber = $batchIndex + 1;
-            $this->line("Processing batch {$batchNumber}/" . count($batches) . " (" . count($batch) . " metafields)");
-
-            try {
-                $response = $client->query(['query' => $metafieldsSetMutation, 'variables' => ['metafields' => $batch]]);
-                $resultBody = json_decode($response->getBody()->getContents(), true);
-
-                $userErrors = $resultBody['data']['metafieldsSet']['userErrors'] ?? ($resultBody['errors'] ?? []);
-                if (!empty($userErrors)) {
-                    foreach ($userErrors as $error) {
-                        $failedMetafieldIndex = $error['elementIndex'] ?? 'N/A';
-                        $failedMetafield = ($failedMetafieldIndex !== 'N/A' && isset($batch[$failedMetafieldIndex])) ? $batch[$failedMetafieldIndex]['key'] : 'unknown';
-                        $this->error("Shopify MetafieldsSet API Error in batch {$batchNumber} (Metafield: {$failedMetafield}): {$error['message']}");
-                        $totalFailed++;
-                    }
-
-                    // Log batch error
-                    PriceInventoryLog::create([
-                        'marketplace' => 'Shopify',
-                        'item_identifier' => $product->sku,
-                        'change_type' => 'metafield_create',
-                        'from_value' => null,
-                        'to_value' => 'batch_failed',
-                        'status' => 'failed',
-                        'message' => "Batch {$batchNumber} failed with " . count($userErrors) . " errors",
-                        'job_name' => 'shopifyCreateProduct'
-                    ]);
-                } else {
-                    $createdMetafields = $resultBody['data']['metafieldsSet']['metafields'] ?? [];
-                    $batchSuccessful = count($createdMetafields);
-                    $totalSuccessful += $batchSuccessful;
-                    $this->info("Batch {$batchNumber} successful: {$batchSuccessful} metafields created");
-
-                    // Store result body for database saving with correct batch offset
-                    $allResultBodies[] = [
-                        'resultBody' => $resultBody,
-                        'batch' => $batch,
-                        'batchOffset' => $batchIndex * $batchSize
-                    ];
-                }
-
-                // Small delay between batches to avoid rate limiting
-                if ($batchNumber < count($batches)) {
-                    usleep(500000); // 0.5 second delay
-                }
-            } catch (\Exception $e) {
-                $this->error("Exception during metafieldsSet batch {$batchNumber} for product {$product->sku}: " . $e->getMessage());
-                $totalFailed += count($batch);
-
-                // Log batch exception
-                PriceInventoryLog::create([
-                    'marketplace' => 'Shopify',
-                    'item_identifier' => $product->sku,
-                    'change_type' => 'metafield_create',
-                    'from_value' => null,
-                    'to_value' => 'batch_exception',
-                    'status' => 'failed',
-                    'message' => "Batch {$batchNumber} exception: " . $e->getMessage(),
-                    'job_name' => 'shopifyCreateProduct'
-                ]);
-            }
-        }
-
-        // Save all successful metafields to local database
-        if (!empty($allResultBodies)) {
-            foreach ($allResultBodies as $batchData) {
-                $this->saveMetafieldsToDatabase($batchData['resultBody'], $batchData['batch'], $product);
-            }
-        }
-
-        // Final summary
-        $this->info("Metafield processing complete: {$totalSuccessful} successful, {$totalFailed} failed out of {$totalMetafields} total");
-
-        // Log final summary
-        PriceInventoryLog::create([
-            'marketplace' => 'Shopify',
-            'item_identifier' => $product->sku,
-            'change_type' => 'metafield_create',
-            'from_value' => null,
-            'to_value' => "{$totalSuccessful}_of_{$totalMetafields}",
-            'status' => $totalFailed > 0 ? 'partial' : 'success',
-            'message' => "Metafield batch processing complete: {$totalSuccessful} successful, {$totalFailed} failed",
-            'job_name' => 'shopifyCreateProduct'
-        ]);
     }
 
     /**
