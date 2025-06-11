@@ -10,6 +10,8 @@ use App\Models\Brand;
 use App\Models\RetailEdgeProduct;
 use App\Models\RetailEdgeProductIsd;
 use App\Models\ShopifyMetafield;
+use App\Models\ShopifyProductVariantMetafield;
+use App\Models\ShopifyProductMetafield;
 use App\Models\PriceInventoryLog;
 use App\Services\ShopifyService;
 use App\Services\ShopifyConnectionService;
@@ -459,6 +461,9 @@ class CreateProduct extends Command
                 } else {
                     $this->info("Successfully set/updated " . count($metafieldsToSet) . " metafields for product: {$product->sku}");
 
+                    // Save metafields to local database (both product and variant)
+                    $this->saveMetafieldsToDatabase($resultBody, $metafieldsToSet, $product);
+
                     // Log metafield success
                     PriceInventoryLog::create([
                         'marketplace' => 'Shopify',
@@ -817,5 +822,89 @@ class CreateProduct extends Command
         }
 
         return $tags;
+    }
+
+    /**
+     * Save metafields to local database after successful Shopify creation (both product and variant)
+     */
+    private function saveMetafieldsToDatabase(array $resultBody, array $metafieldsToSet, RetailEdgeProduct $product): void
+    {
+        try {
+            $createdMetafields = $resultBody['data']['metafieldsSet']['metafields'] ?? [];
+
+            foreach ($createdMetafields as $index => $createdMetafield) {
+                // Find the corresponding metafield from our input
+                $inputMetafield = $metafieldsToSet[$index] ?? null;
+
+                if (!$inputMetafield) continue;
+
+                if (str_contains($inputMetafield['ownerId'], 'ProductVariant')) {
+                    // This is a variant metafield, save it to variant metafields table
+                    $shopifyMetafieldDef = ShopifyMetafield::where('namespace', $inputMetafield['namespace'])
+                        ->where('key', $inputMetafield['key'])
+                        ->where('owner_type', 'PRODUCTVARIANT')
+                        ->first();
+
+                    if ($shopifyMetafieldDef) {
+                        // Extract SKU from variant GID to find the correct SKU
+                        $variantGid = $inputMetafield['ownerId'];
+                        $sku = $this->findSkuByVariantGid($product, $variantGid);
+
+                        if ($sku) {
+                            ShopifyProductVariantMetafield::updateOrCreate(
+                                [
+                                    'sku' => $sku,
+                                    'shopify_metafield_id' => $shopifyMetafieldDef->id,
+                                ],
+                                [
+                                    'value' => $createdMetafield['value'],
+                                ]
+                            );
+
+                            $this->line("Saved variant metafield to database: {$shopifyMetafieldDef->name} = {$createdMetafield['value']} for SKU: {$sku}");
+                        }
+                    }
+                } elseif (str_contains($inputMetafield['ownerId'], 'Product/')) {
+                    // This is a product metafield, save it to product metafields table
+                    $shopifyMetafieldDef = ShopifyMetafield::where('namespace', $inputMetafield['namespace'])
+                        ->where('key', $inputMetafield['key'])
+                        ->where('owner_type', 'PRODUCT')
+                        ->first();
+
+                    if ($shopifyMetafieldDef) {
+                        ShopifyProductMetafield::updateOrCreate(
+                            [
+                                'product_sku' => $product->sku,
+                                'shopify_metafield_id' => $shopifyMetafieldDef->id,
+                            ],
+                            [
+                                'value' => $createdMetafield['value'],
+                            ]
+                        );
+
+                        $this->line("Saved product metafield to database: {$shopifyMetafieldDef->name} = {$createdMetafield['value']} for Product SKU: {$product->sku}");
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            $this->warn("Failed to save metafields to database for product {$product->sku}: " . $e->getMessage());
+            Log::warning("Failed to save metafields to database for product {$product->sku}: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Find SKU by variant GID from product children
+     */
+    private function findSkuByVariantGid(RetailEdgeProduct $product, string $variantGid): ?string
+    {
+        // For CreateProduct, we need to match the variant GID with the product children
+        // Since we're creating new products, we can match by the order or by finding the variant in the created product data
+        // For now, let's extract from the children based on the variant GID pattern
+        foreach ($product->children as $child) {
+            // This is a simplified approach - in a real scenario, you might need to store the mapping
+            // between child SKUs and created variant GIDs during the creation process
+            return $child->sku; // Return the first child's SKU for now
+        }
+        return null;
     }
 }

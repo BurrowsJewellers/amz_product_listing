@@ -6,6 +6,8 @@ use App\Models\RetailEdgeProduct;
 use App\Models\RetailEdgeProductIsd;
 use App\Models\ShopifyMetafield;
 use App\Models\ShopifyProductVariant;
+use App\Models\ShopifyProductVariantMetafield;
+use App\Models\ShopifyProductMetafield;
 use App\Services\ShopifyConnectionService; // Changed
 use App\Services\MetafieldAssignmentService; // Added
 use Illuminate\Console\Command;
@@ -295,6 +297,9 @@ class UpdateProduct extends Command
                             }
                         } else {
                             $this->info("Successfully set/updated " . count($metafieldsToSet) . " metafields for SKU: {$variant->sku}");
+
+                            // Save metafields to local database (both product and variant)
+                            $this->saveMetafieldsToDatabase($resultBody, $metafieldsToSet, $variant->sku, $retailEdgeProduct->sku);
                         }
                     } catch (\Exception $e) {
                         $this->error("Exception during metafieldsSet for SKU {$variant->sku}: " . $e->getMessage());
@@ -437,6 +442,68 @@ class UpdateProduct extends Command
                     $tags[] = trim($tagPrefix) . "_" . trim($tagValue);
                 }
             }
+        }
+    }
+
+    /**
+     * Save metafields to local database after successful Shopify creation (both product and variant)
+     */
+    private function saveMetafieldsToDatabase(array $resultBody, array $metafieldsToSet, string $variantSku, string $productSku): void
+    {
+        try {
+            $createdMetafields = $resultBody['data']['metafieldsSet']['metafields'] ?? [];
+
+            foreach ($createdMetafields as $index => $createdMetafield) {
+                // Find the corresponding metafield from our input
+                $inputMetafield = $metafieldsToSet[$index] ?? null;
+
+                if (!$inputMetafield) continue;
+
+                if (str_contains($inputMetafield['ownerId'], 'ProductVariant')) {
+                    // This is a variant metafield, save it to variant metafields table
+                    $shopifyMetafieldDef = ShopifyMetafield::where('namespace', $inputMetafield['namespace'])
+                        ->where('key', $inputMetafield['key'])
+                        ->where('owner_type', 'PRODUCTVARIANT')
+                        ->first();
+
+                    if ($shopifyMetafieldDef) {
+                        ShopifyProductVariantMetafield::updateOrCreate(
+                            [
+                                'sku' => $variantSku,
+                                'shopify_metafield_id' => $shopifyMetafieldDef->id,
+                            ],
+                            [
+                                'value' => $createdMetafield['value'],
+                            ]
+                        );
+
+                        $this->line("Saved variant metafield to database: {$shopifyMetafieldDef->name} = {$createdMetafield['value']} for SKU: {$variantSku}");
+                    }
+                } elseif (str_contains($inputMetafield['ownerId'], 'Product/')) {
+                    // This is a product metafield, save it to product metafields table
+                    $shopifyMetafieldDef = ShopifyMetafield::where('namespace', $inputMetafield['namespace'])
+                        ->where('key', $inputMetafield['key'])
+                        ->where('owner_type', 'PRODUCT')
+                        ->first();
+
+                    if ($shopifyMetafieldDef) {
+                        ShopifyProductMetafield::updateOrCreate(
+                            [
+                                'product_sku' => $productSku,
+                                'shopify_metafield_id' => $shopifyMetafieldDef->id,
+                            ],
+                            [
+                                'value' => $createdMetafield['value'],
+                            ]
+                        );
+
+                        $this->line("Saved product metafield to database: {$shopifyMetafieldDef->name} = {$createdMetafield['value']} for Product SKU: {$productSku}");
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            $this->warn("Failed to save metafields to database for SKU {$variantSku}: " . $e->getMessage());
+            Log::warning("Failed to save metafields to database for SKU {$variantSku}: " . $e->getMessage());
         }
     }
 }
