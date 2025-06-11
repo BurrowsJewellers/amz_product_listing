@@ -683,25 +683,25 @@ class CreateProduct extends Command
         }
 
         if (!empty($variants)) {
-            $this->createVariantsBulk($variants, $client);
+            $this->createVariantsBulk($variants, $client, $createdProduct);
         }
     }
 
     /**
      * Create variants in bulk
      */
-    private function createVariantsBulk(array $variants, $client): void
+    private function createVariantsBulk(array $variants, $client, array $createdProduct): void
     {
         // Note: productVariantsBulkCreate may not be available in all Shopify API versions
         // Fall back to individual creation for reliability
         $this->line("Creating " . count($variants) . " variants individually for reliability...");
-        $this->createVariantsIndividually($variants, $client);
+        $this->createVariantsIndividually($variants, $client, $createdProduct);
     }
 
     /**
      * Create variants using productVariantsBulkCreate (2025-01 API)
      */
-    private function createVariantsIndividually(array $variants, $client): void
+    private function createVariantsIndividually(array $variants, $client, array $createdProduct): void
     {
         $this->line("Using productVariantsBulkCreate for variant creation...");
 
@@ -726,14 +726,17 @@ class CreateProduct extends Command
                 'tracked' => true,
             ];
 
-            // Add option values if they exist (correct field structure)
+            // Add option values if they exist (using optionId from created product)
             if (!empty($variant['optionValues'])) {
                 $bulkVariant['optionValues'] = [];
                 foreach ($variant['optionValues'] as $index => $value) {
-                    $bulkVariant['optionValues'][] = [
-                        'name' => $value,
-                        'optionName' => $this->getOptionNameByIndex($index),
-                    ];
+                    $optionId = $this->getOptionIdByIndex($createdProduct, $index);
+                    if ($optionId) {
+                        $bulkVariant['optionValues'][] = [
+                            'name' => $value,
+                            'optionId' => $optionId,
+                        ];
+                    }
                 }
             }
 
@@ -788,6 +791,24 @@ class CreateProduct extends Command
         } catch (\Exception $e) {
             $this->error("Exception during bulk variant creation: " . $e->getMessage());
         }
+    }
+
+    /**
+     * Get option ID by index from created product
+     */
+    private function getOptionIdByIndex(array $createdProduct, int $index): ?string
+    {
+        if (!isset($createdProduct['options'])) {
+            return null;
+        }
+
+        // Sort options by position to ensure correct mapping
+        $options = $createdProduct['options'];
+        usort($options, function ($a, $b) {
+            return ($a['position'] ?? 0) <=> ($b['position'] ?? 0);
+        });
+
+        return $options[$index]['id'] ?? null;
     }
 
     /**
