@@ -18,14 +18,14 @@ use App\Services\ShopifyConnectionService;
 use App\Services\MetafieldAssignmentService;
 use Illuminate\Support\Facades\DB;
 
-class CreateProduct extends Command
+class CreateProductBackup2 extends Command
 {
     /**
      * The name and signature of the console command.
      *
      * @var string
      */
-    protected $signature = 'shopifyCreateProduct';
+    protected $signature = 'shopifyCreateProductBackup2';
 
     /**
      * The console command description.
@@ -40,7 +40,7 @@ class CreateProduct extends Command
     public function handle()
     {
         $marketplace = 'Shopify';
-        $jobType = 'shopifyCreateProduct';
+        $jobType = 'shopifyCreateProductBackup2';
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
