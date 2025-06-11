@@ -744,7 +744,7 @@ class CreateProduct extends Command
                     'taxable' => true, // Default
                     'grams' => 0, // Default
                     'weight' => 0, // Default
-                    'inventory_item_id' => null, // Not available in initial creation
+                    'inventory_item_id' => $variant['inventoryItem']['id'] ?? null, // Not available in initial creation
                     'inventory_quantity' => 0, // Default
                     'old_inventory_quantity' => 0, // Default
                     'requires_shipping' => true, // Default
@@ -809,6 +809,9 @@ class CreateProduct extends Command
                   price
                   compareAtPrice
                   barcode
+                  inventoryItem {
+                    id
+                  }
                   selectedOptions {
                     name
                     value
