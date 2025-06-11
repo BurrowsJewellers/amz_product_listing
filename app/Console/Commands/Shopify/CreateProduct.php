@@ -699,16 +699,51 @@ class CreateProduct extends Command
     }
 
     /**
-     * Create variants individually (fallback)
+     * Create variants using productVariantsBulkCreate (2025-01 API)
      */
     private function createVariantsIndividually(array $variants, $client): void
     {
-        $this->line("Falling back to individual variant creation...");
+        $this->line("Using productVariantsBulkCreate for variant creation...");
+
+        // Convert variants to the correct format for productVariantsBulkCreate
+        $bulkVariants = [];
+        foreach ($variants as $variant) {
+            $bulkVariant = [
+                'sku' => $variant['sku'],
+                'price' => $variant['price'],
+                'barcode' => $variant['barcode'],
+                'inventoryManagement' => 'SHOPIFY',
+                'inventoryPolicy' => 'DENY',
+                'requiresShipping' => true,
+                'taxable' => true,
+            ];
+
+            // Add compareAtPrice if it's different from price
+            if (!empty($variant['compareAtPrice']) && $variant['compareAtPrice'] !== $variant['price']) {
+                $bulkVariant['compareAtPrice'] = $variant['compareAtPrice'];
+            }
+
+            // Add option values if they exist
+            if (!empty($variant['optionValues'])) {
+                $bulkVariant['optionValues'] = [];
+                foreach ($variant['optionValues'] as $index => $value) {
+                    $bulkVariant['optionValues'][] = [
+                        'optionName' => $this->getOptionNameByIndex($index), // We'll need to map this
+                        'name' => $value
+                    ];
+                }
+            }
+
+            $bulkVariants[] = $bulkVariant;
+        }
 
         $mutation = <<<GRAPHQL
-        mutation productVariantCreate(\$input: ProductVariantInput!) {
-          productVariantCreate(input: \$input) {
-            productVariant {
+        mutation productVariantsBulkCreate(\$productId: ID!, \$variants: [ProductVariantsBulkInput!]!) {
+          productVariantsBulkCreate(productId: \$productId, variants: \$variants) {
+            product {
+              id
+            }
+            productVariants {
               id
               sku
               price
@@ -723,25 +758,42 @@ class CreateProduct extends Command
         }
         GRAPHQL;
 
-        foreach ($variants as $variant) {
-            try {
-                $response = $client->query(['query' => $mutation, 'variables' => ['input' => $variant]]);
-                $resultBody = json_decode($response->getBody()->getContents(), true);
+        try {
+            $productId = $variants[0]['productId']; // Get product ID from first variant
+            $response = $client->query([
+                'query' => $mutation,
+                'variables' => [
+                    'productId' => $productId,
+                    'variants' => $bulkVariants
+                ]
+            ]);
+            $resultBody = json_decode($response->getBody()->getContents(), true);
 
-                $userErrors = $resultBody['data']['productVariantCreate']['userErrors'] ?? ($resultBody['errors'] ?? []);
-                if (!empty($userErrors)) {
-                    foreach ($userErrors as $error) {
-                        $this->error("Variant creation error for SKU {$variant['sku']}: {$error['message']}");
-                    }
-                } else {
-                    $this->line("Created variant: {$variant['sku']}");
+            $userErrors = $resultBody['data']['productVariantsBulkCreate']['userErrors'] ?? ($resultBody['errors'] ?? []);
+            if (!empty($userErrors)) {
+                foreach ($userErrors as $error) {
+                    $this->error("Bulk variant creation error: {$error['message']} " . (isset($error['field']) ? json_encode($error['field']) : ''));
                 }
+            } else {
+                $createdVariants = $resultBody['data']['productVariantsBulkCreate']['productVariants'] ?? [];
+                $this->info("Successfully created " . count($createdVariants) . " variants using bulk creation");
 
-                usleep(500000); // 0.5 second delay between individual variant creations
-            } catch (\Exception $e) {
-                $this->error("Exception creating variant {$variant['sku']}: " . $e->getMessage());
+                foreach ($createdVariants as $variant) {
+                    $this->line("Created variant: {$variant['sku']} (ID: {$variant['id']})");
+                }
             }
+        } catch (\Exception $e) {
+            $this->error("Exception during bulk variant creation: " . $e->getMessage());
         }
+    }
+
+    /**
+     * Get option name by index (maps to the product options)
+     */
+    private function getOptionNameByIndex(int $index): string
+    {
+        $optionNames = ['Size', 'Color', 'Material', 'Style']; // Based on your variant types
+        return $optionNames[$index] ?? "Option" . ($index + 1);
     }
 
     /**
