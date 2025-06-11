@@ -114,7 +114,7 @@ class UpdateProduct extends Command
                         'tracked' => true, // Add if you want to track inventory
                     ],
                     // 'inventoryPolicy' => 'DENY', // Usually set at creation
-                    'inventoryQuantities' => [['availableQuantity' => $retailEdgeChild->quantity, 'locationId' => 'gid://shopify/Location/73940500785']], // Requires Location GID
+                    // 'inventoryQuantities' => [['availableQuantity' => $retailEdgeChild->quantity, 'locationId' => 'gid://shopify/Location/73940500785']], // Cannot be used in updates - only for creation
                     // Option values are part of variant identification, changing them often means new variant.
                     // If you need to update selectedOptions, ensure they match existing option names.
                     // 'optionValues' => $this->buildVariantOptionsInput($retailEdgeChild), // This is complex for updates

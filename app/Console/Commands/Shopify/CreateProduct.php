@@ -266,7 +266,7 @@ class CreateProduct extends Command
             'vendor' => $product->brand?->name,
             'productType' => $product->s_cat,
             'tags' => $productTags, // Array format for GraphQL
-            'status' => 'DRAFT', // Create as draft initially
+            'status' => 'ACTIVE', // Create as draft initially
             'productOptions' => $this->buildProductOptions($product),
         ];
 
