@@ -9,7 +9,9 @@ use Shopify\Clients\Rest;
 use App\Models\Brand;
 use App\Models\RetailEdgeProduct;
 use App\Models\RetailEdgeProductIsd;
+use App\Models\ShopifyMetafield;
 use App\Services\ShopifyService;
+use App\Services\MetafieldAssignmentService;
 use Illuminate\Support\Facades\DB;
 
 class CreateProduct extends Command
@@ -131,7 +133,7 @@ class CreateProduct extends Command
                                             if ($child->s_cat == 'Bracelets') {
                                                 $optionIndex = array_search($vt, $vts) + 1;
                                                 $variant["option{$optionIndex}"] = $child->bracelet_length;
-                                                $variantTypeValue = $child->ring_size;
+                                                $variantTypeValue = $child->bracelet_length;
                                             }
                                         }
 
@@ -207,28 +209,38 @@ class CreateProduct extends Command
 
                         $productData['product']['tags'] = implode(",", $productTags);
 
-                        // Fetch and add ISDs as metafields
-                        $isds = RetailEdgeProductIsd::where('sku', $product->sku)->get();
-                        $metafields = [];
-                        if ($isds->isNotEmpty()) {
-                            foreach ($isds as $isd) {
-                                // Sanitize ISD name for use as a metafield key
-                                $key = strtolower($isd->isd_name);
-                                $key = preg_replace('/[^a-z0-9\s]/', ' ', $key); // Replace non-alphanumeric/non-space with space
-                                $key = preg_replace('/\s+/', ' ', $key);       // Collapse multiple spaces to one
-                                $key = trim($key);                             // Trim leading/trailing spaces
-                                $metafieldKey = str_replace(' ', '_', $key);   // Replace spaces with underscores
+                        // Dynamic metafield assignment using MetafieldAssignmentService
+                        $metafieldService = new MetafieldAssignmentService();
+                        $assignment = $metafieldService->determineMetafieldAssignment($product);
 
-                                if (!empty($metafieldKey) && !empty($isd->isd_value)) {
+                        $this->line("Metafield assignment type: {$assignment['type']} for Product: {$product->sku}");
+
+                        $metafields = [];
+
+                        // Handle product-level metafields for REST API
+                        if (!empty($assignment['product_metafields'])) {
+                            $this->line("Adding " . count($assignment['product_metafields']) . " product-level metafields");
+                            foreach ($assignment['product_metafields'] as $metafield) {
+                                $shopifyMetafieldDef = ShopifyMetafield::where('name', $metafield['isd_name'])
+                                    ->where('owner_type', 'PRODUCT')
+                                    ->first();
+
+                                if ($shopifyMetafieldDef && !empty($metafield['value'])) {
                                     $metafields[] = [
-                                        'key' => $metafieldKey,
-                                        'value' => $isd->isd_value,
-                                        'type' => 'single_line_text_field',
-                                        'namespace' => 'retail_edge_isd'
+                                        'key' => $shopifyMetafieldDef->key,
+                                        'value' => $metafield['value'],
+                                        'type' => $shopifyMetafieldDef->type,
+                                        'namespace' => $shopifyMetafieldDef->namespace
                                     ];
+                                    $this->line("Added product metafield: {$metafield['isd_name']} = {$metafield['value']}");
+                                } else {
+                                    $this->warn("Skipping product metafield '{$metafield['isd_name']}': Definition not found or empty value.");
                                 }
                             }
                         }
+
+                        // Note: Variant-level metafields will be handled after product creation via GraphQL
+                        // since REST API doesn't support variant metafields during product creation
 
                         if (!empty($metafields)) {
                             $productData['product']['metafields'] = $metafields;

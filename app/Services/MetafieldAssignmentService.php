@@ -1,0 +1,120 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\RetailEdgeProduct;
+use App\Models\RetailEdgeProductIsd;
+
+class MetafieldAssignmentService
+{
+    /**
+     * Determine how metafields should be assigned for a given product
+     *
+     * @param RetailEdgeProduct $product
+     * @return array
+     */
+    public function determineMetafieldAssignment(RetailEdgeProduct $product): array
+    {
+        $children = $product->children;
+        $childrenCount = $children->count();
+
+        if ($childrenCount <= 1) {
+            // Single variant: all metafields go to PRODUCT
+            return [
+                'type' => 'PRODUCT_ONLY',
+                'product_metafields' => $this->getAllProductISDs($product),
+                'variant_metafields' => []
+            ];
+        }
+
+        // Multiple variants: analyze for common vs variant-specific
+        return $this->analyzeForMultiVariant($product, $children);
+    }
+
+    /**
+     * Get all ISDs for a product (used when single variant)
+     *
+     * @param RetailEdgeProduct $product
+     * @return array
+     */
+    private function getAllProductISDs(RetailEdgeProduct $product): array
+    {
+        $productMetafields = [];
+
+        // For single variant, get ISDs from the product itself or its single child
+        $targetSku = $product->children->count() === 1 ? $product->children->first()->sku : $product->sku;
+
+        $isds = RetailEdgeProductIsd::where('sku', $targetSku)->get();
+
+        foreach ($isds as $isd) {
+            if (!empty($isd->isd_value)) {
+                $productMetafields[] = [
+                    'isd_name' => $isd->isd_name,
+                    'value' => $isd->isd_value,
+                    'key_suffix' => '_product'
+                ];
+            }
+        }
+
+        return $productMetafields;
+    }
+
+    /**
+     * Analyze metafields for multi-variant products
+     *
+     * @param RetailEdgeProduct $product
+     * @param \Illuminate\Database\Eloquent\Collection $children
+     * @return array
+     */
+    private function analyzeForMultiVariant(RetailEdgeProduct $product, $children): array
+    {
+        $allISDs = [];
+        $commonMetafields = [];
+        $variantMetafields = [];
+
+        // Collect all ISDs from all children
+        foreach ($children as $child) {
+            $childISDs = RetailEdgeProductIsd::where('sku', $child->sku)->get();
+            foreach ($childISDs as $isd) {
+                if (!empty($isd->isd_value)) {
+                    $allISDs[$isd->isd_name][$child->sku] = $isd->isd_value;
+                }
+            }
+        }
+
+        // Analyze each ISD for commonality
+        foreach ($allISDs as $isdName => $values) {
+            $uniqueValues = array_unique($values);
+            $childrenWithThisISD = count($values);
+
+            // Skip if not all children have this ISD (as per requirement)
+            if ($childrenWithThisISD < $children->count()) {
+                continue;
+            }
+
+            if (count($uniqueValues) === 1) {
+                // Common value across all variants → Product metafield
+                $commonMetafields[] = [
+                    'isd_name' => $isdName,
+                    'value' => reset($uniqueValues),
+                    'key_suffix' => '_product'
+                ];
+            } else {
+                // Different values → Variant metafields
+                foreach ($values as $sku => $value) {
+                    $variantMetafields[$sku][] = [
+                        'isd_name' => $isdName,
+                        'value' => $value,
+                        'key_suffix' => '_variant'
+                    ];
+                }
+            }
+        }
+
+        return [
+            'type' => 'MIXED',
+            'product_metafields' => $commonMetafields,
+            'variant_metafields' => $variantMetafields
+        ];
+    }
+}

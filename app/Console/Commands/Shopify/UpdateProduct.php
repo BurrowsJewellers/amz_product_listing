@@ -7,6 +7,7 @@ use App\Models\RetailEdgeProductIsd;
 use App\Models\ShopifyMetafield;
 use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyConnectionService; // Changed
+use App\Services\MetafieldAssignmentService; // Added
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\SyncJobController;
@@ -153,95 +154,139 @@ class UpdateProduct extends Command
                     Log::error("Exception during productUpdate for Product GID {$productInput['id']}: " . $e->getMessage(), ['exception' => $e]);
                 }
 
-                // Now, update the variant using productUpdate by targeting the specific variant
-                // Re-construct productInput to only contain the product ID and the variant to update
-                $variantUpdateProductInput = [
-                    'id' => "gid://shopify/Product/{$variant->product_id}", // Product GID
-                    'variants' => [$variantInput] // Array containing the single variant to update
-                ];
-
-                // Use the same productUpdateMutation
-                // $productUpdateMutation is already defined above
+                // Now, update the variant using productVariantUpdate mutation
+                $variantUpdateMutation = <<<GRAPHQL
+                mutation productVariantUpdate(\$input: ProductVariantInput!) {
+                  productVariantUpdate(input: \$input) {
+                    productVariant {
+                      id
+                      sku
+                      price
+                    }
+                    userErrors {
+                      field
+                      message
+                    }
+                  }
+                }
+                GRAPHQL;
 
                 try {
-                    $this->line("Attempting to update variant data for Variant GID: {$variantInput['id']} within Product GID: {$variantUpdateProductInput['id']}");
-                    $response = $client->query(['query' => $productUpdateMutation, 'variables' => ['input' => $variantUpdateProductInput]]);
+                    $this->line("Attempting to update variant data for Variant GID: {$variantInput['id']}");
+                    $response = $client->query(['query' => $variantUpdateMutation, 'variables' => ['input' => $variantInput]]);
                     $resultBody = json_decode($response->getBody()->getContents(), true);
 
-                    $userErrors = $resultBody['data']['productUpdate']['userErrors'] ?? ($resultBody['errors'] ?? []); // Check productUpdate path
+                    $userErrors = $resultBody['data']['productVariantUpdate']['userErrors'] ?? ($resultBody['errors'] ?? []);
                     if (!empty($userErrors)) {
                         foreach ($userErrors as $error) {
-                            $this->error("Shopify Variant Update (via productUpdate) API Error for Variant GID {$variantInput['id']}: {$error['message']} " . (isset($error['field']) ? json_encode($error['field']) : ''));
-                            Log::error("Shopify Variant Update (via productUpdate) API Error for Variant GID {$variantInput['id']}: " . json_encode($error));
+                            $this->error("Shopify Variant Update API Error for Variant GID {$variantInput['id']}: {$error['message']} " . (isset($error['field']) ? json_encode($error['field']) : ''));
+                            Log::error("Shopify Variant Update API Error for Variant GID {$variantInput['id']}: " . json_encode($error));
                         }
                     } else {
                         $this->info("Successfully updated variant data for Variant GID: {$variantInput['id']}");
                         // $variant->update(['requires_update' => 0]); // Update local flag if successful
                     }
                 } catch (\Exception $e) {
-                    $this->error("Exception during variant update (via productUpdate) for Variant GID {$variantInput['id']}: " . $e->getMessage());
-                    Log::error("Exception during variant update (via productUpdate) for Variant GID {$variantInput['id']}: " . $e->getMessage(), ['exception' => $e]);
+                    $this->error("Exception during variant update for Variant GID {$variantInput['id']}: " . $e->getMessage());
+                    Log::error("Exception during variant update for Variant GID {$variantInput['id']}: " . $e->getMessage(), ['exception' => $e]);
                 }
 
-                // 2. Prepare and Set Variant Metafields
-                $isds = RetailEdgeProductIsd::where('sku', $variant->sku)->get();
-                if ($isds->isNotEmpty()) {
-                    $metafieldsToSet = [];
-                    foreach ($isds as $isd) {
-                        $shopifyMetafieldDef = ShopifyMetafield::where('name', $isd->isd_name)->first();
-                        if ($shopifyMetafieldDef && !empty($isd->isd_value)) {
+                // 2. Dynamic Metafield Assignment using MetafieldAssignmentService
+                $metafieldService = new MetafieldAssignmentService();
+                $assignment = $metafieldService->determineMetafieldAssignment($retailEdgeProduct);
+
+                $this->line("Metafield assignment type: {$assignment['type']} for Product: {$retailEdgeProduct->sku}");
+
+                $metafieldsToSet = [];
+
+                // Handle product-level metafields
+                if (!empty($assignment['product_metafields'])) {
+                    $this->line("Processing " . count($assignment['product_metafields']) . " product-level metafields");
+                    foreach ($assignment['product_metafields'] as $metafield) {
+                        $shopifyMetafieldDef = ShopifyMetafield::where('name', $metafield['isd_name'])
+                            ->where('owner_type', 'PRODUCT')
+                            ->first();
+
+                        if ($shopifyMetafieldDef && !empty($metafield['value'])) {
                             $metafieldsToSet[] = [
-                                'ownerId' => "gid://shopify/ProductVariant/{$variant->variant_id}", // Ensuring correct GID source
+                                'ownerId' => "gid://shopify/Product/{$variant->product_id}",
                                 'namespace' => $shopifyMetafieldDef->namespace,
                                 'key' => $shopifyMetafieldDef->key,
-                                'type' => $shopifyMetafieldDef->type, // Ensure this type matches Shopify's expected type string
-                                'value' => (string) $isd->isd_value,
+                                'type' => $shopifyMetafieldDef->type,
+                                'value' => (string) $metafield['value'],
                             ];
+                            $this->line("Added product metafield: {$metafield['isd_name']} = {$metafield['value']}");
                         } else {
-                            $this->warn("Skipping ISD '{$isd->isd_name}' for SKU {$variant->sku}: Definition not found or empty value.");
+                            $this->warn("Skipping product metafield '{$metafield['isd_name']}': Definition not found or empty value.");
                         }
                     }
+                }
 
-                    if (!empty($metafieldsToSet)) {
-                        $metafieldsSetMutation = <<<GRAPHQL
-                        mutation metafieldsSet(\$metafields: [MetafieldsSetInput!]!) {
-                          metafieldsSet(metafields: \$metafields) {
-                            metafields {
-                              id
-                              key
-                              namespace
-                              value
-                            }
-                            userErrors {
-                              field
-                              message
-                              elementIndex # Helps identify which metafield failed
-                            }
-                          }
-                        }
-                        GRAPHQL;
+                // Handle variant-level metafields
+                if (!empty($assignment['variant_metafields'][$variant->sku])) {
+                    $this->line("Processing " . count($assignment['variant_metafields'][$variant->sku]) . " variant-level metafields for SKU: {$variant->sku}");
+                    foreach ($assignment['variant_metafields'][$variant->sku] as $metafield) {
+                        $shopifyMetafieldDef = ShopifyMetafield::where('name', $metafield['isd_name'])
+                            ->where('owner_type', 'PRODUCTVARIANT')
+                            ->first();
 
-                        try {
-                            $this->line("Attempting to set/update variant metafields for SKU: {$variant->sku}");
-                            $response = $client->query(['query' => $metafieldsSetMutation, 'variables' => ['metafields' => $metafieldsToSet]]);
-                            $resultBody = json_decode($response->getBody()->getContents(), true);
-
-                            $userErrors = $resultBody['data']['metafieldsSet']['userErrors'] ?? ($resultBody['errors'] ?? []);
-                            if (!empty($userErrors)) {
-                                foreach ($userErrors as $error) {
-                                    $failedMetafieldIndex = $error['elementIndex'] ?? 'N/A';
-                                    $failedMetafield = ($failedMetafieldIndex !== 'N/A' && isset($metafieldsToSet[$failedMetafieldIndex])) ? $metafieldsToSet[$failedMetafieldIndex]['key'] : 'unknown';
-                                    $this->error("Shopify MetafieldsSet API Error for SKU {$variant->sku} (Metafield: {$failedMetafield}): {$error['message']} " . (isset($error['field']) ? json_encode($error['field']) : ''));
-                                    Log::error("Shopify MetafieldsSet API Error for SKU {$variant->sku}: " . json_encode($error) . " | Metafield data: " . json_encode($metafieldsToSet[$failedMetafieldIndex] ?? []));
-                                }
-                            } else {
-                                $this->info("Successfully set/updated variant metafields for SKU: {$variant->sku}");
-                            }
-                        } catch (\Exception $e) {
-                            $this->error("Exception during metafieldsSet for SKU {$variant->sku}: " . $e->getMessage());
-                            Log::error("Exception during metafieldsSet for SKU {$variant->sku}: " . $e->getMessage(), ['exception' => $e]);
+                        if ($shopifyMetafieldDef && !empty($metafield['value'])) {
+                            $metafieldsToSet[] = [
+                                'ownerId' => "gid://shopify/ProductVariant/{$variant->variant_id}",
+                                'namespace' => $shopifyMetafieldDef->namespace,
+                                'key' => $shopifyMetafieldDef->key,
+                                'type' => $shopifyMetafieldDef->type,
+                                'value' => (string) $metafield['value'],
+                            ];
+                            $this->line("Added variant metafield: {$metafield['isd_name']} = {$metafield['value']}");
+                        } else {
+                            $this->warn("Skipping variant metafield '{$metafield['isd_name']}' for SKU {$variant->sku}: Definition not found or empty value.");
                         }
                     }
+                }
+
+                // Batch process all metafields using metafieldsSet mutation
+                if (!empty($metafieldsToSet)) {
+                    $metafieldsSetMutation = <<<GRAPHQL
+                    mutation metafieldsSet(\$metafields: [MetafieldsSetInput!]!) {
+                      metafieldsSet(metafields: \$metafields) {
+                        metafields {
+                          id
+                          key
+                          namespace
+                          value
+                        }
+                        userErrors {
+                          field
+                          message
+                          elementIndex # Helps identify which metafield failed
+                        }
+                      }
+                    }
+                    GRAPHQL;
+
+                    try {
+                        $this->line("Attempting to set/update " . count($metafieldsToSet) . " metafields for SKU: {$variant->sku}");
+                        $response = $client->query(['query' => $metafieldsSetMutation, 'variables' => ['metafields' => $metafieldsToSet]]);
+                        $resultBody = json_decode($response->getBody()->getContents(), true);
+
+                        $userErrors = $resultBody['data']['metafieldsSet']['userErrors'] ?? ($resultBody['errors'] ?? []);
+                        if (!empty($userErrors)) {
+                            foreach ($userErrors as $error) {
+                                $failedMetafieldIndex = $error['elementIndex'] ?? 'N/A';
+                                $failedMetafield = ($failedMetafieldIndex !== 'N/A' && isset($metafieldsToSet[$failedMetafieldIndex])) ? $metafieldsToSet[$failedMetafieldIndex]['key'] : 'unknown';
+                                $this->error("Shopify MetafieldsSet API Error for SKU {$variant->sku} (Metafield: {$failedMetafield}): {$error['message']} " . (isset($error['field']) ? json_encode($error['field']) : ''));
+                                Log::error("Shopify MetafieldsSet API Error for SKU {$variant->sku}: " . json_encode($error) . " | Metafield data: " . json_encode($metafieldsToSet[$failedMetafieldIndex] ?? []));
+                            }
+                        } else {
+                            $this->info("Successfully set/updated " . count($metafieldsToSet) . " metafields for SKU: {$variant->sku}");
+                        }
+                    } catch (\Exception $e) {
+                        $this->error("Exception during metafieldsSet for SKU {$variant->sku}: " . $e->getMessage());
+                        Log::error("Exception during metafieldsSet for SKU {$variant->sku}: " . $e->getMessage(), ['exception' => $e]);
+                    }
+                } else {
+                    $this->line("No metafields to set for SKU: {$variant->sku}");
                 }
                 // Removed sleep(180); as it's likely unintended
                 usleep(1000000); // 1 second delay
