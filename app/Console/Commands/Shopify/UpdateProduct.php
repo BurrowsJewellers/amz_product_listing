@@ -410,7 +410,7 @@ class UpdateProduct extends Command
      */
     private function processMetafieldsInBatches(array $metafieldsToSet, string $variantSku, string $productSku, $client): void
     {
-        $batchSize = 250; // Shopify's limit
+        $batchSize = 25; // Shopify's actual limit for metafields
         $totalMetafields = count($metafieldsToSet);
         $batches = array_chunk($metafieldsToSet, $batchSize);
 

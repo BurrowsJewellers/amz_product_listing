@@ -276,6 +276,32 @@ class CreateProduct extends Command
             'productOptions' => $this->buildProductOptions($product),
         ];
 
+        // Add the first variant with proper SKU to ensure it's created correctly
+        if ($product->children->count() > 0) {
+            $firstChild = $product->children->first();
+            $retailPrices = [$firstChild->retail_price1, $firstChild->retail_price2];
+            $prices = array_filter(array_map('floatval', $retailPrices), function ($price) {
+                return $price > 0;
+            });
+
+            $price = empty($prices) ? 0 : min($prices);
+            $compareAtPrice = empty($prices) ? 0 : max($prices);
+
+            $productInput['variants'] = [
+                [
+                    'price' => (string) $price,
+                    'compareAtPrice' => ($price == $compareAtPrice) ? null : (string) $compareAtPrice,
+                    'barcode' => $firstChild->barcode,
+                    'inventoryItem' => [
+                        'sku' => $firstChild->sku,
+                        'tracked' => true,
+                    ],
+                    'inventoryPolicy' => 'DENY',
+                    'taxable' => true,
+                ]
+            ];
+        }
+
         // Add template suffix for Pandora products
         if ($product->brand?->name === 'Pandora') {
             $productInput['templateSuffix'] = 'no-buy';
@@ -928,7 +954,7 @@ class CreateProduct extends Command
      */
     private function processMetafieldsInBatches(array $metafieldsToSet, RetailEdgeProduct $product, $client): void
     {
-        $batchSize = 250; // Shopify's limit
+        $batchSize = 25; // Shopify's actual limit for metafields
         $totalMetafields = count($metafieldsToSet);
         $batches = array_chunk($metafieldsToSet, $batchSize);
 
