@@ -5,138 +5,38 @@ namespace App\Console\Commands\Shopify;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\SyncJobController;
-use Shopify\Clients\Graphql;
+use Shopify\Clients\Rest;
 use App\Models\Brand;
 use App\Models\RetailEdgeProduct;
-use App\Models\RetailEdgeProductIsd; // Added this line
+use App\Models\RetailEdgeProductIsd;
+use App\Models\ShopifyMetafield;
 use App\Services\ShopifyService;
+use App\Services\MetafieldAssignmentService;
 use Illuminate\Support\Facades\DB;
 
 class CreateProductBackup extends Command
 {
+    /**
+     * The name and signature of the console command.
+     *
+     * @var string
+     */
     protected $signature = 'shopifyCreateProductBackup';
-    protected $description = 'Create Shopify products using GraphQL';
 
-    private $client;
-    private $shopifyService;
+    /**
+     * The console command description.
+     *
+     * @var string
+     */
+    protected $description = 'Command description';
 
-    public function __construct()
-    {
-        parent::__construct();
-        $this->shopifyService = new ShopifyService();
-    }
-
-    private function checkResponseForErrors($response)
-    {
-        $responseBody = $response->getDecodedBody();
-
-        if (isset($responseBody['errors'])) {
-            throw new \Exception(json_encode($responseBody['errors']));
-        }
-
-        if (
-            isset($responseBody['data']['productCreate']['userErrors'])
-            && !empty($responseBody['data']['productCreate']['userErrors'])
-        ) {
-            throw new \Exception(json_encode($responseBody['data']['productCreate']['userErrors']));
-        }
-
-        return $responseBody;
-    }
-
-    private function createProduct($productData)
-    {
-        $mutation = <<<'GRAPHQL'
-        mutation productCreate($input: ProductInput!) {
-            productCreate(input: $input) {
-                product {
-                    id
-                    title
-                    handle
-                    status
-                    metafields(first: 10) { # Added to retrieve metafields for confirmation if needed
-                        edges {
-                            node {
-                                id
-                                namespace
-                                key
-                                value
-                            }
-                        }
-                    }
-                    variants(first: 100) {
-                        edges {
-                            node {
-                                id
-                                title
-                                sku
-                                price
-                                compareAtPrice
-                                inventoryItem {
-                                    id
-                                }
-                            }
-                        }
-                    }
-                }
-                userErrors {
-                    field
-                    message
-                }
-            }
-        }
-        GRAPHQL;
-
-        $input = [
-            'title' => $productData['product']['title'],
-            'descriptionHtml' => $productData['product']['body_html'],
-            'productType' => $productData['product']['product_type'],
-            'vendor' => $productData['product']['vendor'],
-            'options' => $productData['product']['options'] ?? [], // Ensure options is an array
-            'variants' => array_map(function ($variant) {
-                $variantInput = [
-                    'sku' => $variant['sku'],
-                    'price' => $variant['price'],
-                    'compareAtPrice' => $variant['compare_at_price'],
-                    'barcode' => $variant['barcode'],
-                    'inventoryManagement' => 'SHOPIFY', // Corrected from 'shopify' to 'SHOPIFY' enum
-                ];
-                if (isset($variant['option1'])) $variantInput['options'][] = $variant['option1'];
-                if (isset($variant['option2'])) $variantInput['options'][] = $variant['option2'];
-                if (isset($variant['option3'])) $variantInput['options'][] = $variant['option3'];
-                return $variantInput;
-            }, $productData['product']['variants']),
-            'tags' => explode(',', $productData['product']['tags']),
-            'status' => 'ACTIVE', // Shopify expects 'ACTIVE', 'DRAFT', or 'ARCHIVED'
-        ];
-
-        // Add template suffix if it exists
-        if (isset($productData['product']['template_suffix'])) {
-            $input['templateSuffix'] = $productData['product']['template_suffix'];
-        }
-
-        // Add metafields if they exist
-        if (!empty($productData['product']['metafields'])) {
-            $input['metafields'] = array_map(function ($metafield) {
-                return [
-                    'namespace' => $metafield['namespace'],
-                    'key' => $metafield['key'],
-                    'value' => $metafield['value'],
-                    'type' => $metafield['type'], // Assuming 'single_line_text_field' is a valid GraphQL type string
-                ];
-            }, $productData['product']['metafields']);
-        }
-
-        $variables = ['input' => $input];
-
-        $response = $this->client->query(['query' => $mutation, 'variables' => $variables]);
-        return $this->checkResponseForErrors($response);
-    }
-
+    /**
+     * Execute the console command.
+     */
     public function handle()
     {
         $marketplace = 'Shopify';
-        $jobType = 'shopifyCreateProduct';
+        $jobType = 'shopifyCreateProductBackup';
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
@@ -144,6 +44,7 @@ class CreateProductBackup extends Command
             try {
                 Log::info("$marketplace $jobType started!");
                 $job->update(['status' => 1]);
+                $product_errors_occurred = false;
 
                 $pendingProducts = DB::select("SELECT rep.id, rep.sku
                     FROM retail_edge_products rep
@@ -151,19 +52,27 @@ class CreateProductBackup extends Command
                     WHERE spv.id IS NULL;
                 ");
 
-                $pendingProductIds = collect($pendingProducts)->pluck('id')->toArray();
+                $pendingProductIds = [];
 
-                $session = $this->shopifyService->getSession();
-                $this->client = new Graphql($session->getShop(), $session->getAccessToken());
+                foreach ($pendingProducts as $p) {
+                    $pendingProductIds[] = $p->id;
+                }
 
+                $session = (new ShopifyService)->getSession();
                 $variantTypes = ['vt1' => 'Size', 'vt2' => 'Color', 'vt3' => 'Material', 'vt4' => 'Style'];
-                $brands = Brand::all()->keyBy('brand_id');
 
-                $countQuery = RetailEdgeProduct::whereIn('id', $pendingProductIds)
-                    ->whereHas('children', function ($children) {
-                        $children->where('uploaded_to_shopify', 0);
-                    })
-                    ->where('quantity', '>', 0);
+                $brands = Brand::all();
+
+                $brandsArray = [];
+
+                foreach ($brands as $brand) {
+                    $brandsArray[$brand->brand_id]['id'] = $brand->id;
+                    $brandsArray[$brand->brand_id]['name'] = $brand->name;
+                }
+
+                $countQuery = RetailEdgeProduct::whereIn('id', $pendingProductIds)->whereHas('children', function ($children) {
+                    $children->where('uploaded_to_shopify', 0);
+                })->where('quantity', '>', 0);
 
                 $count = $countQuery->count();
 
@@ -177,7 +86,6 @@ class CreateProductBackup extends Command
                         $this->info('======================================');
                         $variants = [];
                         $variantOptions = [];
-
                         if ($product->children->count()) {
                             $optionIndex = 1;
                             foreach ($product->children as $child) {
@@ -225,7 +133,7 @@ class CreateProductBackup extends Command
                                             if ($child->s_cat == 'Bracelets') {
                                                 $optionIndex = array_search($vt, $vts) + 1;
                                                 $variant["option{$optionIndex}"] = $child->bracelet_length;
-                                                $variantTypeValue = $child->ring_size;
+                                                $variantTypeValue = $child->bracelet_length;
                                             }
                                         }
 
@@ -278,6 +186,7 @@ class CreateProductBackup extends Command
                         $mktDescription = $product->marketing_description;
 
                         if ($product->brand?->name == 'Pandora') {
+                            // $mktDescription .= "Brand: " . $product->brand?->name;
                             $mktDescription .= " - Design number: " . $product->real_design_number;
                         }
 
@@ -287,8 +196,9 @@ class CreateProductBackup extends Command
                             'variants' => $variants,
                             'options' => $options,
                             'product_type' => $product->s_cat,
-                            'vendor' => $product->brand?->name,
                         ];
+
+                        $productData['product']['vendor'] = $product->brand?->name;
 
                         $productTags = $this->calculateTags($product);
 
@@ -299,42 +209,58 @@ class CreateProductBackup extends Command
 
                         $productData['product']['tags'] = implode(",", $productTags);
 
-                        // Fetch and add ISDs as metafields (Copied from CreateProduct.php and adapted)
-                        $isds = RetailEdgeProductIsd::where('sku', $product->sku)->get();
-                        $metafieldsData = [];
-                        if ($isds->isNotEmpty()) {
-                            foreach ($isds as $isd) {
-                                $key = strtolower($isd->isd_name);
-                                $key = preg_replace('/[^a-z0-9\s]/', ' ', $key);
-                                $key = preg_replace('/\s+/', ' ', $key);
-                                $key = trim($key);
-                                $metafieldKey = str_replace(' ', '_', $key);
+                        // Dynamic metafield assignment using MetafieldAssignmentService
+                        $metafieldService = new MetafieldAssignmentService();
+                        $assignment = $metafieldService->determineMetafieldAssignment($product);
 
-                                if (!empty($metafieldKey) && !empty($isd->isd_value)) {
-                                    $metafieldsData[] = [
-                                        'key' => $metafieldKey,
-                                        'value' => $isd->isd_value,
-                                        'type' => 'single_line_text_field', // This type needs to be valid for GraphQL MetafieldInput
-                                        'namespace' => 'retail_edge_isd'
+                        $this->line("Metafield assignment type: {$assignment['type']} for Product: {$product->sku}");
+
+                        $metafields = [];
+
+                        // Handle product-level metafields for REST API
+                        if (!empty($assignment['product_metafields'])) {
+                            $this->line("Adding " . count($assignment['product_metafields']) . " product-level metafields");
+                            foreach ($assignment['product_metafields'] as $metafield) {
+                                $shopifyMetafieldDef = ShopifyMetafield::where('name', $metafield['isd_name'])
+                                    ->where('owner_type', 'PRODUCT')
+                                    ->first();
+
+                                if ($shopifyMetafieldDef && !empty($metafield['value'])) {
+                                    $metafields[] = [
+                                        'key' => $shopifyMetafieldDef->key,
+                                        'value' => $metafield['value'],
+                                        'type' => $shopifyMetafieldDef->type,
+                                        'namespace' => $shopifyMetafieldDef->namespace
                                     ];
+                                    $this->line("Added product metafield: {$metafield['isd_name']} = {$metafield['value']}");
+                                } else {
+                                    $this->warn("Skipping product metafield '{$metafield['isd_name']}': Definition not found or empty value.");
                                 }
                             }
                         }
 
-                        if (!empty($metafieldsData)) {
-                            $productData['product']['metafields'] = $metafieldsData;
+                        // Note: Variant-level metafields will be handled after product creation via GraphQL
+                        // since REST API doesn't support variant metafields during product creation
+
+                        if (!empty($metafields)) {
+                            $productData['product']['metafields'] = $metafields;
                         }
-                        // End of metafields logic
+
+                        $data = json_encode($productData);
+
+                        $this->info($data);
 
                         try {
-                            $this->info(json_encode($productData, JSON_PRETTY_PRINT)); // For debugging the payload
-                            $response = $this->createProduct($productData);
+                            $client = new Rest($session->getShop(), $session->getAccessToken());
 
-                            if (isset($response['data']['productCreate']['product'])) {
-                                $shopifyProduct = $response['data']['productCreate']['product'];
-                                $this->shopifyService->saveProductToDb($shopifyProduct);
-                                $this->info($shopifyProduct['title'] . ' - saved to database');
-                                Log::debug('Shopify product ' . $product->sku . ' created successfully!');
+                            /** @var RestResponse */
+                            $response = $client->post(path: 'products', body: $data);
+                            $body = $response->getDecodedBody();
+
+                            if (isset($body['product'])) {
+                                (new ShopifyService)->saveProductToDb($body['product']);
+                                $this->info($body['product']['title'] . ' - saved to database');
+                                Log::info('Shopify product ' . $product->sku . ' created successfully!');
 
                                 foreach ($product->children as $child) {
                                     $child->update(['uploaded_to_shopify' => 1]);
@@ -344,18 +270,35 @@ class CreateProductBackup extends Command
                                     $child->update(['uploaded_to_shopify' => 2]);
                                 }
 
-                                $message = 'Error while creating product. Sku :' . $product->sku . ', title: ' . $product->title;
+                                $message = 'Shopify error while creating product. Sku :' . $product->sku . ', title: '  . $product->title;
                                 Log::debug($message);
-                                Log::debug(json_encode($productData));
-                                Log::debug(json_encode($response));
-                                $this->info($message);
+                                Log::debug($data);
+
+                                $logMessage = '';
+
+                                if (isset($body['errors']['base'][0])) {
+                                    $logMessage = $message . " - " . $body['errors']['base'][0];
+                                }
+
+                                Log::debug($body);
+                                Log::error($logMessage);
+                                $this->info($logMessage);
                             }
                         } catch (\Exception $e) {
-                            foreach ($product->children as $child) {
-                                $child->update(['uploaded_to_shopify' => 2]);
+                            $product_errors_occurred = true;
+                            Log::error("Shopify API Exception for SKU " . ($product ? $product->sku : 'N/A') . ": " . $e->getMessage());
+                            // Mark children as failed
+                            if ($product && $product->children) {
+                                foreach ($product->children as $child_item) {
+                                    try {
+                                        $child_item->update(['uploaded_to_shopify' => 2]);
+                                    } catch (\Exception $childUpdateException) {
+                                        Log::error("Failed to update child status for SKU " . ($child_item && isset($child_item->sku) ? $child_item->sku : 'N/A') . " after API error: " . $childUpdateException->getMessage());
+                                    }
+                                }
                             }
-                            report($e);
-                            Log::debug("Error creating product {$product->sku}: " . $e->getMessage());
+                            report($e); // Report the original exception
+                            // Do NOT rethrow, allow loop to continue
                         }
                         usleep(1500000);
                     }
@@ -363,7 +306,12 @@ class CreateProductBackup extends Command
                     $count = $countQuery->count();
                 }
 
-                $job->update(['status' => 0, 'message' => null]);
+                if ($product_errors_occurred) {
+                    $job->update(['status' => 0, 'message' => 'Completed with one or more product creation errors.']);
+                } else {
+                    $job->update(['status' => 0, 'message' => null]);
+                }
+
                 Log::info("$marketplace $jobType finished!");
             } catch (\Exception $e) {
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);

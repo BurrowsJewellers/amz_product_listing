@@ -5,12 +5,14 @@ namespace App\Console\Commands\Shopify;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\SyncJobController;
-use Shopify\Clients\Rest;
+use Shopify\Clients\Graphql;
 use App\Models\Brand;
 use App\Models\RetailEdgeProduct;
 use App\Models\RetailEdgeProductIsd;
 use App\Models\ShopifyMetafield;
+use App\Models\PriceInventoryLog;
 use App\Services\ShopifyService;
+use App\Services\ShopifyConnectionService;
 use App\Services\MetafieldAssignmentService;
 use Illuminate\Support\Facades\DB;
 
@@ -28,7 +30,7 @@ class CreateProduct extends Command
      *
      * @var string
      */
-    protected $description = 'Command description';
+    protected $description = 'Creates Shopify products using GraphQL API with comprehensive logging';
 
     /**
      * Execute the console command.
@@ -76,6 +78,9 @@ class CreateProduct extends Command
 
                 $count = $countQuery->count();
 
+                // Initialize GraphQL client
+                $client = new Graphql($session->getShop(), $session->getAccessToken());
+
                 while ($count) {
                     $this->info('Count: ' . $count);
                     $product = RetailEdgeProduct::withWhereHas('children', function ($children) {
@@ -84,223 +89,78 @@ class CreateProduct extends Command
 
                     if ($product) {
                         $this->info('======================================');
-                        $variants = [];
-                        $variantOptions = [];
-                        if ($product->children->count()) {
-                            $optionIndex = 1;
-                            foreach ($product->children as $child) {
-                                $variant = [];
-                                $variant['sku'] = $child->sku;
+                        $this->info("Processing Product: {$product->title} (SKU: {$product->sku})");
 
-                                $retailPrices = [$child->retail_price1, $child->retail_price2];
-
-                                // Convert all prices to float and filter out non-positive values
-                                $prices = array_filter(array_map('floatval', $retailPrices), function ($price) {
-                                    return $price > 0;
-                                });
-
-                                // Set default values
-                                $price = 0;
-                                $compareAtPrice = 0;
-
-                                // Find the lower price and higher compare_at_price
-                                if (!empty($prices)) {
-                                    $price = min($prices);
-                                    $compareAtPrice = max($prices);
-                                }
-
-                                $variant['price'] = $price;
-                                $variant['barcode'] = $child->barcode;
-                                $variant['compare_at_price'] = ($price == $compareAtPrice) ? 0 : $compareAtPrice;
-                                $variant['inventory_management'] = 'shopify';
-
-                                $vts = array_filter(array_map('trim', array_map('strtolower', explode("-", $child->id3))));
-
-                                foreach ($vts as $vt) {
-                                    $vt = trim($vt);
-
-                                    if (isset($variantTypes[$vt])) {
-                                        $variantType = $variantTypes[$vt];
-                                        $variantTypeValue = '';
-
-                                        if ($vt == 'vt1') {
-                                            if ($child->s_cat == 'Rings') {
-                                                $optionIndex = array_search($vt, $vts) + 1;
-                                                $variant["option{$optionIndex}"] = $child->ring_size;
-                                                $variantTypeValue = $child->ring_size;
-                                            }
-
-                                            if ($child->s_cat == 'Bracelets') {
-                                                $optionIndex = array_search($vt, $vts) + 1;
-                                                $variant["option{$optionIndex}"] = $child->bracelet_length;
-                                                $variantTypeValue = $child->bracelet_length;
-                                            }
-                                        }
-
-                                        if ($vt == 'vt2') {
-                                            $optionIndex = array_search($vt, $vts) + 1;
-                                            $variant["option{$optionIndex}"] = $child->metal_colour;
-                                            $variantTypeValue = $child->metal_colour;
-                                        }
-
-                                        if ($vt == 'vt3') {
-                                            $optionIndex = array_search($vt, $vts) + 1;
-                                            $variant["option{$optionIndex}"] = $child->s_metal_type;
-                                            $variantTypeValue = $child->s_metal_type;
-                                        }
-
-                                        if ($vt == 'vt4') {
-                                            $optionIndex = array_search($vt, $vts) + 1;
-                                            $variant["option{$optionIndex}"] = $child->pendant_style;
-                                            $variantTypeValue = $child->pendant_style;
-                                        }
-
-                                        if (!isset($variantOptions[$variantType])) {
-                                            $variantOptions[$variantType][] = $variantTypeValue;
-                                        } else {
-                                            if (!in_array($variantTypeValue, $variantOptions[$variantType])) {
-                                                $variantOptions[$variantType][] = $variantTypeValue;
-                                            }
-                                        }
-                                    }
-                                }
-                                $variants[] = $variant;
-                            }
-                        }
-
-                        $options = [];
-
-                        foreach ($variantOptions as $variantType => $variantValues) {
-                            $option = [];
-                            $option['name'] = ucfirst($variantType);
-
-                            if (is_array($variantValues)) {
-                                $option['values'] = array_unique($variantValues);
-                            } else {
-                                $option['values'] = $variantValues;
-                            }
-
-                            $options[] = $option;
-                        }
-
-                        $mktDescription = $product->marketing_description;
-
-                        if ($product->brand?->name == 'Pandora') {
-                            // $mktDescription .= "Brand: " . $product->brand?->name;
-                            $mktDescription .= " - Design number: " . $product->real_design_number;
-                        }
-
-                        $productData['product'] = [
-                            'title' => $product->title,
-                            'body_html' => $mktDescription,
-                            'variants' => $variants,
-                            'options' => $options,
-                            'product_type' => $product->s_cat,
-                        ];
-
-                        $productData['product']['vendor'] = $product->brand?->name;
-
-                        $productTags = $this->calculateTags($product);
-
-                        if ($product->brand?->name == 'Pandora') {
-                            $productTags[] = 'Pandora';
-                            $productData['product']['template_suffix'] = 'no-buy';
-                        }
-
-                        $productData['product']['tags'] = implode(",", $productTags);
-
-                        // Dynamic metafield assignment using MetafieldAssignmentService
-                        $metafieldService = new MetafieldAssignmentService();
-                        $assignment = $metafieldService->determineMetafieldAssignment($product);
-
-                        $this->line("Metafield assignment type: {$assignment['type']} for Product: {$product->sku}");
-
-                        $metafields = [];
-
-                        // Handle product-level metafields for REST API
-                        if (!empty($assignment['product_metafields'])) {
-                            $this->line("Adding " . count($assignment['product_metafields']) . " product-level metafields");
-                            foreach ($assignment['product_metafields'] as $metafield) {
-                                $shopifyMetafieldDef = ShopifyMetafield::where('name', $metafield['isd_name'])
-                                    ->where('owner_type', 'PRODUCT')
-                                    ->first();
-
-                                if ($shopifyMetafieldDef && !empty($metafield['value'])) {
-                                    $metafields[] = [
-                                        'key' => $shopifyMetafieldDef->key,
-                                        'value' => $metafield['value'],
-                                        'type' => $shopifyMetafieldDef->type,
-                                        'namespace' => $shopifyMetafieldDef->namespace
-                                    ];
-                                    $this->line("Added product metafield: {$metafield['isd_name']} = {$metafield['value']}");
-                                } else {
-                                    $this->warn("Skipping product metafield '{$metafield['isd_name']}': Definition not found or empty value.");
-                                }
-                            }
-                        }
-
-                        // Note: Variant-level metafields will be handled after product creation via GraphQL
-                        // since REST API doesn't support variant metafields during product creation
-
-                        if (!empty($metafields)) {
-                            $productData['product']['metafields'] = $metafields;
-                        }
-
-                        $data = json_encode($productData);
-
-                        $this->info($data);
+                        // Log product creation start
+                        PriceInventoryLog::create([
+                            'marketplace' => 'Shopify',
+                            'item_identifier' => $product->sku,
+                            'change_type' => 'product_create',
+                            'from_value' => null,
+                            'to_value' => 'initiating',
+                            'status' => 'processing',
+                            'message' => "Starting GraphQL product creation for: {$product->title}",
+                            'job_name' => 'shopifyCreateProduct'
+                        ]);
 
                         try {
-                            $client = new Rest($session->getShop(), $session->getAccessToken());
+                            // Create product using GraphQL
+                            $createdProductData = $this->createProductWithGraphQL($product, $client);
 
-                            /** @var RestResponse */
-                            $response = $client->post(path: 'products', body: $data);
-                            $body = $response->getDecodedBody();
+                            if ($createdProductData) {
+                                // Log product creation success
+                                PriceInventoryLog::create([
+                                    'marketplace' => 'Shopify',
+                                    'item_identifier' => $product->sku,
+                                    'change_type' => 'product_create',
+                                    'from_value' => null,
+                                    'to_value' => $createdProductData['id'],
+                                    'status' => 'success',
+                                    'message' => "Product created successfully with ID: {$createdProductData['id']}",
+                                    'job_name' => 'shopifyCreateProduct'
+                                ]);
 
-                            if (isset($body['product'])) {
-                                (new ShopifyService)->saveProductToDb($body['product']);
-                                $this->info($body['product']['title'] . ' - saved to database');
-                                Log::info('Shopify product ' . $product->sku . ' created successfully!');
+                                // Handle metafields after creation (same as UpdateProduct)
+                                $this->handleMetafieldsAfterCreation($product, $createdProductData, $client);
 
+                                // Save product to database
+                                $this->saveProductToDatabase($createdProductData, $product);
+
+                                // Mark children as uploaded
                                 foreach ($product->children as $child) {
                                     $child->update(['uploaded_to_shopify' => 1]);
                                 }
+
+                                $this->info("Successfully created product: {$product->title}");
                             } else {
-                                foreach ($product->children as $child) {
-                                    $child->update(['uploaded_to_shopify' => 2]);
-                                }
-
-                                $message = 'Shopify error while creating product. Sku :' . $product->sku . ', title: '  . $product->title;
-                                Log::debug($message);
-                                Log::debug($data);
-
-                                $logMessage = '';
-
-                                if (isset($body['errors']['base'][0])) {
-                                    $logMessage = $message . " - " . $body['errors']['base'][0];
-                                }
-
-                                Log::debug($body);
-                                Log::error($logMessage);
-                                $this->info($logMessage);
+                                throw new \Exception("Product creation returned null data");
                             }
                         } catch (\Exception $e) {
                             $product_errors_occurred = true;
-                            Log::error("Shopify API Exception for SKU " . ($product ? $product->sku : 'N/A') . ": " . $e->getMessage());
+                            $errorMessage = $e->getMessage();
+
+                            // Log product creation failure
+                            PriceInventoryLog::create([
+                                'marketplace' => 'Shopify',
+                                'item_identifier' => $product->sku,
+                                'change_type' => 'product_create',
+                                'from_value' => null,
+                                'to_value' => 'failed',
+                                'status' => 'failed',
+                                'message' => "Product creation failed: {$errorMessage}",
+                                'job_name' => 'shopifyCreateProduct'
+                            ]);
+
+                            Log::error("Shopify GraphQL Exception for SKU {$product->sku}: {$errorMessage}");
+                            $this->error("Failed to create product {$product->sku}: {$errorMessage}");
+
                             // Mark children as failed
-                            if ($product && $product->children) {
-                                foreach ($product->children as $child_item) {
-                                    try {
-                                        $child_item->update(['uploaded_to_shopify' => 2]);
-                                    } catch (\Exception $childUpdateException) {
-                                        Log::error("Failed to update child status for SKU " . ($child_item && isset($child_item->sku) ? $child_item->sku : 'N/A') . " after API error: " . $childUpdateException->getMessage());
-                                    }
-                                }
+                            foreach ($product->children as $child) {
+                                $child->update(['uploaded_to_shopify' => 2]);
                             }
-                            report($e); // Report the original exception
-                            // Do NOT rethrow, allow loop to continue
                         }
-                        usleep(1500000);
+
+                        usleep(1500000); // 1.5 second delay
                     }
 
                     $count = $countQuery->count();
@@ -323,6 +183,613 @@ class CreateProduct extends Command
         }
     }
 
+    /**
+     * Create product using GraphQL API
+     */
+    private function createProductWithGraphQL(RetailEdgeProduct $product, $client): ?array
+    {
+        // Build product input for GraphQL
+        $productInput = $this->buildProductInput($product);
+
+        $mutation = <<<GRAPHQL
+        mutation productCreate(\$product: ProductCreateInput!) {
+          productCreate(product: \$product) {
+            product {
+              id
+              title
+              handle
+              status
+              options {
+                id
+                name
+                position
+                optionValues {
+                  id
+                  name
+                  hasVariants
+                }
+              }
+              variants(first: 100) {
+                edges {
+                  node {
+                    id
+                    sku
+                    price
+                    compareAtPrice
+                    barcode
+                  }
+                }
+              }
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+        GRAPHQL;
+
+        $this->line("Executing GraphQL productCreate mutation...");
+        $response = $client->query(['query' => $mutation, 'variables' => ['product' => $productInput]]);
+        $resultBody = json_decode($response->getBody()->getContents(), true);
+
+        // Handle errors
+        $errors = $this->handleGraphQLErrors($resultBody);
+        if (!empty($errors)) {
+            throw new \Exception("GraphQL Errors: " . implode(' | ', $errors));
+        }
+
+        $createdProduct = $resultBody['data']['productCreate']['product'] ?? null;
+
+        if ($createdProduct && $product->children->count() > 1) {
+            // Only create additional variants if there are multiple children
+            // The first variant is already created by productCreate
+            $this->createProductVariants($createdProduct, $product, $client);
+
+            // Refresh product data to get updated variants
+            $createdProduct = $this->getProductData($createdProduct['id'], $client);
+        }
+
+        return $createdProduct;
+    }
+
+    /**
+     * Build product input for GraphQL
+     */
+    private function buildProductInput(RetailEdgeProduct $product): array
+    {
+        $productTags = $this->calculateTags($product);
+
+        $productInput = [
+            'title' => $product->title,
+            'descriptionHtml' => $this->buildProductDescription($product),
+            'vendor' => $product->brand?->name,
+            'productType' => $product->s_cat,
+            'tags' => $productTags, // Array format for GraphQL
+            'status' => 'DRAFT', // Create as draft initially
+            'productOptions' => $this->buildProductOptions($product),
+        ];
+
+        // Add template suffix for Pandora products
+        if ($product->brand?->name === 'Pandora') {
+            $productInput['templateSuffix'] = 'no-buy';
+            if (!in_array('Pandora', $productTags)) {
+                $productInput['tags'][] = 'Pandora';
+            }
+        }
+
+        return $productInput;
+    }
+
+    /**
+     * Build product options for GraphQL (2025-01 format)
+     */
+    private function buildProductOptions(RetailEdgeProduct $product): array
+    {
+        $variantTypes = ['vt1' => 'Size', 'vt2' => 'Color', 'vt3' => 'Material', 'vt4' => 'Style'];
+        $variantOptions = [];
+
+        if ($product->children->count()) {
+            foreach ($product->children as $child) {
+                $vts = array_filter(array_map('trim', array_map('strtolower', explode("-", $child->id3))));
+
+                foreach ($vts as $vt) {
+                    $vt = trim($vt);
+
+                    if (isset($variantTypes[$vt])) {
+                        $variantType = $variantTypes[$vt];
+                        $variantTypeValue = '';
+
+                        if ($vt == 'vt1') {
+                            if ($child->s_cat == 'Rings') {
+                                $variantTypeValue = $child->ring_size;
+                            } elseif ($child->s_cat == 'Bracelets') {
+                                $variantTypeValue = $child->bracelet_length;
+                            }
+                        } elseif ($vt == 'vt2') {
+                            $variantTypeValue = $child->metal_colour;
+                        } elseif ($vt == 'vt3') {
+                            $variantTypeValue = $child->s_metal_type;
+                        } elseif ($vt == 'vt4') {
+                            $variantTypeValue = $child->pendant_style;
+                        }
+
+                        if (!empty($variantTypeValue)) {
+                            if (!isset($variantOptions[$variantType])) {
+                                $variantOptions[$variantType] = [];
+                            }
+                            if (!in_array($variantTypeValue, $variantOptions[$variantType])) {
+                                $variantOptions[$variantType][] = $variantTypeValue;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Convert to GraphQL 2025-01 format
+        $productOptions = [];
+        foreach ($variantOptions as $optionName => $optionValues) {
+            $values = [];
+            foreach ($optionValues as $value) {
+                $values[] = ['name' => $value];
+            }
+
+            $productOptions[] = [
+                'name' => $optionName,
+                'values' => $values
+            ];
+        }
+
+        return $productOptions;
+    }
+
+    /**
+     * Handle metafields after product creation (same logic as UpdateProduct)
+     */
+    private function handleMetafieldsAfterCreation(RetailEdgeProduct $product, array $createdProductData, $client): void
+    {
+        // Use MetafieldAssignmentService (same as UpdateProduct)
+        $metafieldService = new MetafieldAssignmentService();
+        $assignment = $metafieldService->determineMetafieldAssignment($product);
+
+        $this->line("Metafield assignment type: {$assignment['type']} for Product: {$product->sku}");
+
+        $metafieldsToSet = [];
+
+        // Handle product-level metafields (SAME as UpdateProduct)
+        if (!empty($assignment['product_metafields'])) {
+            $this->line("Processing " . count($assignment['product_metafields']) . " product-level metafields");
+            foreach ($assignment['product_metafields'] as $metafield) {
+                $shopifyMetafieldDef = ShopifyMetafield::where('name', $metafield['isd_name'])
+                    ->where('owner_type', 'PRODUCT')
+                    ->first();
+
+                if ($shopifyMetafieldDef && !empty($metafield['value'])) {
+                    $metafieldsToSet[] = [
+                        'ownerId' => $createdProductData['id'], // Product GID
+                        'namespace' => $shopifyMetafieldDef->namespace,
+                        'key' => $shopifyMetafieldDef->key,
+                        'type' => $shopifyMetafieldDef->type,
+                        'value' => (string) $metafield['value'],
+                    ];
+                    $this->line("Added product metafield: {$metafield['isd_name']} = {$metafield['value']}");
+                } else {
+                    $this->warn("Skipping product metafield '{$metafield['isd_name']}': Definition not found or empty value.");
+                }
+            }
+        }
+
+        // Handle variant-level metafields (SAME as UpdateProduct)
+        if (!empty($assignment['variant_metafields'])) {
+            foreach ($assignment['variant_metafields'] as $sku => $metafields) {
+                // Find variant ID from created product data
+                $variantId = $this->findVariantIdBySku($createdProductData, $sku);
+                if (!$variantId) {
+                    $this->warn("Could not find variant ID for SKU: {$sku}");
+                    continue;
+                }
+
+                $this->line("Processing " . count($metafields) . " variant-level metafields for SKU: {$sku}");
+                foreach ($metafields as $metafield) {
+                    $shopifyMetafieldDef = ShopifyMetafield::where('name', $metafield['isd_name'])
+                        ->where('owner_type', 'PRODUCTVARIANT')
+                        ->first();
+
+                    if ($shopifyMetafieldDef && !empty($metafield['value'])) {
+                        $metafieldsToSet[] = [
+                            'ownerId' => $variantId, // Variant GID
+                            'namespace' => $shopifyMetafieldDef->namespace,
+                            'key' => $shopifyMetafieldDef->key,
+                            'type' => $shopifyMetafieldDef->type,
+                            'value' => (string) $metafield['value'],
+                        ];
+                        $this->line("Added variant metafield: {$metafield['isd_name']} = {$metafield['value']}");
+                    } else {
+                        $this->warn("Skipping variant metafield '{$metafield['isd_name']}' for SKU {$sku}: Definition not found or empty value.");
+                    }
+                }
+            }
+        }
+
+        // Batch process all metafields using SAME mutation as UpdateProduct
+        if (!empty($metafieldsToSet)) {
+            $metafieldsSetMutation = <<<GRAPHQL
+            mutation metafieldsSet(\$metafields: [MetafieldsSetInput!]!) {
+              metafieldsSet(metafields: \$metafields) {
+                metafields {
+                  id
+                  key
+                  namespace
+                  value
+                }
+                userErrors {
+                  field
+                  message
+                  elementIndex
+                }
+              }
+            }
+            GRAPHQL;
+
+            try {
+                $this->line("Attempting to set/update " . count($metafieldsToSet) . " metafields for product: {$product->sku}");
+                $response = $client->query(['query' => $metafieldsSetMutation, 'variables' => ['metafields' => $metafieldsToSet]]);
+                $resultBody = json_decode($response->getBody()->getContents(), true);
+
+                $userErrors = $resultBody['data']['metafieldsSet']['userErrors'] ?? ($resultBody['errors'] ?? []);
+                if (!empty($userErrors)) {
+                    foreach ($userErrors as $error) {
+                        $failedMetafieldIndex = $error['elementIndex'] ?? 'N/A';
+                        $failedMetafield = ($failedMetafieldIndex !== 'N/A' && isset($metafieldsToSet[$failedMetafieldIndex])) ? $metafieldsToSet[$failedMetafieldIndex]['key'] : 'unknown';
+                        $this->error("Shopify MetafieldsSet API Error (Metafield: {$failedMetafield}): {$error['message']}");
+
+                        // Log metafield error
+                        PriceInventoryLog::create([
+                            'marketplace' => 'Shopify',
+                            'item_identifier' => $product->sku,
+                            'change_type' => 'metafield_create',
+                            'from_value' => null,
+                            'to_value' => 'failed',
+                            'status' => 'failed',
+                            'message' => "Metafield error: {$error['message']}",
+                            'job_name' => 'shopifyCreateProduct'
+                        ]);
+                    }
+                } else {
+                    $this->info("Successfully set/updated " . count($metafieldsToSet) . " metafields for product: {$product->sku}");
+
+                    // Log metafield success
+                    PriceInventoryLog::create([
+                        'marketplace' => 'Shopify',
+                        'item_identifier' => $product->sku,
+                        'change_type' => 'metafield_create',
+                        'from_value' => null,
+                        'to_value' => count($metafieldsToSet) . '_metafields',
+                        'status' => 'success',
+                        'message' => "Successfully created " . count($metafieldsToSet) . " metafields",
+                        'job_name' => 'shopifyCreateProduct'
+                    ]);
+                }
+            } catch (\Exception $e) {
+                $this->error("Exception during metafieldsSet for product {$product->sku}: " . $e->getMessage());
+
+                // Log metafield exception
+                PriceInventoryLog::create([
+                    'marketplace' => 'Shopify',
+                    'item_identifier' => $product->sku,
+                    'change_type' => 'metafield_create',
+                    'from_value' => null,
+                    'to_value' => 'exception',
+                    'status' => 'failed',
+                    'message' => "Metafield exception: " . $e->getMessage(),
+                    'job_name' => 'shopifyCreateProduct'
+                ]);
+            }
+        } else {
+            $this->line("No metafields to set for product: {$product->sku}");
+        }
+    }
+
+    /**
+     * Find variant ID by SKU from created product data
+     */
+    private function findVariantIdBySku(array $productData, string $sku): ?string
+    {
+        if (!isset($productData['variants']['edges'])) {
+            return null;
+        }
+
+        foreach ($productData['variants']['edges'] as $edge) {
+            if (isset($edge['node']['sku']) && $edge['node']['sku'] === $sku) {
+                return $edge['node']['id'];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Handle GraphQL errors
+     */
+    private function handleGraphQLErrors(array $resultBody): array
+    {
+        $errors = [];
+
+        // Handle user errors (field-specific)
+        if (!empty($resultBody['data']['productCreate']['userErrors'])) {
+            foreach ($resultBody['data']['productCreate']['userErrors'] as $error) {
+                $errors[] = "Field '{$error['field']}': {$error['message']}";
+            }
+        }
+
+        // Handle GraphQL errors (system-level)
+        if (!empty($resultBody['errors'])) {
+            foreach ($resultBody['errors'] as $error) {
+                $errors[] = "GraphQL Error: {$error['message']}";
+            }
+        }
+
+        return $errors;
+    }
+
+    /**
+     * Save product to database
+     */
+    private function saveProductToDatabase(array $productData, RetailEdgeProduct $product): void
+    {
+        try {
+            // Use existing ShopifyService method if available, or implement custom logic
+            $shopifyService = new ShopifyService();
+
+            // Convert GraphQL response to format expected by saveProductToDb
+            $restFormatProduct = $this->convertGraphQLToRestFormat($productData, $product);
+
+            $shopifyService->saveProductToDb($restFormatProduct);
+
+            $this->info("Product saved to database: {$product->title}");
+        } catch (\Exception $e) {
+            $this->warn("Failed to save product to database: " . $e->getMessage());
+            Log::warning("Failed to save product to database for SKU {$product->sku}: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Convert GraphQL response to REST format for database saving
+     */
+    private function convertGraphQLToRestFormat(array $graphqlProduct, RetailEdgeProduct $product): array
+    {
+        $variants = [];
+
+        if (isset($graphqlProduct['variants']['edges'])) {
+            foreach ($graphqlProduct['variants']['edges'] as $edge) {
+                $variant = $edge['node'];
+                $variants[] = [
+                    'id' => str_replace('gid://shopify/ProductVariant/', '', $variant['id']),
+                    'sku' => $variant['sku'] ?? '',
+                    'price' => $variant['price'] ?? '0.00',
+                    'compare_at_price' => $variant['compareAtPrice'] ?? null,
+                    'barcode' => $variant['barcode'] ?? '',
+                    'product_id' => str_replace('gid://shopify/Product/', '', $graphqlProduct['id']),
+                    'title' => $variant['title'] ?? null,
+                    'position' => 1, // Default position
+                    'inventory_policy' => 'deny', // Default
+                    'fulfillment_service' => 'manual', // Default
+                    'inventory_management' => 'shopify', // Default
+                    'option1' => null, // Will be populated by variant options if needed
+                    'option2' => null,
+                    'option3' => null,
+                    'taxable' => true, // Default
+                    'grams' => 0, // Default
+                    'weight' => 0, // Default
+                    'inventory_item_id' => null, // Not available in initial creation
+                    'inventory_quantity' => 0, // Default
+                    'old_inventory_quantity' => 0, // Default
+                    'requires_shipping' => true, // Default
+                ];
+            }
+        }
+
+        // Get tags from product
+        $productTags = $this->calculateTags($product);
+
+        return [
+            'id' => str_replace('gid://shopify/Product/', '', $graphqlProduct['id']),
+            'title' => $graphqlProduct['title'] ?? '',
+            'handle' => $graphqlProduct['handle'] ?? '',
+            'status' => strtolower($graphqlProduct['status'] ?? 'draft'),
+            'vendor' => $product->brand?->name ?? null,
+            'product_type' => $product->s_cat ?? null,
+            'tags' => $productTags,
+            'variants' => $variants,
+        ];
+    }
+
+    /**
+     * Build product description
+     */
+    private function buildProductDescription(RetailEdgeProduct $product): string
+    {
+        $mktDescription = $product->marketing_description ?? '';
+        if ($product->brand?->name == 'Pandora') {
+            $mktDescription .= " - Design number: " . $product->real_design_number;
+        }
+        return $mktDescription;
+    }
+
+    /**
+     * Create product variants
+     */
+    private function createProductVariants(array $createdProduct, RetailEdgeProduct $product, $client): void
+    {
+        $this->line("Creating variants for product: {$product->title}");
+
+        $variantTypes = ['vt1' => 'Size', 'vt2' => 'Color', 'vt3' => 'Material', 'vt4' => 'Style'];
+        $variants = [];
+
+        foreach ($product->children as $child) {
+            // Calculate prices
+            $retailPrices = [$child->retail_price1, $child->retail_price2];
+            $prices = array_filter(array_map('floatval', $retailPrices), function ($price) {
+                return $price > 0;
+            });
+
+            $price = empty($prices) ? 0 : min($prices);
+            $compareAtPrice = empty($prices) ? 0 : max($prices);
+
+            // Build option values for this variant
+            $optionValues = [];
+            $vts = array_filter(array_map('trim', array_map('strtolower', explode("-", $child->id3))));
+
+            foreach ($vts as $vt) {
+                $vt = trim($vt);
+                if (isset($variantTypes[$vt])) {
+                    $variantTypeValue = '';
+
+                    if ($vt == 'vt1') {
+                        if ($child->s_cat == 'Rings') {
+                            $variantTypeValue = $child->ring_size;
+                        } elseif ($child->s_cat == 'Bracelets') {
+                            $variantTypeValue = $child->bracelet_length;
+                        }
+                    } elseif ($vt == 'vt2') {
+                        $variantTypeValue = $child->metal_colour;
+                    } elseif ($vt == 'vt3') {
+                        $variantTypeValue = $child->s_metal_type;
+                    } elseif ($vt == 'vt4') {
+                        $variantTypeValue = $child->pendant_style;
+                    }
+
+                    if (!empty($variantTypeValue)) {
+                        $optionValues[] = $variantTypeValue;
+                    }
+                }
+            }
+
+            $variants[] = [
+                'productId' => $createdProduct['id'],
+                'sku' => $child->sku,
+                'price' => (string) $price,
+                'compareAtPrice' => ($price == $compareAtPrice) ? null : (string) $compareAtPrice,
+                'barcode' => $child->barcode,
+                'inventoryManagement' => 'SHOPIFY',
+                'optionValues' => $optionValues,
+            ];
+        }
+
+        if (!empty($variants)) {
+            $this->createVariantsBulk($variants, $client);
+        }
+    }
+
+    /**
+     * Create variants in bulk
+     */
+    private function createVariantsBulk(array $variants, $client): void
+    {
+        // Note: productVariantsBulkCreate may not be available in all Shopify API versions
+        // Fall back to individual creation for reliability
+        $this->line("Creating " . count($variants) . " variants individually for reliability...");
+        $this->createVariantsIndividually($variants, $client);
+    }
+
+    /**
+     * Create variants individually (fallback)
+     */
+    private function createVariantsIndividually(array $variants, $client): void
+    {
+        $this->line("Falling back to individual variant creation...");
+
+        $mutation = <<<GRAPHQL
+        mutation productVariantCreate(\$input: ProductVariantInput!) {
+          productVariantCreate(input: \$input) {
+            productVariant {
+              id
+              sku
+              price
+              compareAtPrice
+              barcode
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+        GRAPHQL;
+
+        foreach ($variants as $variant) {
+            try {
+                $response = $client->query(['query' => $mutation, 'variables' => ['input' => $variant]]);
+                $resultBody = json_decode($response->getBody()->getContents(), true);
+
+                $userErrors = $resultBody['data']['productVariantCreate']['userErrors'] ?? ($resultBody['errors'] ?? []);
+                if (!empty($userErrors)) {
+                    foreach ($userErrors as $error) {
+                        $this->error("Variant creation error for SKU {$variant['sku']}: {$error['message']}");
+                    }
+                } else {
+                    $this->line("Created variant: {$variant['sku']}");
+                }
+
+                usleep(500000); // 0.5 second delay between individual variant creations
+            } catch (\Exception $e) {
+                $this->error("Exception creating variant {$variant['sku']}: " . $e->getMessage());
+            }
+        }
+    }
+
+    /**
+     * Get updated product data
+     */
+    private function getProductData(string $productId, $client): ?array
+    {
+        $query = <<<GRAPHQL
+        query getProduct(\$id: ID!) {
+          product(id: \$id) {
+            id
+            title
+            handle
+            status
+            options {
+              id
+              name
+              position
+              optionValues {
+                id
+                name
+                hasVariants
+              }
+            }
+            variants(first: 100) {
+              edges {
+                node {
+                  id
+                  sku
+                  price
+                  compareAtPrice
+                  barcode
+                }
+              }
+            }
+          }
+        }
+        GRAPHQL;
+
+        try {
+            $response = $client->query(['query' => $query, 'variables' => ['id' => $productId]]);
+            $resultBody = json_decode($response->getBody()->getContents(), true);
+
+            return $resultBody['data']['product'] ?? null;
+        } catch (\Exception $e) {
+            $this->warn("Failed to fetch updated product data: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Calculate tags for product
+     */
     private function calculateTags(RetailEdgeProduct $product): array
     {
         $tags = [];
