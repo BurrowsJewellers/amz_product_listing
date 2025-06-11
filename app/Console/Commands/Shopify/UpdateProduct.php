@@ -105,15 +105,19 @@ class UpdateProduct extends Command
                 $calculatedVariantPrice = $this->calculatePrice($retailEdgeChild);
                 $variantInput = [
                     'id' => "gid://shopify/ProductVariant/{$variant->variant_id}", // Corrected GID
-                    'sku' => $retailEdgeChild->sku,
                     'price' => $calculatedVariantPrice,
                     'compareAtPrice' => $this->calculateCompareAtPrice($retailEdgeChild, $calculatedVariantPrice),
                     'barcode' => $retailEdgeChild->barcode,
-                    // 'inventoryManagement' => 'shopify', // Usually set at creation
-                    // 'inventoryQuantities' => [['availableQuantity' => $retailEdgeChild->quantity, 'locationId' => 'gid://shopify/Location/YOUR_LOCATION_ID']], // Requires Location GID
+                    'inventoryItem' => [
+                        'sku' => $retailEdgeChild->sku,
+                        // 'cost' => $retailEdgeChild->cost, // Add if you have cost data
+                        'tracked' => true, // Add if you want to track inventory
+                    ],
+                    // 'inventoryPolicy' => 'DENY', // Usually set at creation
+                    'inventoryQuantities' => [['availableQuantity' => $retailEdgeChild->quantity, 'locationId' => 'gid://shopify/Location/73940500785']], // Requires Location GID
                     // Option values are part of variant identification, changing them often means new variant.
                     // If you need to update selectedOptions, ensure they match existing option names.
-                    // 'options' => $this->buildVariantOptionsInput($retailEdgeChild), // This is complex for updates
+                    // 'optionValues' => $this->buildVariantOptionsInput($retailEdgeChild), // This is complex for updates
                 ];
                 // $productInput['variants'] = [$variantInput]; // Removed variants from productInput
 
@@ -154,14 +158,19 @@ class UpdateProduct extends Command
                     Log::error("Exception during productUpdate for Product GID {$productInput['id']}: " . $e->getMessage(), ['exception' => $e]);
                 }
 
-                // Now, update the variant using productVariantUpdate mutation
-                $variantUpdateMutation = <<<GRAPHQL
-                mutation productVariantUpdate(\$input: ProductVariantInput!) {
-                  productVariantUpdate(input: \$input) {
-                    productVariant {
+                // Update variant using productVariantsBulkUpdate mutation
+                $variantsBulkUpdateMutation = <<<GRAPHQL
+                mutation productVariantsBulkUpdate(\$productId: ID!, \$variants: [ProductVariantsBulkInput!]!) {
+                  productVariantsBulkUpdate(productId: \$productId, variants: \$variants) {
+                    product {
+                      id
+                    }
+                    productVariants {
                       id
                       sku
                       price
+                      compareAtPrice
+                      barcode
                     }
                     userErrors {
                       field
@@ -173,22 +182,28 @@ class UpdateProduct extends Command
 
                 try {
                     $this->line("Attempting to update variant data for Variant GID: {$variantInput['id']}");
-                    $response = $client->query(['query' => $variantUpdateMutation, 'variables' => ['input' => $variantInput]]);
+                    $response = $client->query([
+                        'query' => $variantsBulkUpdateMutation,
+                        'variables' => [
+                            'productId' => "gid://shopify/Product/{$variant->product_id}",
+                            'variants' => [$variantInput] // Single variant in array
+                        ]
+                    ]);
                     $resultBody = json_decode($response->getBody()->getContents(), true);
 
-                    $userErrors = $resultBody['data']['productVariantUpdate']['userErrors'] ?? ($resultBody['errors'] ?? []);
+                    $userErrors = $resultBody['data']['productVariantsBulkUpdate']['userErrors'] ?? ($resultBody['errors'] ?? []);
                     if (!empty($userErrors)) {
                         foreach ($userErrors as $error) {
-                            $this->error("Shopify Variant Update API Error for Variant GID {$variantInput['id']}: {$error['message']} " . (isset($error['field']) ? json_encode($error['field']) : ''));
-                            Log::error("Shopify Variant Update API Error for Variant GID {$variantInput['id']}: " . json_encode($error));
+                            $this->error("Shopify Variant Bulk Update API Error for Variant GID {$variantInput['id']}: {$error['message']} " . (isset($error['field']) ? json_encode($error['field']) : ''));
+                            Log::error("Shopify Variant Bulk Update API Error for Variant GID {$variantInput['id']}: " . json_encode($error));
                         }
                     } else {
                         $this->info("Successfully updated variant data for Variant GID: {$variantInput['id']}");
                         // $variant->update(['requires_update' => 0]); // Update local flag if successful
                     }
                 } catch (\Exception $e) {
-                    $this->error("Exception during variant update for Variant GID {$variantInput['id']}: " . $e->getMessage());
-                    Log::error("Exception during variant update for Variant GID {$variantInput['id']}: " . $e->getMessage(), ['exception' => $e]);
+                    $this->error("Exception during variant bulk update for Variant GID {$variantInput['id']}: " . $e->getMessage());
+                    Log::error("Exception during variant bulk update for Variant GID {$variantInput['id']}: " . $e->getMessage(), ['exception' => $e]);
                 }
 
                 // 2. Dynamic Metafield Assignment using MetafieldAssignmentService
