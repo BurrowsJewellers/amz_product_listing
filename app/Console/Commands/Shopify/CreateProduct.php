@@ -247,10 +247,15 @@ class CreateProduct extends Command
 
         $createdProduct = $resultBody['data']['productCreate']['product'] ?? null;
 
-        if ($createdProduct && $product->children->count() > 1) {
-            // Only create additional variants if there are multiple children
-            // The first variant is already created by productCreate
-            $this->createProductVariants($createdProduct, $product, $client);
+        if ($createdProduct) {
+            // Update the first variant's SKU if it's empty
+            $this->updateFirstVariantSku($createdProduct, $product, $client);
+
+            if ($product->children->count() > 1) {
+                // Only create additional variants if there are multiple children
+                // The first variant is already created by productCreate
+                $this->createProductVariants($createdProduct, $product, $client);
+            }
 
             // Refresh product data to get updated variants
             $createdProduct = $this->getProductData($createdProduct['id'], $client);
@@ -276,31 +281,8 @@ class CreateProduct extends Command
             'productOptions' => $this->buildProductOptions($product),
         ];
 
-        // Add the first variant with proper SKU to ensure it's created correctly
-        if ($product->children->count() > 0) {
-            $firstChild = $product->children->first();
-            $retailPrices = [$firstChild->retail_price1, $firstChild->retail_price2];
-            $prices = array_filter(array_map('floatval', $retailPrices), function ($price) {
-                return $price > 0;
-            });
-
-            $price = empty($prices) ? 0 : min($prices);
-            $compareAtPrice = empty($prices) ? 0 : max($prices);
-
-            $productInput['variants'] = [
-                [
-                    'price' => (string) $price,
-                    'compareAtPrice' => ($price == $compareAtPrice) ? null : (string) $compareAtPrice,
-                    'barcode' => $firstChild->barcode,
-                    'inventoryItem' => [
-                        'sku' => $firstChild->sku,
-                        'tracked' => true,
-                    ],
-                    'inventoryPolicy' => 'DENY',
-                    'taxable' => true,
-                ]
-            ];
-        }
+        // Note: ProductCreateInput doesn't support variants field
+        // We'll update the first variant after product creation
 
         // Add template suffix for Pandora products
         if ($product->brand?->name === 'Pandora') {
@@ -1067,6 +1049,89 @@ class CreateProduct extends Command
             'message' => "Metafield batch processing complete: {$totalSuccessful} successful, {$totalFailed} failed",
             'job_name' => 'shopifyCreateProduct'
         ]);
+    }
+
+    /**
+     * Update the first variant's SKU if it's empty
+     */
+    private function updateFirstVariantSku(array $createdProduct, RetailEdgeProduct $product, $client): void
+    {
+        if (!isset($createdProduct['variants']['edges'][0])) {
+            return;
+        }
+
+        $firstVariant = $createdProduct['variants']['edges'][0]['node'];
+        $firstChild = $product->children->first();
+
+        // Check if the first variant has an empty SKU
+        if (empty($firstVariant['sku']) && $firstChild) {
+            $this->line("Updating first variant SKU from empty to: {$firstChild->sku}");
+
+            // Calculate prices for the first variant
+            $retailPrices = [$firstChild->retail_price1, $firstChild->retail_price2];
+            $prices = array_filter(array_map('floatval', $retailPrices), function ($price) {
+                return $price > 0;
+            });
+
+            $price = empty($prices) ? 0 : min($prices);
+            $compareAtPrice = empty($prices) ? 0 : max($prices);
+
+            $variantInput = [
+                'id' => $firstVariant['id'],
+                'price' => (string) $price,
+                'compareAtPrice' => ($price == $compareAtPrice) ? null : (string) $compareAtPrice,
+                'barcode' => $firstChild->barcode,
+                'inventoryItem' => [
+                    'sku' => $firstChild->sku,
+                    'tracked' => true,
+                ],
+                'inventoryPolicy' => 'DENY',
+                'taxable' => true,
+            ];
+
+            $mutation = <<<GRAPHQL
+            mutation productVariantsBulkUpdate(\$productId: ID!, \$variants: [ProductVariantsBulkInput!]!) {
+              productVariantsBulkUpdate(productId: \$productId, variants: \$variants) {
+                product {
+                  id
+                }
+                productVariants {
+                  id
+                  sku
+                  price
+                  compareAtPrice
+                  barcode
+                }
+                userErrors {
+                  field
+                  message
+                }
+              }
+            }
+            GRAPHQL;
+
+            try {
+                $response = $client->query([
+                    'query' => $mutation,
+                    'variables' => [
+                        'productId' => $createdProduct['id'],
+                        'variants' => [$variantInput]
+                    ]
+                ]);
+                $resultBody = json_decode($response->getBody()->getContents(), true);
+
+                $userErrors = $resultBody['data']['productVariantsBulkUpdate']['userErrors'] ?? ($resultBody['errors'] ?? []);
+                if (!empty($userErrors)) {
+                    foreach ($userErrors as $error) {
+                        $this->error("First variant SKU update error: {$error['message']}");
+                    }
+                } else {
+                    $this->info("Successfully updated first variant SKU to: {$firstChild->sku}");
+                }
+            } catch (\Exception $e) {
+                $this->error("Exception updating first variant SKU: " . $e->getMessage());
+            }
+        }
     }
 
     /**
