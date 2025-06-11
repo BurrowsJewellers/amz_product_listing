@@ -306,7 +306,7 @@ class GetProductsFromEWebMain extends Command
             // $isdValue = isset($isd->Value) ? preg_replace('/\s+/', ' ', preg_replace('/[^a-zA-Z0-9 ]/', ' ', trim($isd->Value))) : null;
             $isdValue = isset($isd->Value) ? trim($isd->Value) : null;
 
-            if (!empty($isdName) && !empty($isdValue)) {
+            if (!empty($isdName) && !empty($isdValue) && $isdValue != 'N/A') {
                 DB::table($tempIsdTable)->insert([
                     'sku' => $sku,
                     'isd_index' => $isdIndex,

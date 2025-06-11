@@ -1139,14 +1139,40 @@ class CreateProduct extends Command
      */
     private function findSkuByVariantGid(RetailEdgeProduct $product, string $variantGid): ?string
     {
-        // For CreateProduct, we need to match the variant GID with the product children
-        // Since we're creating new products, we can match by the order or by finding the variant in the created product data
-        // For now, let's extract from the children based on the variant GID pattern
-        foreach ($product->children as $child) {
-            // This is a simplified approach - in a real scenario, you might need to store the mapping
-            // between child SKUs and created variant GIDs during the creation process
-            return $child->sku; // Return the first child's SKU for now
+        // Extract the variant ID from the GID
+        $variantId = str_replace('gid://shopify/ProductVariant/', '', $variantGid);
+
+        // Get the latest product data to find the SKU for this variant GID
+        $productId = null;
+
+        // Try to extract product ID from the current context or use a fresh query
+        // We need to query Shopify to get the current variant data
+        try {
+            $session = (new \App\Services\ShopifyService)->getSession();
+            $client = new \Shopify\Clients\Graphql($session->getShop(), $session->getAccessToken());
+
+            $query = <<<GRAPHQL
+            query getVariant(\$id: ID!) {
+              productVariant(id: \$id) {
+                id
+                sku
+              }
+            }
+            GRAPHQL;
+
+            $response = $client->query(['query' => $query, 'variables' => ['id' => $variantGid]]);
+            $resultBody = json_decode($response->getBody()->getContents(), true);
+
+            $variant = $resultBody['data']['productVariant'] ?? null;
+            if ($variant && !empty($variant['sku'])) {
+                return $variant['sku'];
+            }
+        } catch (\Exception $e) {
+            // If GraphQL query fails, fall back to the original logic
+            Log::warning("Failed to query variant SKU for GID {$variantGid}: " . $e->getMessage());
         }
+
+        // Fallback: return null if we can't find the SKU
         return null;
     }
 }
