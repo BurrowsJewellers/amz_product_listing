@@ -219,6 +219,10 @@ class CreateProduct extends Command
                     price
                     compareAtPrice
                     barcode
+                    selectedOptions {
+                      name
+                      value
+                    }
                   }
                 }
               }
@@ -268,7 +272,7 @@ class CreateProduct extends Command
             'vendor' => $product->brand?->name,
             'productType' => $product->s_cat,
             'tags' => $productTags, // Array format for GraphQL
-            'status' => 'ACTIVE', // Create as draft initially
+            'status' => 'ACTIVE', // Create as active
             'productOptions' => $this->buildProductOptions($product),
         ];
 
@@ -344,6 +348,225 @@ class CreateProduct extends Command
         }
 
         return $productOptions;
+    }
+
+    /**
+     * Create product variants (with duplicate detection)
+     */
+    private function createProductVariants(array $createdProduct, RetailEdgeProduct $product, $client): void
+    {
+        $this->line("Creating variants for product: {$product->title}");
+
+        $variantTypes = ['vt1' => 'Size', 'vt2' => 'Color', 'vt3' => 'Material', 'vt4' => 'Style'];
+        $variants = [];
+        $existingVariants = $this->getExistingVariantOptions($createdProduct);
+
+        foreach ($product->children as $child) {
+            // Calculate prices
+            $retailPrices = [$child->retail_price1, $child->retail_price2];
+            $prices = array_filter(array_map('floatval', $retailPrices), function ($price) {
+                return $price > 0;
+            });
+
+            $price = empty($prices) ? 0 : min($prices);
+            $compareAtPrice = empty($prices) ? 0 : max($prices);
+
+            // Build option values for this variant
+            $optionValues = [];
+            $vts = array_filter(array_map('trim', array_map('strtolower', explode("-", $child->id3))));
+
+            foreach ($vts as $vt) {
+                $vt = trim($vt);
+                if (isset($variantTypes[$vt])) {
+                    $variantTypeValue = '';
+
+                    if ($vt == 'vt1') {
+                        if ($child->s_cat == 'Rings') {
+                            $variantTypeValue = $child->ring_size;
+                        } elseif ($child->s_cat == 'Bracelets') {
+                            $variantTypeValue = $child->bracelet_length;
+                        }
+                    } elseif ($vt == 'vt2') {
+                        $variantTypeValue = $child->metal_colour;
+                    } elseif ($vt == 'vt3') {
+                        $variantTypeValue = $child->s_metal_type;
+                    } elseif ($vt == 'vt4') {
+                        $variantTypeValue = $child->pendant_style;
+                    }
+
+                    if (!empty($variantTypeValue)) {
+                        $optionValues[] = $variantTypeValue;
+                    }
+                }
+            }
+
+            // Check if this variant combination already exists
+            $optionKey = implode(' / ', $optionValues);
+            if (in_array($optionKey, $existingVariants)) {
+                $this->line("Skipping variant {$child->sku} - option combination '{$optionKey}' already exists");
+                continue;
+            }
+
+            $variants[] = [
+                'productId' => $createdProduct['id'],
+                'sku' => $child->sku,
+                'price' => (string) $price,
+                'compareAtPrice' => ($price == $compareAtPrice) ? null : (string) $compareAtPrice,
+                'barcode' => $child->barcode,
+                'optionValues' => $optionValues,
+            ];
+        }
+
+        if (!empty($variants)) {
+            $this->createVariantsBulk($variants, $client, $createdProduct);
+        } else {
+            $this->line("No new variants to create - all option combinations already exist");
+        }
+    }
+
+    /**
+     * Get existing variant option combinations from created product
+     */
+    private function getExistingVariantOptions(array $createdProduct): array
+    {
+        $existingVariants = [];
+
+        if (isset($createdProduct['variants']['edges'])) {
+            foreach ($createdProduct['variants']['edges'] as $edge) {
+                $variant = $edge['node'];
+                if (isset($variant['selectedOptions'])) {
+                    $optionValues = [];
+                    foreach ($variant['selectedOptions'] as $option) {
+                        $optionValues[] = $option['value'];
+                    }
+                    $existingVariants[] = implode(' / ', $optionValues);
+                }
+            }
+        }
+
+        return $existingVariants;
+    }
+
+    /**
+     * Create variants in bulk
+     */
+    private function createVariantsBulk(array $variants, $client, array $createdProduct): void
+    {
+        $this->line("Creating " . count($variants) . " variants using bulk creation...");
+        $this->createVariantsIndividually($variants, $client, $createdProduct);
+    }
+
+    /**
+     * Create variants using productVariantsBulkCreate (2025-01 API)
+     */
+    private function createVariantsIndividually(array $variants, $client, array $createdProduct): void
+    {
+        $this->line("Using productVariantsBulkCreate for variant creation...");
+
+        // Convert variants to the correct format for productVariantsBulkCreate
+        $bulkVariants = [];
+        foreach ($variants as $variant) {
+            $bulkVariant = [
+                'price' => $variant['price'],
+                'barcode' => $variant['barcode'],
+                'inventoryPolicy' => 'DENY',
+                'taxable' => true,
+            ];
+
+            // Add compareAtPrice if it's different from price
+            if (!empty($variant['compareAtPrice']) && $variant['compareAtPrice'] !== $variant['price']) {
+                $bulkVariant['compareAtPrice'] = $variant['compareAtPrice'];
+            }
+
+            // Add inventory item with SKU (correct field structure)
+            $bulkVariant['inventoryItem'] = [
+                'sku' => $variant['sku'],
+                'tracked' => true,
+            ];
+
+            // Add option values if they exist (using optionId from created product)
+            if (!empty($variant['optionValues'])) {
+                $bulkVariant['optionValues'] = [];
+                foreach ($variant['optionValues'] as $index => $value) {
+                    $optionId = $this->getOptionIdByIndex($createdProduct, $index);
+                    if ($optionId) {
+                        $bulkVariant['optionValues'][] = [
+                            'name' => $value,
+                            'optionId' => $optionId,
+                        ];
+                    }
+                }
+            }
+
+            $bulkVariants[] = $bulkVariant;
+        }
+
+        $mutation = <<<GRAPHQL
+        mutation productVariantsBulkCreate(\$productId: ID!, \$variants: [ProductVariantsBulkInput!]!) {
+          productVariantsBulkCreate(productId: \$productId, variants: \$variants) {
+            product {
+              id
+            }
+            productVariants {
+              id
+              sku
+              price
+              compareAtPrice
+              barcode
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+        GRAPHQL;
+
+        try {
+            $productId = $variants[0]['productId']; // Get product ID from first variant
+            $response = $client->query([
+                'query' => $mutation,
+                'variables' => [
+                    'productId' => $productId,
+                    'variants' => $bulkVariants
+                ]
+            ]);
+            $resultBody = json_decode($response->getBody()->getContents(), true);
+
+            $userErrors = $resultBody['data']['productVariantsBulkCreate']['userErrors'] ?? ($resultBody['errors'] ?? []);
+            if (!empty($userErrors)) {
+                foreach ($userErrors as $error) {
+                    $this->error("Bulk variant creation error: {$error['message']} " . (isset($error['field']) ? json_encode($error['field']) : ''));
+                }
+            } else {
+                $createdVariants = $resultBody['data']['productVariantsBulkCreate']['productVariants'] ?? [];
+                $this->info("Successfully created " . count($createdVariants) . " variants using bulk creation");
+
+                foreach ($createdVariants as $variant) {
+                    $this->line("Created variant: {$variant['sku']} (ID: {$variant['id']})");
+                }
+            }
+        } catch (\Exception $e) {
+            $this->error("Exception during bulk variant creation: " . $e->getMessage());
+        }
+    }
+
+    /**
+     * Get option ID by index from created product
+     */
+    private function getOptionIdByIndex(array $createdProduct, int $index): ?string
+    {
+        if (!isset($createdProduct['options'])) {
+            return null;
+        }
+
+        // Sort options by position to ensure correct mapping
+        $options = $createdProduct['options'];
+        usort($options, function ($a, $b) {
+            return ($a['position'] ?? 0) <=> ($b['position'] ?? 0);
+        });
+
+        return $options[$index]['id'] ?? null;
     }
 
     /**
@@ -623,204 +846,6 @@ class CreateProduct extends Command
     }
 
     /**
-     * Create product variants
-     */
-    private function createProductVariants(array $createdProduct, RetailEdgeProduct $product, $client): void
-    {
-        $this->line("Creating variants for product: {$product->title}");
-
-        $variantTypes = ['vt1' => 'Size', 'vt2' => 'Color', 'vt3' => 'Material', 'vt4' => 'Style'];
-        $variants = [];
-
-        foreach ($product->children as $child) {
-            // Calculate prices
-            $retailPrices = [$child->retail_price1, $child->retail_price2];
-            $prices = array_filter(array_map('floatval', $retailPrices), function ($price) {
-                return $price > 0;
-            });
-
-            $price = empty($prices) ? 0 : min($prices);
-            $compareAtPrice = empty($prices) ? 0 : max($prices);
-
-            // Build option values for this variant
-            $optionValues = [];
-            $vts = array_filter(array_map('trim', array_map('strtolower', explode("-", $child->id3))));
-
-            foreach ($vts as $vt) {
-                $vt = trim($vt);
-                if (isset($variantTypes[$vt])) {
-                    $variantTypeValue = '';
-
-                    if ($vt == 'vt1') {
-                        if ($child->s_cat == 'Rings') {
-                            $variantTypeValue = $child->ring_size;
-                        } elseif ($child->s_cat == 'Bracelets') {
-                            $variantTypeValue = $child->bracelet_length;
-                        }
-                    } elseif ($vt == 'vt2') {
-                        $variantTypeValue = $child->metal_colour;
-                    } elseif ($vt == 'vt3') {
-                        $variantTypeValue = $child->s_metal_type;
-                    } elseif ($vt == 'vt4') {
-                        $variantTypeValue = $child->pendant_style;
-                    }
-
-                    if (!empty($variantTypeValue)) {
-                        $optionValues[] = $variantTypeValue;
-                    }
-                }
-            }
-
-            $variants[] = [
-                'productId' => $createdProduct['id'],
-                'sku' => $child->sku,
-                'price' => (string) $price,
-                'compareAtPrice' => ($price == $compareAtPrice) ? null : (string) $compareAtPrice,
-                'barcode' => $child->barcode,
-                'inventoryManagement' => 'SHOPIFY',
-                'optionValues' => $optionValues,
-            ];
-        }
-
-        if (!empty($variants)) {
-            $this->createVariantsBulk($variants, $client, $createdProduct);
-        }
-    }
-
-    /**
-     * Create variants in bulk
-     */
-    private function createVariantsBulk(array $variants, $client, array $createdProduct): void
-    {
-        // Note: productVariantsBulkCreate may not be available in all Shopify API versions
-        // Fall back to individual creation for reliability
-        $this->line("Creating " . count($variants) . " variants individually for reliability...");
-        $this->createVariantsIndividually($variants, $client, $createdProduct);
-    }
-
-    /**
-     * Create variants using productVariantsBulkCreate (2025-01 API)
-     */
-    private function createVariantsIndividually(array $variants, $client, array $createdProduct): void
-    {
-        $this->line("Using productVariantsBulkCreate for variant creation...");
-
-        // Convert variants to the correct format for productVariantsBulkCreate
-        $bulkVariants = [];
-        foreach ($variants as $variant) {
-            $bulkVariant = [
-                'price' => $variant['price'],
-                'barcode' => $variant['barcode'],
-                'inventoryPolicy' => 'DENY',
-                'taxable' => true,
-            ];
-
-            // Add compareAtPrice if it's different from price
-            if (!empty($variant['compareAtPrice']) && $variant['compareAtPrice'] !== $variant['price']) {
-                $bulkVariant['compareAtPrice'] = $variant['compareAtPrice'];
-            }
-
-            // Add inventory item with SKU (correct field structure)
-            $bulkVariant['inventoryItem'] = [
-                'sku' => $variant['sku'],
-                'tracked' => true,
-            ];
-
-            // Add option values if they exist (using optionId from created product)
-            if (!empty($variant['optionValues'])) {
-                $bulkVariant['optionValues'] = [];
-                foreach ($variant['optionValues'] as $index => $value) {
-                    $optionId = $this->getOptionIdByIndex($createdProduct, $index);
-                    if ($optionId) {
-                        $bulkVariant['optionValues'][] = [
-                            'name' => $value,
-                            'optionId' => $optionId,
-                        ];
-                    }
-                }
-            }
-
-            $bulkVariants[] = $bulkVariant;
-        }
-
-        $mutation = <<<GRAPHQL
-        mutation productVariantsBulkCreate(\$productId: ID!, \$variants: [ProductVariantsBulkInput!]!) {
-          productVariantsBulkCreate(productId: \$productId, variants: \$variants) {
-            product {
-              id
-            }
-            productVariants {
-              id
-              sku
-              price
-              compareAtPrice
-              barcode
-            }
-            userErrors {
-              field
-              message
-            }
-          }
-        }
-        GRAPHQL;
-
-        try {
-            $productId = $variants[0]['productId']; // Get product ID from first variant
-            $response = $client->query([
-                'query' => $mutation,
-                'variables' => [
-                    'productId' => $productId,
-                    'variants' => $bulkVariants
-                ]
-            ]);
-            $resultBody = json_decode($response->getBody()->getContents(), true);
-
-            $userErrors = $resultBody['data']['productVariantsBulkCreate']['userErrors'] ?? ($resultBody['errors'] ?? []);
-            if (!empty($userErrors)) {
-                foreach ($userErrors as $error) {
-                    $this->error("Bulk variant creation error: {$error['message']} " . (isset($error['field']) ? json_encode($error['field']) : ''));
-                }
-            } else {
-                $createdVariants = $resultBody['data']['productVariantsBulkCreate']['productVariants'] ?? [];
-                $this->info("Successfully created " . count($createdVariants) . " variants using bulk creation");
-
-                foreach ($createdVariants as $variant) {
-                    $this->line("Created variant: {$variant['sku']} (ID: {$variant['id']})");
-                }
-            }
-        } catch (\Exception $e) {
-            $this->error("Exception during bulk variant creation: " . $e->getMessage());
-        }
-    }
-
-    /**
-     * Get option ID by index from created product
-     */
-    private function getOptionIdByIndex(array $createdProduct, int $index): ?string
-    {
-        if (!isset($createdProduct['options'])) {
-            return null;
-        }
-
-        // Sort options by position to ensure correct mapping
-        $options = $createdProduct['options'];
-        usort($options, function ($a, $b) {
-            return ($a['position'] ?? 0) <=> ($b['position'] ?? 0);
-        });
-
-        return $options[$index]['id'] ?? null;
-    }
-
-    /**
-     * Get option name by index (maps to the product options)
-     */
-    private function getOptionNameByIndex(int $index): string
-    {
-        $optionNames = ['Size', 'Color', 'Material', 'Style']; // Based on your variant types
-        return $optionNames[$index] ?? "Option" . ($index + 1);
-    }
-
-    /**
      * Get updated product data
      */
     private function getProductData(string $productId, $client): ?array
@@ -850,6 +875,10 @@ class CreateProduct extends Command
                   price
                   compareAtPrice
                   barcode
+                  selectedOptions {
+                    name
+                    value
+                  }
                 }
               }
             }
