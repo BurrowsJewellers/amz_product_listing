@@ -97,7 +97,7 @@ class Kernel extends ConsoleKernel
         $schedule->command('shopifyUploadImages')->everyThreeHours();
         $schedule->command('shopifyArchiveProducts')->cron('20 */3 * * *');
 
-        $schedule->command('shopifyUpdateProduct')->cron('0 20 * * 6');
+        $schedule->command('shopify:update-product')->cron('0 20 * * 6');
 
         $schedule->command('shopifyCountImages')->dailyAt('17:00');
     }
