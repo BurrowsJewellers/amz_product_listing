@@ -709,12 +709,9 @@ class CreateProduct extends Command
         $bulkVariants = [];
         foreach ($variants as $variant) {
             $bulkVariant = [
-                'sku' => $variant['sku'],
                 'price' => $variant['price'],
                 'barcode' => $variant['barcode'],
-                'inventoryManagement' => 'SHOPIFY',
                 'inventoryPolicy' => 'DENY',
-                'requiresShipping' => true,
                 'taxable' => true,
             ];
 
@@ -723,13 +720,19 @@ class CreateProduct extends Command
                 $bulkVariant['compareAtPrice'] = $variant['compareAtPrice'];
             }
 
-            // Add option values if they exist
+            // Add inventory item with SKU (correct field structure)
+            $bulkVariant['inventoryItem'] = [
+                'sku' => $variant['sku'],
+                'tracked' => true,
+            ];
+
+            // Add option values if they exist (correct field structure)
             if (!empty($variant['optionValues'])) {
                 $bulkVariant['optionValues'] = [];
                 foreach ($variant['optionValues'] as $index => $value) {
                     $bulkVariant['optionValues'][] = [
-                        'optionName' => $this->getOptionNameByIndex($index), // We'll need to map this
-                        'name' => $value
+                        'name' => $value,
+                        'optionName' => $this->getOptionNameByIndex($index),
                     ];
                 }
             }
