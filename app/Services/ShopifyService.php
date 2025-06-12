@@ -210,7 +210,7 @@ class ShopifyService extends ShopifyConnectionService
 
                 ],
                 [
-                    'available' => $inventoryLevelData['available'],
+                    'available' => $inventoryLevelData['available'] ?? 0,
                     'inventory_updated_at' => Carbon::parse($inventoryLevelData['updated_at']),
                 ]
             );
