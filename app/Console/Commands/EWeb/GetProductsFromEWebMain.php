@@ -21,7 +21,7 @@ class GetProductsFromEWebMain extends Command
      *
      * @var string
      */
-    protected $signature = 'getProductsFromEWebMain {--memory-limit=512M : Memory limit for this command} {--chunk-size=25 : Items per chunk} {--resume-from=0 : Resume from specific item number}';
+    protected $signature = 'getProductsFromEWebMain {--memory-limit=512M : Memory limit for this command} {--chunk-size=100 : Items per chunk} {--resume-from=0 : Resume from specific item number}';
 
     /**
      * The console command description.
@@ -224,7 +224,7 @@ class GetProductsFromEWebMain extends Command
             $errorCount = 0;
             $chunkSize = (int) $this->option('chunk-size');
             $resumeFrom = (int) $this->option('resume-from');
-            
+
             // Get total count from cached file without loading all data
             $totalItems = $this->getTotalItemCount($retailEdgeService);
             $totalChunks = ceil($totalItems / $chunkSize);
@@ -254,7 +254,7 @@ class GetProductsFromEWebMain extends Command
             for ($chunkIndex = $startChunk; $chunkIndex < $totalChunks; $chunkIndex++) {
                 $startIndex = $chunkIndex * $chunkSize;
                 $chunk = $this->getItemChunk($retailEdgeService, $startIndex, $chunkSize);
-                
+
                 if (empty($chunk)) {
                     $this->warn("No items found in chunk {$chunkIndex}, stopping processing");
                     break;
@@ -324,7 +324,7 @@ class GetProductsFromEWebMain extends Command
                     gc_mem_caches();
                 }
                 gc_collect_cycles();
-                
+
                 // Force garbage collection more frequently
                 if (function_exists('gc_disable')) {
                     gc_disable();
@@ -338,13 +338,13 @@ class GetProductsFromEWebMain extends Command
 
                 // Add delay and check memory before continuing
                 usleep(250000); // 0.25 second
-                
+
                 // Check memory usage and exit if too high
                 $currentMemory = memory_get_usage(true);
                 $memoryLimit = ini_get('memory_limit');
                 $memoryLimitBytes = $this->convertToBytes($memoryLimit);
                 $memoryUsagePercent = ($currentMemory / $memoryLimitBytes) * 100;
-                
+
                 if ($memoryUsagePercent > 90) {
                     $this->error("Memory usage too high ({$memoryUsagePercent}%), stopping to prevent system kill");
                     $checkpointFile = storage_path('app/eweb_checkpoint.txt');
@@ -495,12 +495,12 @@ class GetProductsFromEWebMain extends Command
         // Safely process ISDs if they exist
         if (isset($item->ISDs) && isset($item->ISDs->ItemISD)) {
             $isds = is_array($item->ISDs->ItemISD) ? $item->ISDs->ItemISD : [$item->ISDs->ItemISD];
-            
+
             foreach ($isds as $other) {
                 if (!isset($other->Name) || !isset($other->Value)) {
                     continue;
                 }
-                
+
                 $keyName = str_replace(['.', ' ', ',', '_', '\''], '', $other->Name);
                 if (empty($keyName)) {
                     continue;
@@ -678,36 +678,36 @@ class GetProductsFromEWebMain extends Command
         // Instead of resetting all flags, we'll be more selective
         // First, get all SKUs that should be marked as uploaded based on multiple sources
         $uploadedSkus = collect();
-        
+
         // Get SKUs from ShopifySku backup table
         $shopifySkus = ShopifySku::pluck('sku');
         $uploadedSkus = $uploadedSkus->merge($shopifySkus);
         Log::info("Found {$shopifySkus->count()} SKUs in ShopifySku backup table.");
-        
+
         // Get SKUs from shopify_product_variants table
         $variantSkus = DB::table('shopify_product_variants')->pluck('sku');
         $uploadedSkus = $uploadedSkus->merge($variantSkus);
         Log::info("Found {$variantSkus->count()} SKUs in shopify_product_variants table.");
-        
+
         // Get unique SKUs
         $uploadedSkus = $uploadedSkus->unique()->values();
         Log::info("Total unique SKUs that should be marked as uploaded: {$uploadedSkus->count()}");
-        
+
         // Update in batches for better performance
         if ($uploadedSkus->isNotEmpty()) {
             $chunks = $uploadedSkus->chunk(1000);
             $totalUpdated = 0;
-            
+
             foreach ($chunks as $chunk) {
                 $updated = RetailEdgeProduct::whereIn('sku', $chunk->toArray())
                     ->where('uploaded_to_shopify', 0)
                     ->update(['uploaded_to_shopify' => 1]);
                 $totalUpdated += $updated;
             }
-            
+
             Log::info("Marked {$totalUpdated} RetailEdgeProducts as 'uploaded_to_shopify' (only those that were previously 0).");
         }
-        
+
         // Now handle products that should NOT be marked as uploaded
         // Only reset flags for products that are not in our uploaded list
         $resetCount = RetailEdgeProduct::where('uploaded_to_shopify', 1)
@@ -750,7 +750,7 @@ class GetProductsFromEWebMain extends Command
             $data = json_decode($cachedData, true);
             return count($data);
         }
-        
+
         // If no cache, we'll need to fetch and count
         $activeItems = $service->getAllActiveItems();
         return count($activeItems);
@@ -794,7 +794,7 @@ class GetProductsFromEWebMain extends Command
 
         $data = json_decode($json, true);
         unset($json); // Free the JSON string immediately
-        
+
         if (!is_array($data)) {
             return [];
         }
@@ -802,12 +802,12 @@ class GetProductsFromEWebMain extends Command
         // Extract only the needed chunk
         $chunk = array_slice($data, $startIndex, $chunkSize);
         unset($data); // Free the full data array immediately
-        
+
         // Convert to objects and return
-        $result = array_map(function($item) {
+        $result = array_map(function ($item) {
             return json_decode(json_encode($item));
         }, $chunk);
-        
+
         unset($chunk); // Free chunk array
         return $result;
     }
