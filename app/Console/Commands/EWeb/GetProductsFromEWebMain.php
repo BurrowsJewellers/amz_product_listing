@@ -675,30 +675,45 @@ class GetProductsFromEWebMain extends Command
 
     private function updateShopifyProducts()
     {
-        // First, reset all uploaded_to_shopify flags to 0
-        $resetCount = RetailEdgeProduct::where('uploaded_to_shopify', 1)
-            ->update(['uploaded_to_shopify' => 0]);
-        Log::info("Reset {$resetCount} RetailEdgeProducts uploaded_to_shopify flag to 0.");
-
-        $shopifySkus = ShopifySku::pluck('sku')->toArray();
-        $updatedCount1 = 0;
-        $updatedCount2 = 0;
-        $updatedCount3 = 0;
-
-        if (!empty($shopifySkus)) {
-            $updatedCount1 = RetailEdgeProduct::whereIn('sku', $shopifySkus)
-                ->update(['uploaded_to_shopify' => 1]);
-            Log::info("Marked {$updatedCount1} RetailEdgeProducts as 'uploaded_to_shopify' based on ShopifySku backup.");
-        } else {
-            Log::info("No SKUs found in ShopifySku backup to update uploaded_to_shopify flag.");
+        // Instead of resetting all flags, we'll be more selective
+        // First, get all SKUs that should be marked as uploaded based on multiple sources
+        $uploadedSkus = collect();
+        
+        // Get SKUs from ShopifySku backup table
+        $shopifySkus = ShopifySku::pluck('sku');
+        $uploadedSkus = $uploadedSkus->merge($shopifySkus);
+        Log::info("Found {$shopifySkus->count()} SKUs in ShopifySku backup table.");
+        
+        // Get SKUs from shopify_product_variants table
+        $variantSkus = DB::table('shopify_product_variants')->pluck('sku');
+        $uploadedSkus = $uploadedSkus->merge($variantSkus);
+        Log::info("Found {$variantSkus->count()} SKUs in shopify_product_variants table.");
+        
+        // Get unique SKUs
+        $uploadedSkus = $uploadedSkus->unique()->values();
+        Log::info("Total unique SKUs that should be marked as uploaded: {$uploadedSkus->count()}");
+        
+        // Update in batches for better performance
+        if ($uploadedSkus->isNotEmpty()) {
+            $chunks = $uploadedSkus->chunk(1000);
+            $totalUpdated = 0;
+            
+            foreach ($chunks as $chunk) {
+                $updated = RetailEdgeProduct::whereIn('sku', $chunk->toArray())
+                    ->where('uploaded_to_shopify', 0)
+                    ->update(['uploaded_to_shopify' => 1]);
+                $totalUpdated += $updated;
+            }
+            
+            Log::info("Marked {$totalUpdated} RetailEdgeProducts as 'uploaded_to_shopify' (only those that were previously 0).");
         }
-
-        // Only mark products as uploaded if they actually exist in shopify_product_variants
-        $sql2 = "UPDATE retail_edge_products
-            SET uploaded_to_shopify = 1
-            WHERE sku IN (SELECT sku FROM shopify_product_variants)";
-        $updatedCount2 = DB::update($sql2);
-        Log::info("Marked {$updatedCount2} RetailEdgeProducts as 'uploaded_to_shopify' based on existing shopify_product_variants.");
+        
+        // Now handle products that should NOT be marked as uploaded
+        // Only reset flags for products that are not in our uploaded list
+        $resetCount = RetailEdgeProduct::where('uploaded_to_shopify', 1)
+            ->whereNotIn('sku', $uploadedSkus->toArray())
+            ->update(['uploaded_to_shopify' => 0]);
+        Log::info("Reset {$resetCount} RetailEdgeProducts uploaded_to_shopify flag to 0 (products not found in Shopify).");
 
         $sql3 = "UPDATE shopify_product_variants spv
             JOIN retail_edge_products rep ON spv.sku = rep.sku

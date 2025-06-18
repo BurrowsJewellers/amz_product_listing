@@ -130,7 +130,20 @@ class CreateProduct extends Command
 
                                 // Mark children as uploaded
                                 foreach ($product->children as $child) {
-                                    $child->update(['uploaded_to_shopify' => 1]);
+                                    $updated = $child->update(['uploaded_to_shopify' => 1]);
+                                    if ($updated) {
+                                        $this->line("Marked child SKU {$child->sku} as uploaded_to_shopify");
+                                    } else {
+                                        $this->warn("Failed to mark child SKU {$child->sku} as uploaded_to_shopify");
+                                    }
+                                }
+                                
+                                // Also mark the parent as uploaded
+                                $parentUpdated = $product->update(['uploaded_to_shopify' => 1]);
+                                if ($parentUpdated) {
+                                    $this->line("Marked parent SKU {$product->sku} as uploaded_to_shopify");
+                                } else {
+                                    $this->warn("Failed to mark parent SKU {$product->sku} as uploaded_to_shopify");
                                 }
 
                                 $this->info("Successfully created product: {$product->title}");

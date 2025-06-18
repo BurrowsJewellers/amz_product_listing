@@ -18,6 +18,7 @@ class ShopifyService extends ShopifyConnectionService
     {
         try {
             DB::beginTransaction();
+            Log::info("ShopifyService: Starting saveProductToDb transaction for product ID: " . ($productData['id'] ?? 'unknown'));
             foreach ($productData['variants'] as $variant) {
                 if ($shopifyProductVariant = ShopifyProductVariant::where('variant_id', $variant['id'])->first()) {
 
@@ -106,13 +107,33 @@ class ShopifyService extends ShopifyConnectionService
                 }
 
                 if ($shopifyProductVariant) {
-                    RetailEdgeProduct::where('sku', $shopifyProductVariant->sku)->update(['uploaded_to_shopify' => 1]);
+                    // Debug: Check if the SKU exists in retail_edge_products
+                    $existingProduct = RetailEdgeProduct::where('sku', $shopifyProductVariant->sku)->first();
+                    if ($existingProduct) {
+                        Log::info("ShopifyService: Found RetailEdgeProduct for SKU: {$shopifyProductVariant->sku}, current uploaded_to_shopify: {$existingProduct->uploaded_to_shopify}");
+                    } else {
+                        Log::warning("ShopifyService: No RetailEdgeProduct found for SKU: {$shopifyProductVariant->sku} - checking for case sensitivity issues");
+                        // Try case-insensitive search
+                        $caseInsensitiveProduct = RetailEdgeProduct::whereRaw('LOWER(sku) = LOWER(?)', [$shopifyProductVariant->sku])->first();
+                        if ($caseInsensitiveProduct) {
+                            Log::warning("ShopifyService: Found product with different case - DB SKU: {$caseInsensitiveProduct->sku}, Shopify SKU: {$shopifyProductVariant->sku}");
+                        }
+                    }
+                    
+                    $updatedCount = RetailEdgeProduct::where('sku', $shopifyProductVariant->sku)->update(['uploaded_to_shopify' => 1]);
+                    if ($updatedCount > 0) {
+                        Log::info("ShopifyService: Marked {$updatedCount} RetailEdgeProduct(s) as uploaded_to_shopify for SKU: {$shopifyProductVariant->sku}");
+                    } else {
+                        Log::warning("ShopifyService: No RetailEdgeProduct found to update for SKU: {$shopifyProductVariant->sku}");
+                    }
                 }
             }
 
             DB::commit();
+            Log::info("ShopifyService: Transaction committed successfully for saveProductToDb");
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error("ShopifyService: Transaction rolled back in saveProductToDb: " . $e->getMessage());
             throw $e;
         }
     }
@@ -193,13 +214,28 @@ class ShopifyService extends ShopifyConnectionService
                 }
 
                 if ($shopifyProductVariant) {
-                    RetailEdgeProduct::where('sku', $shopifyProductVariant->sku)->update(['uploaded_to_shopify' => 1]);
+                    // Debug: Check if the SKU exists in retail_edge_products
+                    $existingProduct = RetailEdgeProduct::where('sku', $shopifyProductVariant->sku)->first();
+                    if ($existingProduct) {
+                        Log::info("ShopifyService (NewVersion): Found RetailEdgeProduct for SKU: {$shopifyProductVariant->sku}, current uploaded_to_shopify: {$existingProduct->uploaded_to_shopify}");
+                    } else {
+                        Log::warning("ShopifyService (NewVersion): No RetailEdgeProduct found for SKU: {$shopifyProductVariant->sku}");
+                    }
+                    
+                    $updatedCount = RetailEdgeProduct::where('sku', $shopifyProductVariant->sku)->update(['uploaded_to_shopify' => 1]);
+                    if ($updatedCount > 0) {
+                        Log::info("ShopifyService (NewVersion): Marked {$updatedCount} RetailEdgeProduct(s) as uploaded_to_shopify for SKU: {$shopifyProductVariant->sku}");
+                    } else {
+                        Log::warning("ShopifyService (NewVersion): No RetailEdgeProduct found to update for SKU: {$shopifyProductVariant->sku}");
+                    }
                 }
             }
 
             DB::commit();
+            Log::info("ShopifyService (NewVersion): Transaction committed successfully for saveProductToDbNewVersion");
         } catch (\Exception $e) {
             DB::rollBack();
+            Log::error("ShopifyService (NewVersion): Transaction rolled back in saveProductToDbNewVersion: " . $e->getMessage());
             throw $e;
         }
     }

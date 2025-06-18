@@ -15,7 +15,7 @@ class Kernel extends ConsoleKernel
         /**
          * Main job to fetch products from eWeb
          */
-        $schedule->command('getProductsFromEWebMain')->everyFifteenMinutes()
+        $schedule->command('getProductsFromEWebMain')->everyThirtyMinutes()
             ->after(function () {
                 $this->call('shopifyUpdatePriceInventory');
             });
@@ -83,7 +83,7 @@ class Kernel extends ConsoleKernel
         //     $this->call('shopifyCreateProduct');
         // });
 
-        $schedule->command('shopifyGetProducts')->cron("5 */2 * * *")->after(function () {
+        $schedule->command('shopifyGetProducts')->cron("5 */3 * * *")->after(function () {
             $this->call('shopifyCreateProduct');
         });
 
