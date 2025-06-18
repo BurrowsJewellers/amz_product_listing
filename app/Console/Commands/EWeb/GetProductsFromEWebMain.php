@@ -489,19 +489,31 @@ class GetProductsFromEWebMain extends Command
 
     private function processItemAttributes($item, $skuArray)
     {
-        $item->OldKey = trim($item->OldKey);
-        $item->ID3 = trim($item->ID3);
+        $item->OldKey = isset($item->OldKey) ? trim($item->OldKey) : '';
+        $item->ID3 = isset($item->ID3) ? trim($item->ID3) : '';
 
-        foreach ($item->ISDs->ItemISD as $other) {
-            $keyName = str_replace(['.', ' ', ',', '_', '\''], [], $other->Name);
+        // Safely process ISDs if they exist
+        if (isset($item->ISDs) && isset($item->ISDs->ItemISD)) {
+            $isds = is_array($item->ISDs->ItemISD) ? $item->ISDs->ItemISD : [$item->ISDs->ItemISD];
+            
+            foreach ($isds as $other) {
+                if (!isset($other->Name) || !isset($other->Value)) {
+                    continue;
+                }
+                
+                $keyName = str_replace(['.', ' ', ',', '_', '\''], '', $other->Name);
+                if (empty($keyName)) {
+                    continue;
+                }
 
-            // Handle special case for department 022
-            if ($skuArray[1] == '022') {
-                if (!isset($item->{$keyName})) {
+                // Handle special case for department 022
+                if ($skuArray[1] == '022') {
+                    if (!isset($item->{$keyName})) {
+                        $item->{$keyName} = trim($other->Value);
+                    }
+                } else {
                     $item->{$keyName} = trim($other->Value);
                 }
-            } else {
-                $item->{$keyName} = trim($other->Value);
             }
         }
 
@@ -531,22 +543,22 @@ class GetProductsFromEWebMain extends Command
     {
         return [
             'sku' => $sku,
-            'title' => trim($item->ShortMarketingDescription),
-            'marketing_description' => $item->MarketingDescription,
-            'brand_id' => trim($item->BrandID),
-            'barcode' => trim($item->Barcode),
-            'retail_price1' => $item->RetailPrice,
-            'retail_price2' => $item->RetailPrice2,
-            'price' => $item->price,
-            'compare_at_price' => $item->compareAtPrice,
-            'quantity' => intval($item->TotalAvailQOH),
-            'id1' => trim($item->ID1),
-            'id2' => trim($item->ID2),
-            'id3' => trim($item->ID3),
-            'id4' => trim($item->ID4),
-            'old_key' => trim($item->OldKey),
-            'is_valid_child' => preg_match('/^\d{3}-\d{5}$/', $item->OldKey),
-            'real_design_number' => trim($item->RealDesignNum),
+            'title' => isset($item->ShortMarketingDescription) ? trim($item->ShortMarketingDescription) : '',
+            'marketing_description' => $item->MarketingDescription ?? '',
+            'brand_id' => isset($item->BrandID) ? trim($item->BrandID) : '',
+            'barcode' => isset($item->Barcode) ? trim($item->Barcode) : '',
+            'retail_price1' => $item->RetailPrice ?? 0,
+            'retail_price2' => $item->RetailPrice2 ?? 0,
+            'price' => $item->price ?? $item->RetailPrice ?? 0,
+            'compare_at_price' => $item->compareAtPrice ?? 0,
+            'quantity' => isset($item->TotalAvailQOH) ? intval($item->TotalAvailQOH) : 0,
+            'id1' => isset($item->ID1) ? trim($item->ID1) : '',
+            'id2' => isset($item->ID2) ? trim($item->ID2) : '',
+            'id3' => isset($item->ID3) ? trim($item->ID3) : '',
+            'id4' => isset($item->ID4) ? trim($item->ID4) : '',
+            'old_key' => isset($item->OldKey) ? trim($item->OldKey) : '',
+            'is_valid_child' => isset($item->OldKey) ? preg_match('/^\d{3}-\d{5}$/', $item->OldKey) : false,
+            'real_design_number' => isset($item->RealDesignNum) ? trim($item->RealDesignNum) : '',
             'pendant_style' => $item->PendantStyle ?? null,
             'metal_colour' => $item->MetalColour ?? null,
             's_web_menu' => $item->SWebMenu ?? null,
@@ -556,14 +568,14 @@ class GetProductsFromEWebMain extends Command
             's_sub_cat' => $item->SSubCat ?? null,
             'ring_size' => $item->RingSize ?? null,
             'bracelet_length' => $item->Length ?? null,
-            'web_option_boolean1' => $item->WebOptionBoolean1,
-            'web_option_boolean2' => $item->WebOptionBoolean2,
-            'web_option_boolean3' => $item->WebOptionBoolean3,
-            'web_option_boolean4' => $item->WebOptionBoolean4,
-            'web_option_boolean5' => $item->WebOptionBoolean5,
-            'web_option_boolean6' => $item->WebOptionBoolean6,
-            'web_option_boolean7' => $item->WebOptionBoolean7,
-            'web_option_boolean8' => $item->WebOptionBoolean8,
+            'web_option_boolean1' => $item->WebOptionBoolean1 ?? false,
+            'web_option_boolean2' => $item->WebOptionBoolean2 ?? false,
+            'web_option_boolean3' => $item->WebOptionBoolean3 ?? false,
+            'web_option_boolean4' => $item->WebOptionBoolean4 ?? false,
+            'web_option_boolean5' => $item->WebOptionBoolean5 ?? false,
+            'web_option_boolean6' => $item->WebOptionBoolean6 ?? false,
+            'web_option_boolean7' => $item->WebOptionBoolean7 ?? false,
+            'web_option_boolean8' => $item->WebOptionBoolean8 ?? false,
             'update_date_time' => isset($item->UpdateDateTime) ? Carbon::parse($item->UpdateDateTime) : null,
             'created_at' => Carbon::now(),
             'updated_at' => Carbon::now(),
