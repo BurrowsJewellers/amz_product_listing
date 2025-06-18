@@ -20,7 +20,7 @@ class GetProductsFromEWebMain extends Command
      *
      * @var string
      */
-    protected $signature = 'getProductsFromEWebMain {--memory-limit=1G : Memory limit for this command}';
+    protected $signature = 'getProductsFromEWebMain {--memory-limit=1G : Memory limit for this command} {--chunk-size=100 : Items per chunk} {--resume-from=0 : Resume from specific item number}';
 
     /**
      * The console command description.
@@ -48,8 +48,17 @@ class GetProductsFromEWebMain extends Command
             $this->info("Memory limit set to: {$memoryLimit}");
         }
         
+        // Set other resource limits to prevent server killing
+        ini_set('max_execution_time', 0); // No time limit
+        ini_set('max_input_time', -1); // No input time limit
+        
         // Enable garbage collection
         gc_enable();
+        
+        // Set process priority to be nice to the server
+        if (function_exists('proc_nice')) {
+            proc_nice(10); // Lower priority
+        }
         
         $marketplace = 'EWeb';
         $jobType = 'getProductsFromEWebMain';
@@ -188,7 +197,7 @@ class GetProductsFromEWebMain extends Command
         if ($this->currentJob) {
             $this->currentJob->update([
                 'status' => 0, 
-                'message' => "Process terminated by signal {$signo}"
+                'message' => "Process terminated by signal {$signo} - use checkpoint to resume"
             ]);
         }
         
@@ -196,6 +205,9 @@ class GetProductsFromEWebMain extends Command
         DB::statement("DROP TABLE IF EXISTS retail_edge_products_temp");
         DB::statement("DROP TABLE IF EXISTS retail_edge_product_images_temp");
         DB::statement("DROP TABLE IF EXISTS retail_edge_product_isds_temp");
+        
+        echo "\n💾 Process was interrupted. You can resume from the last checkpoint using:\n";
+        echo "php artisan getProductsFromEWebMain --resume-from=<checkpoint_number>\n\n";
         
         Log::info("GetProductsFromEWebMain shut down gracefully after receiving signal {$signo}");
         exit(1);
@@ -216,11 +228,30 @@ class GetProductsFromEWebMain extends Command
             $this->info("Memory usage at start: " . $this->formatBytes(memory_get_usage(true)));
             
             // Process in smaller chunks to manage memory more aggressively
-            $chunkSize = 250; // Reduce chunk size to 250 items
+            $chunkSize = (int) $this->option('chunk-size'); // Configurable chunk size
+            $resumeFrom = (int) $this->option('resume-from');
             $totalChunks = ceil($totalItems / $chunkSize);
             
+            if ($resumeFrom > 0) {
+                $this->info("Resuming from item {$resumeFrom}");
+                $startChunk = floor($resumeFrom / $chunkSize);
+                $processedCount = $resumeFrom;
+            } else {
+                $startChunk = 0;
+                // Check for existing checkpoint
+                $checkpointFile = storage_path('app/eweb_checkpoint.txt');
+                if (file_exists($checkpointFile)) {
+                    $checkpointValue = (int) file_get_contents($checkpointFile);
+                    if ($checkpointValue > 0 && $this->confirm("Found checkpoint at {$checkpointValue} items. Resume from there?")) {
+                        $processedCount = $checkpointValue;
+                        $startChunk = floor($checkpointValue / $chunkSize);
+                        $this->info("Resuming from checkpoint: {$checkpointValue} items");
+                    }
+                }
+            }
+            
             // Process items in chunks without storing all chunks in memory
-            for ($chunkIndex = 0; $chunkIndex < $totalChunks; $chunkIndex++) {
+            for ($chunkIndex = $startChunk; $chunkIndex < $totalChunks; $chunkIndex++) {
                 $startIndex = $chunkIndex * $chunkSize;
                 $chunk = array_slice($activeItems, $startIndex, $chunkSize);
                 
@@ -304,7 +335,7 @@ class GetProductsFromEWebMain extends Command
                 }
                 
                 // Add a longer delay to reduce server load and allow memory cleanup
-                usleep(250000); // 0.25 second
+                usleep(500000); // 0.5 second - increased to be more server-friendly
                 
                 // Log memory after cleanup and check if we're getting close to limit
                 if (($chunkIndex + 1) % 5 == 0) {
@@ -316,10 +347,17 @@ class GetProductsFromEWebMain extends Command
                     $this->info("Memory after chunk " . ($chunkIndex + 1) . " cleanup: " . $this->formatBytes($currentMemory) . " ({$memoryUsagePercent}% of limit)");
                     
                     // If memory usage is getting too high, reduce chunk size
-                    if ($memoryUsagePercent > 80 && $chunkSize > 50) {
-                        $chunkSize = max(50, intval($chunkSize * 0.8));
+                    if ($memoryUsagePercent > 80 && $chunkSize > 25) {
+                        $chunkSize = max(25, intval($chunkSize * 0.8));
                         $this->warn("Memory usage high, reducing chunk size to {$chunkSize}");
                         $totalChunks = ceil($totalItems / $chunkSize);
+                    }
+                    
+                    // Save checkpoint every 10 chunks
+                    if (($chunkIndex + 1) % 10 == 0) {
+                        $checkpointFile = storage_path('app/eweb_checkpoint.txt');
+                        file_put_contents($checkpointFile, $processedCount);
+                        $this->info("Checkpoint saved: {$processedCount} items processed");
                     }
                 }
             }
@@ -329,6 +367,13 @@ class GetProductsFromEWebMain extends Command
             
             $this->info("Completed processing {$processedCount}/{$totalItems} items with {$errorCount} errors.");
             $this->info("Final memory usage: " . $this->formatBytes(memory_get_usage(true)));
+            
+            // Clear checkpoint on successful completion
+            $checkpointFile = storage_path('app/eweb_checkpoint.txt');
+            if (file_exists($checkpointFile)) {
+                unlink($checkpointFile);
+                $this->info("Checkpoint cleared after successful completion");
+            }
             
         } catch (\Exception $e) {
             Log::error("Error in processProducts: " . $e->getMessage());
