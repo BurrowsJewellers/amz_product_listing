@@ -47,19 +47,19 @@ class GetProductsFromEWebMain extends Command
             ini_set('memory_limit', $memoryLimit);
             $this->info("Memory limit set to: {$memoryLimit}");
         }
-        
+
         // Set other resource limits to prevent server killing
         ini_set('max_execution_time', 0); // No time limit
         ini_set('max_input_time', -1); // No input time limit
-        
+
         // Enable garbage collection
         gc_enable();
-        
+
         // Set process priority to be nice to the server
         if (function_exists('proc_nice')) {
             proc_nice(10); // Lower priority
         }
-        
+
         $marketplace = 'EWeb';
         $jobType = 'getProductsFromEWebMain';
 
@@ -75,7 +75,7 @@ class GetProductsFromEWebMain extends Command
 
         try {
             Log::info("$marketplace $jobType started!");
-            
+
             // Mark job as running
             $job->update(['status' => 1]);
 
@@ -84,100 +84,100 @@ class GetProductsFromEWebMain extends Command
             $tempIsdTable = 'retail_edge_product_isds_temp';
 
             try {
-            // Backup and restore ShopifySku logic (kept outside main product data transaction as per original structure)
-            try {
-                // Get SKUs that are actually in Shopify from shopify_product_variants table
-                // This is more reliable than using uploaded_to_shopify flag which might be incorrect
-                $shopifySkus = DB::table('shopify_product_variants')
-                    ->whereNotNull('sku')
-                    ->where('sku', '!=', '')
-                    ->pluck('sku')
-                    ->toArray();
-                Log::info("Found " . count($shopifySkus) . " Shopify SKUs from shopify_product_variants table.");
+                // Backup and restore ShopifySku logic (kept outside main product data transaction as per original structure)
+                try {
+                    // Get SKUs that are actually in Shopify from shopify_product_variants table
+                    // This is more reliable than using uploaded_to_shopify flag which might be incorrect
+                    $shopifySkus = DB::table('shopify_product_variants')
+                        ->whereNotNull('sku')
+                        ->where('sku', '!=', '')
+                        ->pluck('sku')
+                        ->toArray();
+                    Log::info("Found " . count($shopifySkus) . " Shopify SKUs from shopify_product_variants table.");
 
-                ShopifySku::truncate();
-                Log::info("Truncated ShopifySku table successfully.");
+                    ShopifySku::truncate();
+                    Log::info("Truncated ShopifySku table successfully.");
 
-                if (!empty($shopifySkus)) {
-                    $chunks = array_chunk($shopifySkus, 1000); // Insert in chunks for better performance
-                    foreach ($chunks as $chunk) {
-                        // Process signals if available
-                        if (function_exists('pcntl_signal_dispatch')) {
-                            pcntl_signal_dispatch();
+                    if (!empty($shopifySkus)) {
+                        $chunks = array_chunk($shopifySkus, 1000); // Insert in chunks for better performance
+                        foreach ($chunks as $chunk) {
+                            // Process signals if available
+                            if (function_exists('pcntl_signal_dispatch')) {
+                                pcntl_signal_dispatch();
+                            }
+
+                            $data = array_map(function ($sku) {
+                                return ['sku' => $sku, 'created_at' => now(), 'updated_at' => now()];
+                            }, $chunk);
+                            ShopifySku::insert($data);
                         }
-                        
-                        $data = array_map(function($sku) {
-                            return ['sku' => $sku, 'created_at' => now(), 'updated_at' => now()];
-                        }, $chunk);
-                        ShopifySku::insert($data);
+                        Log::info("Restored " . count($shopifySkus) . " Shopify SKUs to ShopifySku table.");
+                    } else {
+                        Log::info("No Shopify SKUs to restore to ShopifySku table.");
                     }
-                    Log::info("Restored " . count($shopifySkus) . " Shopify SKUs to ShopifySku table.");
-                } else {
-                    Log::info("No Shopify SKUs to restore to ShopifySku table.");
+                } catch (\Throwable $e) {
+                    report($e);
+                    $job->update(['status' => 0, 'message' => "Error during ShopifySku preparation: " . $e->getMessage()]);
+                    Log::error("$marketplace $jobType failed during ShopifySku preparation: " . $e->getMessage());
+                    return; // Exit if ShopifySku preparation fails
                 }
+
+                // Drop temporary tables if they exist from a previous failed run
+                DB::statement("DROP TABLE IF EXISTS {$tempProductTable}");
+                DB::statement("DROP TABLE IF EXISTS {$tempImageTable}");
+                DB::statement("DROP TABLE IF EXISTS {$tempIsdTable}");
+
+                // Create temporary tables by copying the structure (including primary keys) of the main tables
+                DB::statement("CREATE TEMPORARY TABLE {$tempProductTable} LIKE retail_edge_products");
+                DB::statement("CREATE TEMPORARY TABLE {$tempImageTable} LIKE retail_edge_product_images");
+                DB::statement("CREATE TEMPORARY TABLE {$tempIsdTable} LIKE retail_edge_product_isds");
+
+                Log::info("Temporary tables {$tempProductTable}, {$tempImageTable} and {$tempIsdTable} created with structure like main tables.");
+
+                // Process products from RetailEdge into temporary tables
+                $this->processProducts($tempProductTable, $tempImageTable, $tempIsdTable);
+
+                // Start transaction for main database operations
+                DB::beginTransaction();
+                Log::info("Main transaction started for updating main product tables.");
+
+                // Clear main tables (RetailEdgeProduct, RetailEdgeProductImage, RetailEdgeProductIsd) using DELETE to be transaction-safe
+                RetailEdgeProduct::query()->delete();
+                RetailEdgeProductImage::query()->delete();
+                RetailEdgeProductIsd::query()->delete();
+                Log::info("Deleted data from main tables: retail_edge_products, retail_edge_product_images, and retail_edge_product_isds.");
+
+                // Copy data from temporary tables to main tables
+                DB::statement("INSERT INTO retail_edge_products SELECT * FROM {$tempProductTable}");
+                DB::statement("INSERT INTO retail_edge_product_images SELECT * FROM {$tempImageTable}");
+                DB::statement("INSERT INTO retail_edge_product_isds SELECT * FROM {$tempIsdTable}");
+                Log::info("Copied data from temporary tables to main tables.");
+
+                // Update Shopify products with new data from main tables
+                // This method uses the now-populated main tables.
+                $this->updateShopifyProducts();
+
+                DB::commit();
+                Log::info("Main transaction committed successfully.");
+
+                $job->update(['status' => 0, 'message' => null]); // Reset job status to success
+                Log::info("$marketplace $jobType finished successfully!");
             } catch (\Throwable $e) {
+                if (DB::connection()->transactionLevel() > 0) {
+                    DB::rollBack();
+                    Log::info("Main transaction rolled back due to error.");
+                }
                 report($e);
-                $job->update(['status' => 0, 'message' => "Error during ShopifySku preparation: " . $e->getMessage()]);
-                Log::error("$marketplace $jobType failed during ShopifySku preparation: " . $e->getMessage());
-                return; // Exit if ShopifySku preparation fails
+                // Ensure job status is updated to reflect failure
+                $job->update(['status' => 0, 'message' => "Error during main processing: " . $e->getMessage()]);
+                Log::error("$marketplace $jobType failed: " . $e->getMessage() . " at " . $e->getFile() . ":" . $e->getLine());
+            } finally {
+                // Drop temporary tables regardless of success or failure
+                DB::statement("DROP TABLE IF EXISTS {$tempProductTable}");
+                DB::statement("DROP TABLE IF EXISTS {$tempImageTable}");
+                DB::statement("DROP TABLE IF EXISTS {$tempIsdTable}");
+                Log::info("Temporary tables {$tempProductTable}, {$tempImageTable} and {$tempIsdTable} dropped.");
             }
-
-            // Drop temporary tables if they exist from a previous failed run
-            DB::statement("DROP TABLE IF EXISTS {$tempProductTable}");
-            DB::statement("DROP TABLE IF EXISTS {$tempImageTable}");
-            DB::statement("DROP TABLE IF EXISTS {$tempIsdTable}");
-
-            // Create temporary tables by copying the structure (including primary keys) of the main tables
-            DB::statement("CREATE TEMPORARY TABLE {$tempProductTable} LIKE retail_edge_products");
-            DB::statement("CREATE TEMPORARY TABLE {$tempImageTable} LIKE retail_edge_product_images");
-            DB::statement("CREATE TEMPORARY TABLE {$tempIsdTable} LIKE retail_edge_product_isds");
-
-            Log::info("Temporary tables {$tempProductTable}, {$tempImageTable} and {$tempIsdTable} created with structure like main tables.");
-
-            // Process products from RetailEdge into temporary tables
-            $this->processProducts($tempProductTable, $tempImageTable, $tempIsdTable);
-
-            // Start transaction for main database operations
-            DB::beginTransaction();
-            Log::info("Main transaction started for updating main product tables.");
-
-            // Clear main tables (RetailEdgeProduct, RetailEdgeProductImage, RetailEdgeProductIsd) using DELETE to be transaction-safe
-            RetailEdgeProduct::query()->delete();
-            RetailEdgeProductImage::query()->delete();
-            RetailEdgeProductIsd::query()->delete();
-            Log::info("Deleted data from main tables: retail_edge_products, retail_edge_product_images, and retail_edge_product_isds.");
-
-            // Copy data from temporary tables to main tables
-            DB::statement("INSERT INTO retail_edge_products SELECT * FROM {$tempProductTable}");
-            DB::statement("INSERT INTO retail_edge_product_images SELECT * FROM {$tempImageTable}");
-            DB::statement("INSERT INTO retail_edge_product_isds SELECT * FROM {$tempIsdTable}");
-            Log::info("Copied data from temporary tables to main tables.");
-
-            // Update Shopify products with new data from main tables
-            // This method uses the now-populated main tables.
-            $this->updateShopifyProducts();
-
-            DB::commit();
-            Log::info("Main transaction committed successfully.");
-
-            $job->update(['status' => 0, 'message' => null]); // Reset job status to success
-            Log::info("$marketplace $jobType finished successfully!");
-        } catch (\Throwable $e) {
-            if (DB::connection()->transactionLevel() > 0) {
-                DB::rollBack();
-                Log::info("Main transaction rolled back due to error.");
-            }
-            report($e);
-            // Ensure job status is updated to reflect failure
-            $job->update(['status' => 0, 'message' => "Error during main processing: " . $e->getMessage()]);
-            Log::error("$marketplace $jobType failed: " . $e->getMessage() . " at " . $e->getFile() . ":" . $e->getLine());
-        } finally {
-            // Drop temporary tables regardless of success or failure
-            DB::statement("DROP TABLE IF EXISTS {$tempProductTable}");
-            DB::statement("DROP TABLE IF EXISTS {$tempImageTable}");
-            DB::statement("DROP TABLE IF EXISTS {$tempIsdTable}");
-            Log::info("Temporary tables {$tempProductTable}, {$tempImageTable} and {$tempIsdTable} dropped.");
-        }
         } catch (\Throwable $e) {
             // Global exception handler to ensure job status is always reset
             report($e);
@@ -193,22 +193,22 @@ class GetProductsFromEWebMain extends Command
     public function handleSignal($signo)
     {
         Log::warning("GetProductsFromEWebMain received signal {$signo}. Shutting down gracefully...");
-        
+
         if ($this->currentJob) {
             $this->currentJob->update([
-                'status' => 0, 
+                'status' => 0,
                 'message' => "Process terminated by signal {$signo} - use checkpoint to resume"
             ]);
         }
-        
+
         // Clean up temporary tables if they exist
         DB::statement("DROP TABLE IF EXISTS retail_edge_products_temp");
         DB::statement("DROP TABLE IF EXISTS retail_edge_product_images_temp");
         DB::statement("DROP TABLE IF EXISTS retail_edge_product_isds_temp");
-        
+
         echo "\n💾 Process was interrupted. You can resume from the last checkpoint using:\n";
         echo "php artisan getProductsFromEWebMain --resume-from=<checkpoint_number>\n\n";
-        
+
         Log::info("GetProductsFromEWebMain shut down gracefully after receiving signal {$signo}");
         exit(1);
     }
@@ -217,21 +217,21 @@ class GetProductsFromEWebMain extends Command
     {
         try {
             $retailEdgeService = new RetailEdgeService();
-            
+
             // First, get total count if possible
             $activeItems = $retailEdgeService->getAllActiveItems();
             $totalItems = count($activeItems);
             $processedCount = 0;
             $errorCount = 0;
-            
+
             $this->info("Processing {$totalItems} items from RetailEdge");
             $this->info("Memory usage at start: " . $this->formatBytes(memory_get_usage(true)));
-            
+
             // Process in smaller chunks to manage memory more aggressively
             $chunkSize = (int) $this->option('chunk-size'); // Configurable chunk size
             $resumeFrom = (int) $this->option('resume-from');
             $totalChunks = ceil($totalItems / $chunkSize);
-            
+
             if ($resumeFrom > 0) {
                 $this->info("Resuming from item {$resumeFrom}");
                 $startChunk = floor($resumeFrom / $chunkSize);
@@ -241,44 +241,37 @@ class GetProductsFromEWebMain extends Command
                 // Check for existing checkpoint
                 $checkpointFile = storage_path('app/eweb_checkpoint.txt');
                 if (file_exists($checkpointFile)) {
-                    $checkpointValue = (int) file_get_contents($checkpointFile);
-                    if ($checkpointValue > 0 && $this->confirm("Found checkpoint at {$checkpointValue} items. Resume from there?")) {
-                        $processedCount = $checkpointValue;
-                        $startChunk = floor($checkpointValue / $chunkSize);
-                        $this->info("Resuming from checkpoint: {$checkpointValue} items");
-                    }
+                    // $checkpointValue = (int) file_get_contents($checkpointFile);
+                    // if ($checkpointValue > 0 && $this->confirm("Found checkpoint at {$checkpointValue} items. Resume from there?")) {
+                    // if ($checkpointValue > 0) {
+                    //     $processedCount = $checkpointValue;
+                    //     $startChunk = floor($checkpointValue / $chunkSize);
+                    //     $this->info("Resuming from checkpoint: {$checkpointValue} items");
+                    // }
                 }
             }
-            
+
             // Process items in chunks without storing all chunks in memory
             for ($chunkIndex = $startChunk; $chunkIndex < $totalChunks; $chunkIndex++) {
                 $startIndex = $chunkIndex * $chunkSize;
                 $chunk = array_slice($activeItems, $startIndex, $chunkSize);
-                
-                // Clear processed items from memory
-                if ($chunkIndex > 0) {
-                    $clearStart = ($chunkIndex - 1) * $chunkSize;
-                    for ($i = $clearStart; $i < $startIndex; $i++) {
-                        if (isset($activeItems[$i])) {
-                            unset($activeItems[$i]);
-                        }
-                    }
-                }
+
+                // Memory clearing removed - caused array fragmentation issues with array_slice()
                 $batchProducts = [];
                 $batchImages = [];
                 $batchIsds = [];
-                
+
                 $this->info("Processing chunk " . ($chunkIndex + 1) . "/{$totalChunks} (Memory: " . $this->formatBytes(memory_get_usage(true)) . ")");
-                
+
                 foreach ($chunk as $item) {
                     // Process signals if available
                     if (function_exists('pcntl_signal_dispatch')) {
                         pcntl_signal_dispatch();
                     }
-                    
+
                     try {
                         $result = $this->processItemForBatch($item);
-                        
+
                         if ($result) {
                             if (isset($result['product'])) {
                                 $batchProducts[] = $result['product'];
@@ -290,9 +283,9 @@ class GetProductsFromEWebMain extends Command
                                 $batchIsds = array_merge($batchIsds, $result['isds']);
                             }
                         }
-                        
+
                         $processedCount++;
-                        
+
                         if ($processedCount % 100 === 0) {
                             $this->info("Processed {$processedCount}/{$totalItems} items (Memory: " . $this->formatBytes(memory_get_usage(true)) . ")");
                         }
@@ -301,11 +294,11 @@ class GetProductsFromEWebMain extends Command
                         report($e);
                         Log::warning("Failed to process item: " . json_encode($item->SKU ?? 'Unknown SKU') . " Error: " . $e->getMessage());
                     }
-                    
+
                     // Clear item from memory
                     unset($item);
                 }
-                
+
                 // Batch insert for this chunk
                 if (!empty($batchProducts)) {
                     DB::table($tempProductTable)->insert($batchProducts);
@@ -319,40 +312,40 @@ class GetProductsFromEWebMain extends Command
                     DB::table($tempIsdTable)->insert($batchIsds);
                     $this->info("Inserted " . count($batchIsds) . " ISDs");
                 }
-                
+
                 // Clear batch arrays and chunk
                 unset($batchProducts, $batchImages, $batchIsds, $chunk);
-                
+
                 // More aggressive memory cleanup
                 if (function_exists('gc_mem_caches')) {
                     gc_mem_caches();
                 }
                 gc_collect_cycles();
-                
+
                 // Clear opcache if available to free memory
                 if (function_exists('opcache_reset') && ($chunkIndex + 1) % 5 == 0) {
                     opcache_reset();
                 }
-                
+
                 // Add a longer delay to reduce server load and allow memory cleanup
                 usleep(500000); // 0.5 second - increased to be more server-friendly
-                
+
                 // Log memory after cleanup and check if we're getting close to limit
                 if (($chunkIndex + 1) % 5 == 0) {
                     $currentMemory = memory_get_usage(true);
                     $memoryLimit = ini_get('memory_limit');
                     $memoryLimitBytes = $this->convertToBytes($memoryLimit);
                     $memoryUsagePercent = ($currentMemory / $memoryLimitBytes) * 100;
-                    
+
                     $this->info("Memory after chunk " . ($chunkIndex + 1) . " cleanup: " . $this->formatBytes($currentMemory) . " ({$memoryUsagePercent}% of limit)");
-                    
+
                     // If memory usage is getting too high, reduce chunk size
                     if ($memoryUsagePercent > 80 && $chunkSize > 25) {
                         $chunkSize = max(25, intval($chunkSize * 0.8));
                         $this->warn("Memory usage high, reducing chunk size to {$chunkSize}");
                         $totalChunks = ceil($totalItems / $chunkSize);
                     }
-                    
+
                     // Save checkpoint every 10 chunks
                     if (($chunkIndex + 1) % 10 == 0) {
                         $checkpointFile = storage_path('app/eweb_checkpoint.txt');
@@ -361,52 +354,51 @@ class GetProductsFromEWebMain extends Command
                     }
                 }
             }
-            
+
             // Final cleanup
             unset($activeItems);
-            
+
             $this->info("Completed processing {$processedCount}/{$totalItems} items with {$errorCount} errors.");
             $this->info("Final memory usage: " . $this->formatBytes(memory_get_usage(true)));
-            
+
             // Clear checkpoint on successful completion
             $checkpointFile = storage_path('app/eweb_checkpoint.txt');
             if (file_exists($checkpointFile)) {
                 unlink($checkpointFile);
                 $this->info("Checkpoint cleared after successful completion");
             }
-            
         } catch (\Exception $e) {
             Log::error("Error in processProducts: " . $e->getMessage());
             throw $e;
         }
     }
-    
+
     /**
      * Format bytes into human readable format
      */
     private function formatBytes($bytes, $precision = 2)
     {
         $units = ['B', 'KB', 'MB', 'GB', 'TB'];
-        
+
         $bytes = max($bytes, 0);
         $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
         $pow = min($pow, count($units) - 1);
-        
+
         $bytes /= pow(1024, $pow);
-        
+
         return round($bytes, $precision) . ' ' . $units[$pow];
     }
-    
+
     /**
      * Convert memory limit string to bytes
      */
     private function convertToBytes($val)
     {
         $val = trim($val);
-        $last = strtolower($val[strlen($val)-1]);
+        $last = strtolower($val[strlen($val) - 1]);
         $val = (int)$val;
-        
-        switch($last) {
+
+        switch ($last) {
             case 'g':
                 $val *= 1024;
             case 'm':
@@ -414,7 +406,7 @@ class GetProductsFromEWebMain extends Command
             case 'k':
                 $val *= 1024;
         }
-        
+
         return $val;
     }
 
@@ -597,7 +589,7 @@ class GetProductsFromEWebMain extends Command
         }
 
         $imageData = $this->processImagesForBatch($images, $sku);
-        
+
         if (!empty($imageData)) {
             DB::table($tempImageTable)->insert($imageData);
         }
@@ -643,7 +635,7 @@ class GetProductsFromEWebMain extends Command
         }
 
         $isdData = $this->processIsdsForBatch($isds, $sku);
-        
+
         if (!empty($isdData)) {
             DB::table($tempIsdTable)->insert($isdData);
         }
