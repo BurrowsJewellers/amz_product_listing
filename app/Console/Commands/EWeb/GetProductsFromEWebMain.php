@@ -21,7 +21,7 @@ class GetProductsFromEWebMain extends Command
      *
      * @var string
      */
-    protected $signature = 'getProductsFromEWebMain {--memory-limit=1G : Memory limit for this command} {--chunk-size=100 : Items per chunk} {--resume-from=0 : Resume from specific item number}';
+    protected $signature = 'getProductsFromEWebMain {--memory-limit=512M : Memory limit for this command} {--chunk-size=25 : Items per chunk} {--resume-from=0 : Resume from specific item number}';
 
     /**
      * The console command description.
@@ -319,19 +319,39 @@ class GetProductsFromEWebMain extends Command
                 // Clear batch arrays and chunk
                 unset($batchProducts, $batchImages, $batchIsds, $chunk);
 
-                // More aggressive memory cleanup
+                // Very aggressive memory cleanup after each chunk
                 if (function_exists('gc_mem_caches')) {
                     gc_mem_caches();
                 }
                 gc_collect_cycles();
+                
+                // Force garbage collection more frequently
+                if (function_exists('gc_disable')) {
+                    gc_disable();
+                    gc_enable();
+                }
 
-                // Clear opcache if available to free memory
-                if (function_exists('opcache_reset') && ($chunkIndex + 1) % 5 == 0) {
+                // Clear opcache more frequently 
+                if (function_exists('opcache_reset') && ($chunkIndex + 1) % 2 == 0) {
                     opcache_reset();
                 }
 
-                // Add a longer delay to reduce server load and allow memory cleanup
-                usleep(500000); // 0.5 second - increased to be more server-friendly
+                // Add delay and check memory before continuing
+                usleep(250000); // 0.25 second
+                
+                // Check memory usage and exit if too high
+                $currentMemory = memory_get_usage(true);
+                $memoryLimit = ini_get('memory_limit');
+                $memoryLimitBytes = $this->convertToBytes($memoryLimit);
+                $memoryUsagePercent = ($currentMemory / $memoryLimitBytes) * 100;
+                
+                if ($memoryUsagePercent > 90) {
+                    $this->error("Memory usage too high ({$memoryUsagePercent}%), stopping to prevent system kill");
+                    $checkpointFile = storage_path('app/eweb_checkpoint.txt');
+                    file_put_contents($checkpointFile, $processedCount);
+                    $this->info("Emergency checkpoint saved: {$processedCount} items processed");
+                    break;
+                }
 
                 // Log memory after cleanup and check if we're getting close to limit
                 if (($chunkIndex + 1) % 5 == 0) {
@@ -710,23 +730,58 @@ class GetProductsFromEWebMain extends Command
     }
 
     /**
-     * Get a chunk of items using streaming approach
+     * Get a chunk of items using true streaming approach
      */
     private function getItemChunk(RetailEdgeService $service, $startIndex, $chunkSize)
     {
-        // For now, we'll load all items but this could be optimized further
-        // by implementing a streaming JSON parser for very large datasets
-        static $cachedItems = null;
-        
-        if ($cachedItems === null) {
-            if ($service->hasValidCache()) {
-                $cachedData = Storage::get(RetailEdgeService::STORAGE_FILE);
-                $cachedItems = json_decode($cachedData);
-            } else {
-                $cachedItems = $service->getAllActiveItems();
-            }
+        // Use file streaming to avoid loading all items into memory
+        if ($service->hasValidCache()) {
+            return $this->getChunkFromFile(storage_path('app/private/retail_edge.json'), $startIndex, $chunkSize);
+        } else {
+            // If no cache, get fresh data but this will still use memory
+            $items = $service->getAllActiveItems();
+            return array_slice($items, $startIndex, $chunkSize);
         }
+    }
+
+    /**
+     * Stream JSON file and extract specific chunk using minimal memory
+     */
+    private function getChunkFromFile($filePath, $startIndex, $chunkSize)
+    {
+        if (!file_exists($filePath)) {
+            return [];
+        }
+
+        // Use a more memory-efficient approach for large files
+        $handle = fopen($filePath, 'r');
+        if (!$handle) {
+            return [];
+        }
+
+        $json = '';
+        while (!feof($handle)) {
+            $json .= fread($handle, 8192); // Read in 8KB chunks
+        }
+        fclose($handle);
+
+        $data = json_decode($json, true);
+        unset($json); // Free the JSON string immediately
         
-        return array_slice($cachedItems, $startIndex, $chunkSize);
+        if (!is_array($data)) {
+            return [];
+        }
+
+        // Extract only the needed chunk
+        $chunk = array_slice($data, $startIndex, $chunkSize);
+        unset($data); // Free the full data array immediately
+        
+        // Convert to objects and return
+        $result = array_map(function($item) {
+            return json_decode(json_encode($item));
+        }, $chunk);
+        
+        unset($chunk); // Free chunk array
+        return $result;
     }
 }
