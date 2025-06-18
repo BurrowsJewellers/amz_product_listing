@@ -20,7 +20,7 @@ class GetProductsFromEWebMain extends Command
      *
      * @var string
      */
-    protected $signature = 'getProductsFromEWebMain';
+    protected $signature = 'getProductsFromEWebMain {--memory-limit=512M : Memory limit for this command}';
 
     /**
      * The console command description.
@@ -30,14 +30,39 @@ class GetProductsFromEWebMain extends Command
     protected $description = 'Command description';
 
     /**
+     * The current job instance
+     *
+     * @var mixed
+     */
+    private $currentJob;
+
+    /**
      * Execute the console command.
      */
     public function handle()
     {
+        // Set memory limit
+        $memoryLimit = $this->option('memory-limit');
+        if ($memoryLimit) {
+            ini_set('memory_limit', $memoryLimit);
+            $this->info("Memory limit set to: {$memoryLimit}");
+        }
+        
+        // Enable garbage collection
+        gc_enable();
+        
         $marketplace = 'EWeb';
         $jobType = 'getProductsFromEWebMain';
 
         $job = SyncJobController::getJob($jobType, $marketplace);
+        $this->currentJob = $job;
+
+        // Set up signal handlers for graceful shutdown
+        if (function_exists('pcntl_signal')) {
+            pcntl_signal(SIGTERM, [$this, 'handleSignal']);
+            pcntl_signal(SIGINT, [$this, 'handleSignal']);
+            pcntl_signal(SIGHUP, [$this, 'handleSignal']);
+        }
 
         try {
             Log::info("$marketplace $jobType started!");
@@ -67,6 +92,11 @@ class GetProductsFromEWebMain extends Command
                 if (!empty($shopifySkus)) {
                     $chunks = array_chunk($shopifySkus, 1000); // Insert in chunks for better performance
                     foreach ($chunks as $chunk) {
+                        // Process signals if available
+                        if (function_exists('pcntl_signal_dispatch')) {
+                            pcntl_signal_dispatch();
+                        }
+                        
                         $data = array_map(function($sku) {
                             return ['sku' => $sku, 'created_at' => now(), 'updated_at' => now()];
                         }, $chunk);
@@ -148,37 +178,173 @@ class GetProductsFromEWebMain extends Command
         }
     }
 
+    /**
+     * Handle system signals for graceful shutdown
+     */
+    public function handleSignal($signo)
+    {
+        Log::warning("GetProductsFromEWebMain received signal {$signo}. Shutting down gracefully...");
+        
+        if ($this->currentJob) {
+            $this->currentJob->update([
+                'status' => 0, 
+                'message' => "Process terminated by signal {$signo}"
+            ]);
+        }
+        
+        // Clean up temporary tables if they exist
+        DB::statement("DROP TABLE IF EXISTS retail_edge_products_temp");
+        DB::statement("DROP TABLE IF EXISTS retail_edge_product_images_temp");
+        DB::statement("DROP TABLE IF EXISTS retail_edge_product_isds_temp");
+        
+        Log::info("GetProductsFromEWebMain shut down gracefully after receiving signal {$signo}");
+        exit(1);
+    }
+
     private function processProducts($tempProductTable, $tempImageTable, $tempIsdTable)
     {
         try {
-            $activeItems = (new RetailEdgeService)->getAllActiveItems();
+            $retailEdgeService = new RetailEdgeService();
+            
+            // First, get total count if possible
+            $activeItems = $retailEdgeService->getAllActiveItems();
             $totalItems = count($activeItems);
             $processedCount = 0;
             $errorCount = 0;
-
+            
             $this->info("Processing {$totalItems} items from RetailEdge");
-
-            foreach ($activeItems as $item) {
-                try {
-                    $this->processItem($item, $tempProductTable, $tempImageTable, $tempIsdTable);
-                    $processedCount++;
-
-                    if ($processedCount % 100 === 0) {
-                        $this->info("Processed {$processedCount}/{$totalItems} items into temporary tables");
+            $this->info("Memory usage at start: " . $this->formatBytes(memory_get_usage(true)));
+            
+            // Process in chunks to manage memory
+            $chunkSize = 500; // Process 500 items at a time
+            $chunks = array_chunk($activeItems, $chunkSize);
+            
+            // Clear the full array from memory
+            unset($activeItems);
+            
+            foreach ($chunks as $chunkIndex => $chunk) {
+                $batchProducts = [];
+                $batchImages = [];
+                $batchIsds = [];
+                
+                $this->info("Processing chunk " . ($chunkIndex + 1) . "/" . count($chunks) . " (Memory: " . $this->formatBytes(memory_get_usage(true)) . ")");
+                
+                foreach ($chunk as $item) {
+                    // Process signals if available
+                    if (function_exists('pcntl_signal_dispatch')) {
+                        pcntl_signal_dispatch();
                     }
-                } catch (\Exception $e) {
-                    $errorCount++;
-                    report($e);
-                    Log::warning("Failed to process item into temporary table: " . json_encode($item->SKU ?? 'Unknown SKU') . " Error: " . $e->getMessage());
-                    // Continue with the next item, error for this one is logged
+                    
+                    try {
+                        $result = $this->processItemForBatch($item);
+                        
+                        if ($result) {
+                            if (isset($result['product'])) {
+                                $batchProducts[] = $result['product'];
+                            }
+                            if (isset($result['images'])) {
+                                $batchImages = array_merge($batchImages, $result['images']);
+                            }
+                            if (isset($result['isds'])) {
+                                $batchIsds = array_merge($batchIsds, $result['isds']);
+                            }
+                        }
+                        
+                        $processedCount++;
+                        
+                        if ($processedCount % 100 === 0) {
+                            $this->info("Processed {$processedCount}/{$totalItems} items (Memory: " . $this->formatBytes(memory_get_usage(true)) . ")");
+                        }
+                    } catch (\Exception $e) {
+                        $errorCount++;
+                        report($e);
+                        Log::warning("Failed to process item: " . json_encode($item->SKU ?? 'Unknown SKU') . " Error: " . $e->getMessage());
+                    }
+                    
+                    // Clear item from memory
+                    unset($item);
                 }
+                
+                // Batch insert for this chunk
+                if (!empty($batchProducts)) {
+                    DB::table($tempProductTable)->insert($batchProducts);
+                    $this->info("Inserted " . count($batchProducts) . " products");
+                }
+                if (!empty($batchImages)) {
+                    DB::table($tempImageTable)->insert($batchImages);
+                    $this->info("Inserted " . count($batchImages) . " images");
+                }
+                if (!empty($batchIsds)) {
+                    DB::table($tempIsdTable)->insert($batchIsds);
+                    $this->info("Inserted " . count($batchIsds) . " ISDs");
+                }
+                
+                // Clear batch arrays
+                unset($batchProducts, $batchImages, $batchIsds, $chunk);
+                
+                // Force garbage collection after each chunk
+                gc_collect_cycles();
+                
+                // Add a small delay to reduce server load
+                usleep(100000); // 0.1 second
             }
-
-            $this->info("Completed processing {$processedCount}/{$totalItems} items into temporary tables with {$errorCount} errors.");
+            
+            $this->info("Completed processing {$processedCount}/{$totalItems} items with {$errorCount} errors.");
+            $this->info("Final memory usage: " . $this->formatBytes(memory_get_usage(true)));
+            
         } catch (\Exception $e) {
-            Log::error("Error in processProducts (populating temporary tables): " . $e->getMessage());
-            throw $e; // Re-throw to be caught by the handle method's main try-catch
+            Log::error("Error in processProducts: " . $e->getMessage());
+            throw $e;
         }
+    }
+    
+    /**
+     * Format bytes into human readable format
+     */
+    private function formatBytes($bytes, $precision = 2)
+    {
+        $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        
+        $bytes = max($bytes, 0);
+        $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
+        $pow = min($pow, count($units) - 1);
+        
+        $bytes /= pow(1024, $pow);
+        
+        return round($bytes, $precision) . ' ' . $units[$pow];
+    }
+
+    /**
+     * Process item for batch insertion (returns data instead of inserting directly)
+     */
+    private function processItemForBatch($item)
+    {
+        // Validate SKU format
+        if (!isset($item->SKU) || !preg_match('/^\d{3}-\d{3}-\d{5}$/', $item->SKU)) {
+            return null;
+        }
+
+        $skuArray = array_map('trim', explode('-', $item->SKU));
+        $sku = $skuArray[1] . "-" . $skuArray[2];
+
+        $processedItem = $this->processItemAttributes($item, $skuArray);
+        $result = [
+            'product' => $this->createProductData($processedItem, $sku),
+            'images' => [],
+            'isds' => []
+        ];
+
+        // Process images if they exist
+        if (isset($item->Images) && isset($item->Images->ItemImage)) {
+            $result['images'] = $this->processImagesForBatch($item->Images->ItemImage ?? [], $sku);
+        }
+
+        // Process ISDs if they exist
+        if (isset($item->ISDs) && isset($item->ISDs->ItemISD)) {
+            $result['isds'] = $this->processIsdsForBatch($item->ISDs->ItemISD ?? [], $sku);
+        }
+
+        return $result;
     }
 
     private function processItem($item, $tempProductTable, $tempImageTable, $tempIsdTable)
@@ -242,9 +408,12 @@ class GetProductsFromEWebMain extends Command
         return $item;
     }
 
-    private function createProduct($item, $sku, $tempProductTable)
+    /**
+     * Create product data for batch insertion
+     */
+    private function createProductData($item, $sku)
     {
-        DB::table($tempProductTable)->insert([
+        return [
             'sku' => $sku,
             'title' => trim($item->ShortMarketingDescription),
             'marketing_description' => $item->MarketingDescription,
@@ -282,7 +451,39 @@ class GetProductsFromEWebMain extends Command
             'update_date_time' => isset($item->UpdateDateTime) ? Carbon::parse($item->UpdateDateTime) : null,
             'created_at' => Carbon::now(),
             'updated_at' => Carbon::now(),
-        ]);
+        ];
+    }
+
+    private function createProduct($item, $sku, $tempProductTable)
+    {
+        DB::table($tempProductTable)->insert($this->createProductData($item, $sku));
+    }
+
+    /**
+     * Process images for batch insertion
+     */
+    private function processImagesForBatch($images, $sku)
+    {
+        if (empty($images)) {
+            return [];
+        }
+
+        $images = is_object($images) ? [$images] : $images;
+        $imageData = [];
+
+        foreach ($images as $image) {
+            $imageData[] = [
+                'sku' => $sku,
+                'e_web_index' => $image->Index,
+                'width' => $image->Width,
+                'height' => $image->Height,
+                'url' => htmlspecialchars_decode($image->URL),
+                'created_at' => Carbon::now(),
+                'updated_at' => Carbon::now(),
+            ];
+        }
+
+        return $imageData;
     }
 
     private function processImages($images, $sku, $tempImageTable)
@@ -291,19 +492,44 @@ class GetProductsFromEWebMain extends Command
             return;
         }
 
-        $images = is_object($images) ? [$images] : $images;
-
-        foreach ($images as $image) {
-            DB::table($tempImageTable)->insert([
-                'sku' => $sku,
-                'e_web_index' => $image->Index,
-                'width' => $image->Width,
-                'height' => $image->Height,
-                'url' => htmlspecialchars_decode($image->URL),
-                'created_at' => Carbon::now(),
-                'updated_at' => Carbon::now(),
-            ]);
+        $imageData = $this->processImagesForBatch($images, $sku);
+        
+        if (!empty($imageData)) {
+            DB::table($tempImageTable)->insert($imageData);
         }
+    }
+
+    /**
+     * Process ISDs for batch insertion
+     */
+    private function processIsdsForBatch($isds, $sku)
+    {
+        if (empty($isds)) {
+            return [];
+        }
+
+        $isds = is_object($isds) ? [$isds] : $isds;
+        $isdData = [];
+        $isdIndex = 0;
+
+        foreach ($isds as $isd) {
+            $isdName = isset($isd->Name) ? preg_replace('/\s+/', ' ', preg_replace('/[^a-zA-Z0-9 ]/', ' ', trim($isd->Name))) : null;
+            $isdValue = isset($isd->Value) ? trim($isd->Value) : null;
+
+            if (!empty($isdName) && !empty($isdValue) && $isdValue != 'N/A') {
+                $isdData[] = [
+                    'sku' => $sku,
+                    'isd_index' => $isdIndex,
+                    'isd_name' => $isdName,
+                    'isd_value' => $isdValue,
+                    'created_at' => Carbon::now(),
+                    'updated_at' => Carbon::now(),
+                ];
+                $isdIndex++;
+            }
+        }
+
+        return $isdData;
     }
 
     private function processIsds($isds, $sku, $tempIsdTable)
@@ -312,27 +538,10 @@ class GetProductsFromEWebMain extends Command
             return;
         }
 
-        $isds = is_object($isds) ? [$isds] : $isds;
-        $isdIndex = 0;
-
-        foreach ($isds as $isd) {
-            // $isdName = isset($isd->Name) ? trim($isd->Name) : null;
-            $isdName = isset($isd->Name) ? preg_replace('/\s+/', ' ', preg_replace('/[^a-zA-Z0-9 ]/', ' ', trim($isd->Name))) : null;
-
-            // $isdValue = isset($isd->Value) ? preg_replace('/\s+/', ' ', preg_replace('/[^a-zA-Z0-9 ]/', ' ', trim($isd->Value))) : null;
-            $isdValue = isset($isd->Value) ? trim($isd->Value) : null;
-
-            if (!empty($isdName) && !empty($isdValue) && $isdValue != 'N/A') {
-                DB::table($tempIsdTable)->insert([
-                    'sku' => $sku,
-                    'isd_index' => $isdIndex,
-                    'isd_name' => $isdName,
-                    'isd_value' => $isdValue,
-                    'created_at' => Carbon::now(),
-                    'updated_at' => Carbon::now(),
-                ]);
-                $isdIndex++;
-            }
+        $isdData = $this->processIsdsForBatch($isds, $sku);
+        
+        if (!empty($isdData)) {
+            DB::table($tempIsdTable)->insert($isdData);
         }
     }
 
