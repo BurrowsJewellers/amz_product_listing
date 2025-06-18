@@ -20,7 +20,7 @@ class GetProductsFromEWebMain extends Command
      *
      * @var string
      */
-    protected $signature = 'getProductsFromEWebMain {--memory-limit=512M : Memory limit for this command}';
+    protected $signature = 'getProductsFromEWebMain {--memory-limit=1G : Memory limit for this command}';
 
     /**
      * The console command description.
@@ -215,19 +215,29 @@ class GetProductsFromEWebMain extends Command
             $this->info("Processing {$totalItems} items from RetailEdge");
             $this->info("Memory usage at start: " . $this->formatBytes(memory_get_usage(true)));
             
-            // Process in chunks to manage memory
-            $chunkSize = 500; // Process 500 items at a time
-            $chunks = array_chunk($activeItems, $chunkSize);
+            // Process in smaller chunks to manage memory more aggressively
+            $chunkSize = 250; // Reduce chunk size to 250 items
+            $totalChunks = ceil($totalItems / $chunkSize);
             
-            // Clear the full array from memory
-            unset($activeItems);
-            
-            foreach ($chunks as $chunkIndex => $chunk) {
+            // Process items in chunks without storing all chunks in memory
+            for ($chunkIndex = 0; $chunkIndex < $totalChunks; $chunkIndex++) {
+                $startIndex = $chunkIndex * $chunkSize;
+                $chunk = array_slice($activeItems, $startIndex, $chunkSize);
+                
+                // Clear processed items from memory
+                if ($chunkIndex > 0) {
+                    $clearStart = ($chunkIndex - 1) * $chunkSize;
+                    for ($i = $clearStart; $i < $startIndex; $i++) {
+                        if (isset($activeItems[$i])) {
+                            unset($activeItems[$i]);
+                        }
+                    }
+                }
                 $batchProducts = [];
                 $batchImages = [];
                 $batchIsds = [];
                 
-                $this->info("Processing chunk " . ($chunkIndex + 1) . "/" . count($chunks) . " (Memory: " . $this->formatBytes(memory_get_usage(true)) . ")");
+                $this->info("Processing chunk " . ($chunkIndex + 1) . "/{$totalChunks} (Memory: " . $this->formatBytes(memory_get_usage(true)) . ")");
                 
                 foreach ($chunk as $item) {
                     // Process signals if available
@@ -279,15 +289,43 @@ class GetProductsFromEWebMain extends Command
                     $this->info("Inserted " . count($batchIsds) . " ISDs");
                 }
                 
-                // Clear batch arrays
+                // Clear batch arrays and chunk
                 unset($batchProducts, $batchImages, $batchIsds, $chunk);
                 
-                // Force garbage collection after each chunk
+                // More aggressive memory cleanup
+                if (function_exists('gc_mem_caches')) {
+                    gc_mem_caches();
+                }
                 gc_collect_cycles();
                 
-                // Add a small delay to reduce server load
-                usleep(100000); // 0.1 second
+                // Clear opcache if available to free memory
+                if (function_exists('opcache_reset') && ($chunkIndex + 1) % 5 == 0) {
+                    opcache_reset();
+                }
+                
+                // Add a longer delay to reduce server load and allow memory cleanup
+                usleep(250000); // 0.25 second
+                
+                // Log memory after cleanup and check if we're getting close to limit
+                if (($chunkIndex + 1) % 5 == 0) {
+                    $currentMemory = memory_get_usage(true);
+                    $memoryLimit = ini_get('memory_limit');
+                    $memoryLimitBytes = $this->convertToBytes($memoryLimit);
+                    $memoryUsagePercent = ($currentMemory / $memoryLimitBytes) * 100;
+                    
+                    $this->info("Memory after chunk " . ($chunkIndex + 1) . " cleanup: " . $this->formatBytes($currentMemory) . " ({$memoryUsagePercent}% of limit)");
+                    
+                    // If memory usage is getting too high, reduce chunk size
+                    if ($memoryUsagePercent > 80 && $chunkSize > 50) {
+                        $chunkSize = max(50, intval($chunkSize * 0.8));
+                        $this->warn("Memory usage high, reducing chunk size to {$chunkSize}");
+                        $totalChunks = ceil($totalItems / $chunkSize);
+                    }
+                }
             }
+            
+            // Final cleanup
+            unset($activeItems);
             
             $this->info("Completed processing {$processedCount}/{$totalItems} items with {$errorCount} errors.");
             $this->info("Final memory usage: " . $this->formatBytes(memory_get_usage(true)));
@@ -312,6 +350,27 @@ class GetProductsFromEWebMain extends Command
         $bytes /= pow(1024, $pow);
         
         return round($bytes, $precision) . ' ' . $units[$pow];
+    }
+    
+    /**
+     * Convert memory limit string to bytes
+     */
+    private function convertToBytes($val)
+    {
+        $val = trim($val);
+        $last = strtolower($val[strlen($val)-1]);
+        $val = (int)$val;
+        
+        switch($last) {
+            case 'g':
+                $val *= 1024;
+            case 'm':
+                $val *= 1024;
+            case 'k':
+                $val *= 1024;
+        }
+        
+        return $val;
     }
 
     /**
