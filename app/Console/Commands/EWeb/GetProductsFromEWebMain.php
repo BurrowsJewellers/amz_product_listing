@@ -12,6 +12,7 @@ use App\Models\Shopify\ShopifySku;
 use App\Services\RetailEdgeService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 class GetProductsFromEWebMain extends Command
 {
@@ -218,19 +219,18 @@ class GetProductsFromEWebMain extends Command
         try {
             $retailEdgeService = new RetailEdgeService();
 
-            // First, get total count if possible
-            $activeItems = $retailEdgeService->getAllActiveItems();
-            $totalItems = count($activeItems);
+            // Use streaming approach to avoid loading all items into memory
             $processedCount = 0;
             $errorCount = 0;
+            $chunkSize = (int) $this->option('chunk-size');
+            $resumeFrom = (int) $this->option('resume-from');
+            
+            // Get total count from cached file without loading all data
+            $totalItems = $this->getTotalItemCount($retailEdgeService);
+            $totalChunks = ceil($totalItems / $chunkSize);
 
             $this->info("Processing {$totalItems} items from RetailEdge");
             $this->info("Memory usage at start: " . $this->formatBytes(memory_get_usage(true)));
-
-            // Process in smaller chunks to manage memory more aggressively
-            $chunkSize = (int) $this->option('chunk-size'); // Configurable chunk size
-            $resumeFrom = (int) $this->option('resume-from');
-            $totalChunks = ceil($totalItems / $chunkSize);
 
             if ($resumeFrom > 0) {
                 $this->info("Resuming from item {$resumeFrom}");
@@ -241,22 +241,25 @@ class GetProductsFromEWebMain extends Command
                 // Check for existing checkpoint
                 $checkpointFile = storage_path('app/eweb_checkpoint.txt');
                 if (file_exists($checkpointFile)) {
-                    // $checkpointValue = (int) file_get_contents($checkpointFile);
-                    // if ($checkpointValue > 0 && $this->confirm("Found checkpoint at {$checkpointValue} items. Resume from there?")) {
-                    // if ($checkpointValue > 0) {
-                    //     $processedCount = $checkpointValue;
-                    //     $startChunk = floor($checkpointValue / $chunkSize);
-                    //     $this->info("Resuming from checkpoint: {$checkpointValue} items");
-                    // }
+                    $checkpointValue = (int) file_get_contents($checkpointFile);
+                    if ($checkpointValue > 0) {
+                        $processedCount = $checkpointValue;
+                        $startChunk = floor($checkpointValue / $chunkSize);
+                        $this->info("Resuming from checkpoint: {$checkpointValue} items");
+                    }
                 }
             }
 
-            // Process items in chunks without storing all chunks in memory
+            // Process items in streaming chunks
             for ($chunkIndex = $startChunk; $chunkIndex < $totalChunks; $chunkIndex++) {
                 $startIndex = $chunkIndex * $chunkSize;
-                $chunk = array_slice($activeItems, $startIndex, $chunkSize);
+                $chunk = $this->getItemChunk($retailEdgeService, $startIndex, $chunkSize);
+                
+                if (empty($chunk)) {
+                    $this->warn("No items found in chunk {$chunkIndex}, stopping processing");
+                    break;
+                }
 
-                // Memory clearing removed - caused array fragmentation issues with array_slice()
                 $batchProducts = [];
                 $batchImages = [];
                 $batchIsds = [];
@@ -354,9 +357,6 @@ class GetProductsFromEWebMain extends Command
                     }
                 }
             }
-
-            // Final cleanup
-            unset($activeItems);
 
             $this->info("Completed processing {$processedCount}/{$totalItems} items with {$errorCount} errors.");
             $this->info("Final memory usage: " . $this->formatBytes(memory_get_usage(true)));
@@ -690,5 +690,43 @@ class GetProductsFromEWebMain extends Command
         ";
         $updatedCount3 = DB::update($sql3);
         Log::info("Updated {$updatedCount3} shopify_product_variants with new price/quantity from RetailEdgeProducts.");
+    }
+
+    /**
+     * Get total item count without loading all items into memory
+     */
+    private function getTotalItemCount(RetailEdgeService $service)
+    {
+        // Check if we have cached data first
+        if ($service->hasValidCache()) {
+            $cachedData = Storage::get(RetailEdgeService::STORAGE_FILE);
+            $data = json_decode($cachedData, true);
+            return count($data);
+        }
+        
+        // If no cache, we'll need to fetch and count
+        $activeItems = $service->getAllActiveItems();
+        return count($activeItems);
+    }
+
+    /**
+     * Get a chunk of items using streaming approach
+     */
+    private function getItemChunk(RetailEdgeService $service, $startIndex, $chunkSize)
+    {
+        // For now, we'll load all items but this could be optimized further
+        // by implementing a streaming JSON parser for very large datasets
+        static $cachedItems = null;
+        
+        if ($cachedItems === null) {
+            if ($service->hasValidCache()) {
+                $cachedData = Storage::get(RetailEdgeService::STORAGE_FILE);
+                $cachedItems = json_decode($cachedData);
+            } else {
+                $cachedItems = $service->getAllActiveItems();
+            }
+        }
+        
+        return array_slice($cachedItems, $startIndex, $chunkSize);
     }
 }

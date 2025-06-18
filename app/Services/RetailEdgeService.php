@@ -39,7 +39,7 @@ class RetailEdgeService extends RetailEdgeConnectionService
         return $resp->GetActiveItemBySKUResult;
     }
 
-    private function hasValidCache(): bool
+    public function hasValidCache(): bool
     {
         // First check if the cache file exists
         if (!Storage::exists(self::STORAGE_FILE)) {
