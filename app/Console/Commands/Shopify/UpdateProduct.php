@@ -52,9 +52,9 @@ class UpdateProduct extends Command
             // $skusToUpdate = RetailEdgeProduct::where('update_date_time', '>', now()->subHours(24))->pluck('sku')->toArray();
 
             // Or, if you have a direct flag on ShopifyProductVariant:
-            $variantsToUpdate = ShopifyProductVariant::with(['retailEdgeProduct.brand', 'product', 'retailEdgeProduct.children'])
-                ->where('requires_update', 1) // Assuming such a flag exists
-                ->get();
+            // $variantsToUpdate = ShopifyProductVariant::with(['retailEdgeProduct.brand', 'product', 'retailEdgeProduct.children'])
+            //     ->where('requires_update', 1) // Assuming such a flag exists
+            //     ->get();
 
             // $variantsToUpdate = ShopifyProductVariant::with([
             //     'retailEdgeProduct.brand', // For vendor, tags
@@ -65,6 +65,19 @@ class UpdateProduct extends Command
             //     ->whereIn('sku', $skusToUpdate)
             //     ->get();
 
+
+            $variantsToUpdate = ShopifyProductVariant::with([
+                'retailEdgeProduct.brand',
+                'retailEdgeProduct.children',
+                'product'
+            ])
+                ->where(function ($query) {
+                    $query->where('requires_update', 1)
+                        ->orWhereHas('retailEdgeProduct', function ($subQuery) {
+                            $subQuery->where('update_date_time', '>', now()->subHours(24));
+                        });
+                })
+                ->get();
 
             if ($variantsToUpdate->isEmpty()) {
                 $this->info('No products require updating at this time.');
