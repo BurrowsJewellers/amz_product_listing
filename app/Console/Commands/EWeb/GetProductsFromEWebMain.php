@@ -39,31 +39,40 @@ class GetProductsFromEWebMain extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        Log::info("$marketplace $jobType started!");
-
-        $tempProductTable = 'retail_edge_products_temp';
-        $tempImageTable = 'retail_edge_product_images_temp';
-        $tempIsdTable = 'retail_edge_product_isds_temp';
-
         try {
+            Log::info("$marketplace $jobType started!");
+            
+            // Mark job as running
+            $job->update(['status' => 1]);
+
+            $tempProductTable = 'retail_edge_products_temp';
+            $tempImageTable = 'retail_edge_product_images_temp';
+            $tempIsdTable = 'retail_edge_product_isds_temp';
+
+            try {
             // Backup and restore ShopifySku logic (kept outside main product data transaction as per original structure)
             try {
-                // Note: This references RetailEdgeProduct before it's cleared and repopulated.
-                // This assumes that the state of 'uploaded_to_shopify' in RetailEdgeProduct before this job run
-                // is the source of truth for what *was* on Shopify.
-                $shopifySkus = RetailEdgeProduct::where('uploaded_to_shopify', 1)
+                // Get SKUs that are actually in Shopify from shopify_product_variants table
+                // This is more reliable than using uploaded_to_shopify flag which might be incorrect
+                $shopifySkus = DB::table('shopify_product_variants')
+                    ->whereNotNull('sku')
+                    ->where('sku', '!=', '')
                     ->pluck('sku')
                     ->toArray();
-                Log::info("Backed up " . count($shopifySkus) . " Shopify SKUs for ShopifySku table restoration.");
+                Log::info("Found " . count($shopifySkus) . " Shopify SKUs from shopify_product_variants table.");
 
                 ShopifySku::truncate();
                 Log::info("Truncated ShopifySku table successfully.");
 
                 if (!empty($shopifySkus)) {
-                    foreach ($shopifySkus as $shopifySku) {
-                        ShopifySku::create(['sku' => $shopifySku]);
+                    $chunks = array_chunk($shopifySkus, 1000); // Insert in chunks for better performance
+                    foreach ($chunks as $chunk) {
+                        $data = array_map(function($sku) {
+                            return ['sku' => $sku, 'created_at' => now(), 'updated_at' => now()];
+                        }, $chunk);
+                        ShopifySku::insert($data);
                     }
-                    Log::info("Restored Shopify SKUs to ShopifySku table.");
+                    Log::info("Restored " . count($shopifySkus) . " Shopify SKUs to ShopifySku table.");
                 } else {
                     Log::info("No Shopify SKUs to restore to ShopifySku table.");
                 }
@@ -129,6 +138,13 @@ class GetProductsFromEWebMain extends Command
             DB::statement("DROP TABLE IF EXISTS {$tempImageTable}");
             DB::statement("DROP TABLE IF EXISTS {$tempIsdTable}");
             Log::info("Temporary tables {$tempProductTable}, {$tempImageTable} and {$tempIsdTable} dropped.");
+        }
+        } catch (\Throwable $e) {
+            // Global exception handler to ensure job status is always reset
+            report($e);
+            $job->update(['status' => 0, 'message' => "Unexpected error: " . $e->getMessage()]);
+            Log::error("$marketplace $jobType failed with unexpected error: " . $e->getMessage() . " at " . $e->getFile() . ":" . $e->getLine());
+            throw $e; // Re-throw to maintain original behavior
         }
     }
 
@@ -322,6 +338,11 @@ class GetProductsFromEWebMain extends Command
 
     private function updateShopifyProducts()
     {
+        // First, reset all uploaded_to_shopify flags to 0
+        $resetCount = RetailEdgeProduct::where('uploaded_to_shopify', 1)
+            ->update(['uploaded_to_shopify' => 0]);
+        Log::info("Reset {$resetCount} RetailEdgeProducts uploaded_to_shopify flag to 0.");
+
         $shopifySkus = ShopifySku::pluck('sku')->toArray();
         $updatedCount1 = 0;
         $updatedCount2 = 0;
@@ -335,6 +356,7 @@ class GetProductsFromEWebMain extends Command
             Log::info("No SKUs found in ShopifySku backup to update uploaded_to_shopify flag.");
         }
 
+        // Only mark products as uploaded if they actually exist in shopify_product_variants
         $sql2 = "UPDATE retail_edge_products
             SET uploaded_to_shopify = 1
             WHERE sku IN (SELECT sku FROM shopify_product_variants)";

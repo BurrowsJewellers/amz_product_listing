@@ -13,6 +13,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Shopify\Clients\Graphql;
+use App\Models\SyncJob;
 
 class GetProducts extends Command
 {
@@ -58,6 +59,37 @@ class GetProducts extends Command
 
         if (!$job->isRunning()) {
             try {
+                // Check if GetProductsFromEWebMain is running and wait if needed
+                $maxWaitTime = 300; // 5 minutes max wait
+                $waitInterval = 10; // Check every 10 seconds
+                $totalWaitTime = 0;
+                
+                while ($totalWaitTime < $maxWaitTime) {
+                    $ewebJob = SyncJob::where('job_type', 'getProductsFromEWebMain')
+                        ->where('marketplace', 'EWeb')
+                        ->first();
+                    
+                    if ($ewebJob && $ewebJob->status == 1) {
+                        $this->info("⏳ GetProductsFromEWebMain is running. Waiting... ({$totalWaitTime}s elapsed)");
+                        Log::info("$marketplace $jobType waiting for GetProductsFromEWebMain to complete. Wait time: {$totalWaitTime}s");
+                        
+                        sleep($waitInterval);
+                        $totalWaitTime += $waitInterval;
+                    } else {
+                        // GetProductsFromEWebMain is not running, proceed
+                        if ($totalWaitTime > 0) {
+                            $this->info("✅ GetProductsFromEWebMain completed. Proceeding with Shopify sync.");
+                            Log::info("$marketplace $jobType proceeding after waiting {$totalWaitTime}s for GetProductsFromEWebMain");
+                        }
+                        break;
+                    }
+                }
+                
+                if ($totalWaitTime >= $maxWaitTime) {
+                    $this->warn("⚠️ Waited maximum time ({$maxWaitTime}s) for GetProductsFromEWebMain. Proceeding anyway.");
+                    Log::warning("$marketplace $jobType exceeded max wait time for GetProductsFromEWebMain. Proceeding.");
+                }
+
                 Log::info("$marketplace $jobType started!");
                 $job->update(['status' => 1]);
 
