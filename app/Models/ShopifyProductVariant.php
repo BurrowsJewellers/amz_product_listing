@@ -33,6 +33,7 @@ class ShopifyProductVariant extends Model
         'grams',
         'weight',
         'inventory_item_id',
+        'inventory_item_gid',
         'inventory_quantity',
         'old_inventory_quantity',
         'requires_shipping',

@@ -467,7 +467,8 @@ class GetProducts extends Command
                 'taxable' => true,
                 'grams' => 0,
                 'weight' => 0,
-                'inventory_item_id' => str_replace('gid://shopify/InventoryItem/', '', $variant['inventoryItem']['id'] ?? ''),
+                'inventory_item_id' => $this->extractIdFromGid($variant['inventoryItem']['id'] ?? null),
+                'inventory_item_gid' => $variant['inventoryItem']['id'] ?? null,
                 'inventory_quantity' => $variant['inventoryQuantity'] ?? 0,
                 'old_inventory_quantity' => $variant['inventoryQuantity'] ?? 0,
                 'requires_shipping' => true,
@@ -697,5 +698,22 @@ class GetProducts extends Command
         } else {
             $this->info("✅ Sync completed successfully!");
         }
+    }
+
+    /**
+     * Extract numeric ID from Shopify GID
+     */
+    private function extractIdFromGid(?string $gid): ?int
+    {
+        if (empty($gid)) {
+            return null;
+        }
+
+        // Extract numeric ID from GID format: gid://shopify/ResourceType/12345
+        if (preg_match('/gid:\/\/shopify\/[^\/]+\/(\d+)$/', $gid, $matches)) {
+            return (int) $matches[1];
+        }
+
+        return null;
     }
 }

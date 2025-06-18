@@ -744,7 +744,8 @@ class CreateProduct extends Command
                     'taxable' => true, // Default
                     'grams' => 0, // Default
                     'weight' => 0, // Default
-                    'inventory_item_id' => $variant['inventoryItem']['id'] ?? null, // Not available in initial creation
+                    'inventory_item_id' => $this->extractIdFromGid($variant['inventoryItem']['id'] ?? null),
+                    'inventory_item_gid' => $variant['inventoryItem']['id'] ?? null,
                     'inventory_quantity' => 0, // Default
                     'old_inventory_quantity' => 0, // Default
                     'requires_shipping' => true, // Default
@@ -1176,6 +1177,23 @@ class CreateProduct extends Command
         }
 
         // Fallback: return null if we can't find the SKU
+        return null;
+    }
+
+    /**
+     * Extract numeric ID from Shopify GID
+     */
+    private function extractIdFromGid(?string $gid): ?int
+    {
+        if (empty($gid)) {
+            return null;
+        }
+
+        // Extract numeric ID from GID format: gid://shopify/ResourceType/12345
+        if (preg_match('/gid:\/\/shopify\/[^\/]+\/(\d+)$/', $gid, $matches)) {
+            return (int) $matches[1];
+        }
+
         return null;
     }
 }
