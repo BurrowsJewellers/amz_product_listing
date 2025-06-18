@@ -49,21 +49,21 @@ class UpdateProduct extends Command
 
             // Fetch variants that need updating.
             // Assuming RetailEdgeProduct.update_date_time triggers an update.
-            $skusToUpdate = RetailEdgeProduct::where('update_date_time', '>', now()->subHours(24))->pluck('sku')->toArray();
+            // $skusToUpdate = RetailEdgeProduct::where('update_date_time', '>', now()->subHours(24))->pluck('sku')->toArray();
 
             // Or, if you have a direct flag on ShopifyProductVariant:
-            // $variantsToUpdate = ShopifyProductVariant::with(['retailEdgeProduct.brand', 'product', 'retailEdgeProduct.children'])
-            //     ->where('requires_update', 1) // Assuming such a flag exists
-            //     ->get();
-
-            $variantsToUpdate = ShopifyProductVariant::with([
-                'retailEdgeProduct.brand', // For vendor, tags
-                'retailEdgeProduct.children', // For constructing variant data if needed, though less relevant for updates of existing variants
-                'product' // To get shopify_product_id (Product GID)
-            ])
-                ->whereHas('retailEdgeProduct') // Ensure related RetailEdgeProduct exists
-                ->whereIn('sku', $skusToUpdate)
+            $variantsToUpdate = ShopifyProductVariant::with(['retailEdgeProduct.brand', 'product', 'retailEdgeProduct.children'])
+                ->where('requires_update', 1) // Assuming such a flag exists
                 ->get();
+
+            // $variantsToUpdate = ShopifyProductVariant::with([
+            //     'retailEdgeProduct.brand', // For vendor, tags
+            //     'retailEdgeProduct.children', // For constructing variant data if needed, though less relevant for updates of existing variants
+            //     'product' // To get shopify_product_id (Product GID)
+            // ])
+            //     ->whereHas('retailEdgeProduct') // Ensure related RetailEdgeProduct exists
+            //     ->whereIn('sku', $skusToUpdate)
+            //     ->get();
 
 
             if ($variantsToUpdate->isEmpty()) {
