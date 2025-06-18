@@ -32,6 +32,7 @@ class DeleteProducts extends Command
      */
     public function handle()
     {
+        exit;
         $marketplace = 'Shopify';
         $jobType = 'shopifyDeleteProducts';
 
