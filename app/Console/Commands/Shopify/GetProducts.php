@@ -63,16 +63,16 @@ class GetProducts extends Command
                 $maxWaitTime = 300; // 5 minutes max wait
                 $waitInterval = 10; // Check every 10 seconds
                 $totalWaitTime = 0;
-                
+
                 while ($totalWaitTime < $maxWaitTime) {
-                    $ewebJob = SyncJob::where('job_type', 'getProductsFromEWebMain')
+                    $ewebJob = SyncJob::where('type', 'getProductsFromEWebMain')
                         ->where('marketplace', 'EWeb')
                         ->first();
-                    
+
                     if ($ewebJob && $ewebJob->status == 1) {
                         $this->info("⏳ GetProductsFromEWebMain is running. Waiting... ({$totalWaitTime}s elapsed)");
                         Log::info("$marketplace $jobType waiting for GetProductsFromEWebMain to complete. Wait time: {$totalWaitTime}s");
-                        
+
                         sleep($waitInterval);
                         $totalWaitTime += $waitInterval;
                     } else {
@@ -84,7 +84,7 @@ class GetProducts extends Command
                         break;
                     }
                 }
-                
+
                 if ($totalWaitTime >= $maxWaitTime) {
                     $this->warn("⚠️ Waited maximum time ({$maxWaitTime}s) for GetProductsFromEWebMain. Proceeding anyway.");
                     Log::warning("$marketplace $jobType exceeded max wait time for GetProductsFromEWebMain. Proceeding.");
