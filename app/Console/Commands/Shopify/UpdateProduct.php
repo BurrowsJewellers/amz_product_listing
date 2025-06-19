@@ -214,7 +214,7 @@ class UpdateProduct extends Command
                         }
                     } else {
                         $this->info("Successfully updated variant data for Variant GID: {$variantInput['id']}");
-                        // $variant->update(['requires_update' => 0]); // Update local flag if successful
+                        $variant->update(['requires_update' => 0]); // Update local flag if successful
                     }
                 } catch (\Exception $e) {
                     $this->error("Exception during variant bulk update for Variant GID {$variantInput['id']}: " . $e->getMessage());
