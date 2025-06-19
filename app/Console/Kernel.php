@@ -15,7 +15,7 @@ class Kernel extends ConsoleKernel
         /**
          * Main job to fetch products from eWeb
          */
-        $schedule->command('getProductsFromEWebMain')->everyThirtyMinutes()
+        $schedule->command('getProductsFromEWebMain')->everyFifteenMinutes()
             ->after(function () {
                 $this->call('shopifyUpdatePriceInventory');
             });

@@ -21,7 +21,7 @@ class GetProductsFromEWebMain extends Command
      *
      * @var string
      */
-    protected $signature = 'getProductsFromEWebMain {--memory-limit=512M : Memory limit for this command} {--chunk-size=100 : Items per chunk} {--resume-from=0 : Resume from specific item number}';
+    protected $signature = 'getProductsFromEWebMain {--memory-limit=2G : Memory limit for this command} {--chunk-size=100 : Items per chunk} {--resume-from=0 : Resume from specific item number}';
 
     /**
      * The console command description.
