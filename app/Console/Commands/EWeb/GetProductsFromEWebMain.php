@@ -525,7 +525,7 @@ class GetProductsFromEWebMain extends Command
         $price = $item->RetailPrice;
         $compareAtPrice = 0;
 
-        if (isset($item->SpecialPrice) && $item->SpecialPrice > 0) {
+        if (isset($item->SpecialPrice) && $item->SpecialPrice > 0 && Carbon::parse($item->SpecialPriceEnd) > now()) {
             $price = $item->SpecialPrice;
             $compareAtPrice = $item->RetailPrice;
         }
