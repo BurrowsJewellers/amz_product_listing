@@ -41,6 +41,7 @@ class ShopifyService extends ShopifyConnectionService
                             'product_id' => $variant['product_id'] ?? $productData['id'],
                             'title' => $variant['title'] ?? null,
                             'price' => $variant['price'],
+                            'sku' => $variant['sku'],
                             'position' => $variant['position'] ?? 1,
                             'inventory_policy' => $variant['inventory_policy'] ?? 'deny',
                             'fulfillment_service' => $variant['fulfillment_service'] ?? 'manual',
