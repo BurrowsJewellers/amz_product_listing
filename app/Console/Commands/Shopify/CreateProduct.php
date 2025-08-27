@@ -137,7 +137,7 @@ class CreateProduct extends Command
                                         $this->warn("Failed to mark child SKU {$child->sku} as uploaded_to_shopify");
                                     }
                                 }
-                                
+
                                 // Also mark the parent as uploaded
                                 $parentUpdated = $product->update(['uploaded_to_shopify' => 1]);
                                 if ($parentUpdated) {
@@ -788,6 +788,8 @@ class CreateProduct extends Command
     {
         $mktDescription = $product->marketing_description ?? '';
         if ($product->brand?->name == 'Pandora') {
+            $mktDescription .= " - Design number: " . $product->real_design_number;
+        } else {
             $mktDescription .= " - Design number: " . $product->real_design_number;
         }
         return $mktDescription;
