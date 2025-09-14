@@ -541,6 +541,18 @@ class GetProductsFromEWebMain extends Command
      */
     private function createProductData($item, $sku)
     {
+        // Parse special price dates, treating '0001-01-01' as null
+        $specialPriceStart = null;
+        $specialPriceEnd = null;
+
+        if (isset($item->SpecialPriceStart) && $item->SpecialPriceStart !== '0001-01-01T00:00:00') {
+            $specialPriceStart = Carbon::parse($item->SpecialPriceStart);
+        }
+
+        if (isset($item->SpecialPriceEnd) && $item->SpecialPriceEnd !== '0001-01-01T00:00:00') {
+            $specialPriceEnd = Carbon::parse($item->SpecialPriceEnd);
+        }
+
         return [
             'sku' => $sku,
             'title' => isset($item->ShortMarketingDescription) ? trim($item->ShortMarketingDescription) : '',
@@ -551,6 +563,9 @@ class GetProductsFromEWebMain extends Command
             'retail_price2' => $item->RetailPrice2 ?? 0,
             'price' => $item->price ?? $item->RetailPrice ?? 0,
             'compare_at_price' => $item->compareAtPrice ?? 0,
+            'special_price' => $item->SpecialPrice ?? 0,
+            'special_price_start' => $specialPriceStart,
+            'special_price_end' => $specialPriceEnd,
             'quantity' => isset($item->TotalAvailQOH) ? intval($item->TotalAvailQOH) : 0,
             'id1' => isset($item->ID1) ? trim($item->ID1) : '',
             'id2' => isset($item->ID2) ? trim($item->ID2) : '',
