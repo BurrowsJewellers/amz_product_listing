@@ -53,14 +53,16 @@ class UpdatePrice extends Command
                     try {
                         $shopifyVariantApi = new Variant($session);
                         $shopifyVariantApi->id = $variant->variant_id;
-                        $originalPrice = $variant->getOriginal('price'); // Attempt to get value before potential in-memory changes
-                        $originalCompareAtPrice = $variant->getOriginal('compare_at_price');
+                        $originalPrice = $variant->price;
+                        $originalCompareAtPrice = $variant->compare_at_price;
+                        $newPrice = $variant->retailEdgeProduct->price;
+                        $newCompareAtPrice = $variant->retailEdgeProduct->compare_at_price;
 
-                        $shopifyVariantApi->price = $variant->price;
+                        $shopifyVariantApi->price = $newPrice;
                         // Only set compare_at_price if it's provided and different from price, or if it's explicitly being cleared
-                        if (isset($variant->compare_at_price) && $variant->compare_at_price !== $variant->price) {
-                            $shopifyVariantApi->compare_at_price = $variant->compare_at_price;
-                        } elseif (isset($variant->compare_at_price) && $variant->compare_at_price === null) {
+                        if (isset($newCompareAtPrice) && $newCompareAtPrice !== $newPrice) {
+                            $shopifyVariantApi->compare_at_price = $newCompareAtPrice;
+                        } elseif (isset($newCompareAtPrice) && $newCompareAtPrice === null) {
                             $shopifyVariantApi->compare_at_price = null; // explicitly setting to null
                         }
 
@@ -73,8 +75,8 @@ class UpdatePrice extends Command
                             'marketplace' => $marketplace,
                             'item_identifier' => $variant->sku ?? (string)$variant->variant_id,
                             'change_type' => 'price',
-                            'from_value' => $originalPrice, // This is from DB before this script's $variant was hydrated with new values
-                            'to_value' => $variant->price,
+                            'from_value' => $originalPrice,
+                            'to_value' => $newPrice,
                             'status' => 'success',
                             'job_name' => $this->signature,
                             'message' => "Price updated via API for variant ID {$variant->variant_id}",
@@ -86,7 +88,7 @@ class UpdatePrice extends Command
                                 'item_identifier' => $variant->sku ?? (string)$variant->variant_id,
                                 'change_type' => 'compare_at_price',
                                 'from_value' => $originalCompareAtPrice,
-                                'to_value' => $variant->compare_at_price,
+                                'to_value' => $newCompareAtPrice,
                                 'status' => 'success',
                                 'job_name' => $this->signature,
                                 'message' => "Compare_at_price updated via API for variant ID {$variant->variant_id}",
@@ -94,7 +96,11 @@ class UpdatePrice extends Command
                         }
 
                         $this->info("Price updated for id {$variant->id}, sku {$variant->sku}, variant id {$variant->variant_id}");
-                        $variant->update(['price_requires_update' => 0]); // Status updated after successful API call and logging
+                        $variant->update([
+                            'price' => $newPrice,
+                            'compare_at_price' => $newCompareAtPrice,
+                            'price_requires_update' => 0
+                        ]); // Status updated after successful API call and logging
 
                     } catch (\Exception $e) {
                         Log::debug("Error updating price for SKU {$variant->sku} (Variant ID: {$variant->variant_id}). Error: {$e->getMessage()}");
@@ -103,20 +109,20 @@ class UpdatePrice extends Command
                             'marketplace' => $marketplace,
                             'item_identifier' => $variant->sku ?? (string)$variant->variant_id,
                             'change_type' => 'price',
-                            'from_value' => $variant->getOriginal('price'),
-                            'to_value' => $variant->price,
+                            'from_value' => $originalPrice,
+                            'to_value' => $newPrice,
                             'status' => 'failed',
                             'job_name' => $this->signature,
                             'message' => "API Error: " . $e->getMessage(),
                         ]);
                         // Also log failed compare_at_price if it was attempted
-                        if (isset($variant->compare_at_price) && $variant->compare_at_price !== $variant->getOriginal('compare_at_price')) {
+                        if (isset($newCompareAtPrice) && $newCompareAtPrice !== $originalCompareAtPrice) {
                             PriceInventoryLog::create([
                                 'marketplace' => $marketplace,
                                 'item_identifier' => $variant->sku ?? (string)$variant->variant_id,
                                 'change_type' => 'compare_at_price',
-                                'from_value' => $variant->getOriginal('compare_at_price'),
-                                'to_value' => $variant->compare_at_price,
+                                'from_value' => $originalCompareAtPrice,
+                                'to_value' => $newCompareAtPrice,
                                 'status' => 'failed',
                                 'job_name' => $this->signature,
                                 'message' => "API Error (attempting to update compare_at_price): " . $e->getMessage(),

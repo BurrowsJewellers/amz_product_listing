@@ -765,9 +765,6 @@ class GetProductsFromEWebMain extends Command
         $sql3 = "UPDATE shopify_product_variants spv
             JOIN retail_edge_products rep ON spv.sku = rep.sku
             SET
-                spv.price = rep.price,
-                spv.compare_at_price = rep.compare_at_price,
-                spv.inventory_quantity = rep.quantity,
                 spv.inventory_requires_update = CASE
                     WHEN spv.inventory_quantity <> rep.quantity THEN 1
                     ELSE spv.inventory_requires_update
@@ -787,7 +784,7 @@ class GetProductsFromEWebMain extends Command
                 OR (rep.compare_at_price = 0 AND spv.compare_at_price IS NOT NULL AND spv.compare_at_price > 0)
         ";
         $updatedCount3 = DB::update($sql3);
-        Log::info("Updated {$updatedCount3} shopify_product_variants with new price/quantity from RetailEdgeProducts.");
+        Log::info("Flagged {$updatedCount3} shopify_product_variants for price/inventory update (values will be updated after successful Shopify API sync).");
 
         // Additional verification step - check for any remaining mismatches
         $verificationQuery = "SELECT COUNT(*) as mismatch_count

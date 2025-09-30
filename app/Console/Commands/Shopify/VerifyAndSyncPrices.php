@@ -220,13 +220,11 @@ class VerifyAndSyncPrices extends Command
         }
 
         // Update using raw SQL for better performance and accuracy
+        // Only set flags - values will be updated after successful Shopify API sync
         $updatedCount = DB::update("
             UPDATE shopify_product_variants spv
             JOIN retail_edge_products rep ON spv.sku = rep.sku
             SET
-                spv.price = rep.price,
-                spv.compare_at_price = rep.compare_at_price,
-                spv.inventory_quantity = rep.quantity,
                 spv.price_requires_update = CASE
                     WHEN spv.price != rep.price
                         OR IFNULL(spv.compare_at_price, 0) != IFNULL(rep.compare_at_price, 0)
