@@ -84,10 +84,10 @@ class UpdatePriceAndInventory extends Command
                         $shopifyVariantAPI->price = $newPrice;
 
                         $compareAtPriceIsSetForApi = false;
-                        if (isset($newCompareAtPrice) && $newCompareAtPrice !== $newPrice) {
+                        if ($newCompareAtPrice > 0 && $newCompareAtPrice !== $newPrice) {
                             $shopifyVariantAPI->compare_at_price = $newCompareAtPrice;
                             $compareAtPriceIsSetForApi = true;
-                        } elseif (isset($newCompareAtPrice) && $newCompareAtPrice === null) {
+                        } elseif ($newCompareAtPrice == 0 || is_null($newCompareAtPrice)) {
                             $shopifyVariantAPI->compare_at_price = null;
                             $compareAtPriceIsSetForApi = true;
                         }

@@ -50,20 +50,24 @@ class UpdatePrice extends Command
                 $variant = ShopifyProductVariant::with('retailEdgeProduct')->whereNotNull('variant_id')->where('price_requires_update', 1)->first();
 
                 if ($variant) {
+                    $originalPrice = $variant->price;
+                    $originalCompareAtPrice = $variant->compare_at_price;
+                    $newPrice = $variant->retailEdgeProduct->price;
+                    $newCompareAtPrice = $variant->retailEdgeProduct->compare_at_price;
+                    $compareAtPriceIsSetForApi = false;
+
                     try {
                         $shopifyVariantApi = new Variant($session);
                         $shopifyVariantApi->id = $variant->variant_id;
-                        $originalPrice = $variant->price;
-                        $originalCompareAtPrice = $variant->compare_at_price;
-                        $newPrice = $variant->retailEdgeProduct->price;
-                        $newCompareAtPrice = $variant->retailEdgeProduct->compare_at_price;
-
                         $shopifyVariantApi->price = $newPrice;
+
                         // Only set compare_at_price if it's provided and different from price, or if it's explicitly being cleared
-                        if (isset($newCompareAtPrice) && $newCompareAtPrice !== $newPrice) {
+                        if ($newCompareAtPrice > 0 && $newCompareAtPrice !== $newPrice) {
                             $shopifyVariantApi->compare_at_price = $newCompareAtPrice;
-                        } elseif (isset($newCompareAtPrice) && $newCompareAtPrice === null) {
+                            $compareAtPriceIsSetForApi = true;
+                        } elseif ($newCompareAtPrice == 0 || is_null($newCompareAtPrice)) {
                             $shopifyVariantApi->compare_at_price = null; // explicitly setting to null
+                            $compareAtPriceIsSetForApi = true;
                         }
 
 
@@ -82,7 +86,7 @@ class UpdatePrice extends Command
                             'message' => "Price updated via API for variant ID {$variant->variant_id}",
                         ]);
 
-                        if (isset($shopifyVariantApi->compare_at_price)) {
+                        if ($compareAtPriceIsSetForApi) {
                             PriceInventoryLog::create([
                                 'marketplace' => $marketplace,
                                 'item_identifier' => $variant->sku ?? (string)$variant->variant_id,
@@ -116,7 +120,7 @@ class UpdatePrice extends Command
                             'message' => "API Error: " . $e->getMessage(),
                         ]);
                         // Also log failed compare_at_price if it was attempted
-                        if (isset($newCompareAtPrice) && $newCompareAtPrice !== $originalCompareAtPrice) {
+                        if ($compareAtPriceIsSetForApi) {
                             PriceInventoryLog::create([
                                 'marketplace' => $marketplace,
                                 'item_identifier' => $variant->sku ?? (string)$variant->variant_id,
