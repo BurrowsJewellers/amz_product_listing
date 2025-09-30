@@ -73,6 +73,29 @@ class UpdatePriceAndInventory extends Command
                     ->first();
 
                 if ($variantForPrice) {
+                    if (!$variantForPrice->retailEdgeProduct) {
+                        $skuValue = $variantForPrice->sku ?: '[EMPTY SKU]';
+                        Log::warning("Missing RetailEdgeProduct for price update on SKU: {$skuValue} (Variant ID: {$variantForPrice->id})");
+                        PriceInventoryLog::create([
+                            'marketplace' => $marketplace,
+                            'item_identifier' => $skuValue ?? (string)$variantForPrice->variant_id,
+                            'change_type' => 'price',
+                            'from_value' => $variantForPrice->price,
+                            'to_value' => null,
+                            'status' => 'failed',
+                            'job_name' => $this->signature,
+                            'message' => "Missing RetailEdgeProduct. Price update skipped.",
+                        ]);
+                        $variantForPrice->update(['price_requires_update' => 2]);
+                        $this->info("Marked variant {$skuValue} (ID: {$variantForPrice->id}) for review due to missing RetailEdgeProduct.");
+                        usleep(config('shopify.delay', 1500000));
+                        $priceUpdateCount = ShopifyProductVariant::whereNotNull('variant_id')->where('price_requires_update', 1)->count();
+                        if ($priceUpdateCount > 0) {
+                            $this->info("Remaining products for price update: {$priceUpdateCount}");
+                        }
+                        continue;
+                    }
+
                     $originalPrice = $variantForPrice->price;
                     $originalCompareAtPrice = $variantForPrice->compare_at_price;
                     $newPrice = $variantForPrice->retailEdgeProduct->price;
