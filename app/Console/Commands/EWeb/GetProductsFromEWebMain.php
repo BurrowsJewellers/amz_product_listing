@@ -304,6 +304,23 @@ class GetProductsFromEWebMain extends Command
 
                 // Batch insert for this chunk
                 if (!empty($batchProducts)) {
+                    // Check for duplicate SKUs in this batch
+                    $skuCounts = array_count_values(array_column($batchProducts, 'sku'));
+                    $duplicateSkus = array_filter($skuCounts, function($count) { return $count > 1; });
+                    if (!empty($duplicateSkus)) {
+                        Log::warning("Found duplicate SKUs in batch: " . json_encode(array_keys($duplicateSkus)));
+                        // Remove duplicates, keeping only the first occurrence
+                        $uniqueProducts = [];
+                        $seenSkus = [];
+                        foreach ($batchProducts as $product) {
+                            if (!in_array($product['sku'], $seenSkus)) {
+                                $uniqueProducts[] = $product;
+                                $seenSkus[] = $product['sku'];
+                            }
+                        }
+                        $batchProducts = $uniqueProducts;
+                    }
+
                     DB::table($tempProductTable)->insert($batchProducts);
                     $this->info("Inserted " . count($batchProducts) . " products");
                 }
@@ -312,8 +329,23 @@ class GetProductsFromEWebMain extends Command
                     $this->info("Inserted " . count($batchImages) . " images");
                 }
                 if (!empty($batchIsds)) {
-                    DB::table($tempIsdTable)->insert($batchIsds);
-                    $this->info("Inserted " . count($batchIsds) . " ISDs");
+                    // Check for duplicate SKU+index combinations
+                    $isdKeys = [];
+                    $uniqueIsds = [];
+                    foreach ($batchIsds as $isd) {
+                        $key = $isd['sku'] . '-' . $isd['isd_index'];
+                        if (!in_array($key, $isdKeys)) {
+                            $uniqueIsds[] = $isd;
+                            $isdKeys[] = $key;
+                        } else {
+                            Log::warning("Duplicate ISD found for SKU: {$isd['sku']}, index: {$isd['isd_index']}");
+                        }
+                    }
+
+                    if (!empty($uniqueIsds)) {
+                        DB::table($tempIsdTable)->insert($uniqueIsds);
+                        $this->info("Inserted " . count($uniqueIsds) . " ISDs");
+                    }
                 }
 
                 // Clear batch arrays and chunk
@@ -741,17 +773,37 @@ class GetProductsFromEWebMain extends Command
                     ELSE spv.inventory_requires_update
                 END,
                 spv.price_requires_update = CASE
-                    WHEN spv.price <> rep.price OR spv.compare_at_price <> rep.compare_at_price THEN 1
+                    WHEN spv.price <> rep.price
+                        OR IFNULL(spv.compare_at_price, 0) <> IFNULL(rep.compare_at_price, 0)
+                        OR (rep.compare_at_price = 0 AND spv.compare_at_price IS NOT NULL AND spv.compare_at_price > 0)
+                    THEN 1
                     ELSE spv.price_requires_update
                 END,
                 spv.updated_at = CURRENT_TIMESTAMP
             WHERE
                 spv.inventory_quantity <> rep.quantity
                 OR spv.price <> rep.price
-                OR spv.compare_at_price <> rep.compare_at_price
+                OR IFNULL(spv.compare_at_price, 0) <> IFNULL(rep.compare_at_price, 0)
+                OR (rep.compare_at_price = 0 AND spv.compare_at_price IS NOT NULL AND spv.compare_at_price > 0)
         ";
         $updatedCount3 = DB::update($sql3);
         Log::info("Updated {$updatedCount3} shopify_product_variants with new price/quantity from RetailEdgeProducts.");
+
+        // Additional verification step - check for any remaining mismatches
+        $verificationQuery = "SELECT COUNT(*) as mismatch_count
+            FROM shopify_product_variants spv
+            JOIN retail_edge_products rep ON spv.sku = rep.sku
+            WHERE spv.variant_id IS NOT NULL
+            AND (
+                spv.price <> rep.price
+                OR IFNULL(spv.compare_at_price, 0) <> IFNULL(rep.compare_at_price, 0)
+                OR spv.inventory_quantity <> rep.quantity
+            )";
+        $verificationResult = DB::selectOne($verificationQuery);
+
+        if ($verificationResult && $verificationResult->mismatch_count > 0) {
+            Log::warning("Post-sync verification found {$verificationResult->mismatch_count} remaining mismatches. Run 'php artisan shopify:verify-sync-prices' to investigate.");
+        }
     }
 
     /**

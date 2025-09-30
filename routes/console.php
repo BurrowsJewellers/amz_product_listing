@@ -1,103 +1,110 @@
 <?php
 
-use App\Console\Commands\Amazon\GetAmzMerchantListingAllData;
-use App\Console\Commands\Amazon\GetOrders;
-use App\Console\Commands\Amazon\GetProductsFromEWeb;
-use App\Console\Commands\Amazon\ProcessAmzMerchantListingAllData;
-use App\Console\Commands\Amazon\UpdateProduct as AmazonUpdateProduct;
-use App\Console\Commands\Catch\CheckIfExists;
-use App\Console\Commands\Catch\GenerateOffersCsv;
-use App\Console\Commands\Catch\GenerateProductsCsv;
-use App\Console\Commands\Catch\GetProductsFromEWebCatch;
-use App\Console\Commands\Catch\ListOffersOfShop;
-use App\Console\Commands\Catch\SubmitImports;
-use App\Console\Commands\EWeb\GetProductsFromEWebMain;
+/**
+ * ========================================
+ * CONSOLE ROUTES FOR ORCHESTRATED JOBS
+ * ========================================
+ *
+ * This file contains only the schedules that are NOT handled by
+ * the orchestrated chains in Kernel.php
+ *
+ * Orchestrated chains handle:
+ * - Main sync (getProductsFromEWebMain, shopify:verify-sync-prices, shopifyUpdatePriceInventory)
+ * - Amazon sync (generateAmzProductsJson, amazonUpdateInventoryPrice, getAmzMerchantListingAllData, processAmzMerchantListingAllData)
+ * - Shopify sync (shopifyGetProducts, shopifyCreateProduct, shopifyUploadImages, shopifyArchiveProducts)
+ */
+
 use App\Console\Commands\GetBrandsFromEWeb;
-use App\Console\Commands\Shopify\ArchiveProducts;
 use App\Console\Commands\Shopify\CountImages;
-use App\Console\Commands\Shopify\CreateProduct;
-use App\Console\Commands\Shopify\GetProducts;
-use App\Console\Commands\Shopify\UpdateInventory;
-use App\Console\Commands\Shopify\UpdatePrice;
 use App\Console\Commands\Shopify\UpdateProduct;
-use App\Console\Commands\Shopify\UploadImages;
-use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 
-
-
-
+// ========================================
+// TELESCOPE MAINTENANCE
+// ========================================
 Schedule::command('telescope:prune --hours=3')->everyFourHours();
 
+// ========================================
+// ORCHESTRATED JOB CHAINS
+// ========================================
+
+// MAIN PRODUCT SYNC CHAIN - Every 30 minutes
+Schedule::command('job:orchestrator main-sync')
+    ->cron('*/30 * * * *')
+    ->description('Main product sync: EWeb → Verification → Shopify price updates');
+
+// AMAZON OPERATIONS CHAIN - Every 3 hours at :15
+Schedule::command('job:orchestrator amazon-sync')
+    ->cron('15 */3 * * *')
+    ->description('Amazon operations: Products → Inventory/Price → Merchant listings');
+
+// SHOPIFY OPERATIONS CHAIN - Every 3 hours at :45
+Schedule::command('job:orchestrator shopify-sync')
+    ->cron('45 */3 * * *')
+    ->description('Shopify operations: Get products → Create → Upload images → Archive');
+
+// ========================================
+// INDEPENDENT JOBS (with pause checking)
+// ========================================
+
+// Daily jobs
+Schedule::command(GetBrandsFromEWeb::class)
+    ->dailyAt('00:05')
+    ->when(function () {
+        return !\App\Http\Controllers\SyncJobController::isPaused('getBrandsFromEWeb');
+    });
+
+Schedule::command(CountImages::class)
+    ->dailyAt('17:00')
+    ->when(function () {
+        return !\App\Http\Controllers\SyncJobController::isPaused('shopifyCountImages');
+    });
+
+Schedule::command(UpdateProduct::class)
+    ->dailyAt('20:00')
+    ->when(function () {
+        return !\App\Http\Controllers\SyncJobController::isPaused('shopify:update-product');
+    });
+
+// Hourly retry jobs
+Schedule::command('shopifyRetryFailedInventoryUpdates')
+    ->hourly()
+    ->when(function () {
+        return !\App\Http\Controllers\SyncJobController::isPaused('shopifyRetryFailedInventoryUpdates');
+    });
+
+// Legacy single job (kept for backward compatibility, but with pause checking)
+Schedule::command('getProductsFromEWeb')
+    ->everyFifteenMinutes()
+    ->when(function () {
+        return !\App\Http\Controllers\SyncJobController::isPaused('getProductsFromEWeb');
+    });
+
+// ========================================
+// DISABLED/DEPRECATED JOBS
+// ========================================
+
 /**
- * Main job to fetch products from eWeb
+ * The following jobs are now handled by orchestrated chains:
+ *
+ * MOVED TO MAIN-SYNC CHAIN (every 30 minutes):
+ * - GetProductsFromEWebMain (replaced by orchestrator main-sync)
+ * - shopifyUpdatePriceInventory (via orchestrator main-sync)
+ *
+ * MOVED TO AMAZON-SYNC CHAIN (every 3 hours at :15):
+ * - generateAmzProductsJson (via orchestrator amazon-sync)
+ * - amazonUpdateInventoryPrice (via orchestrator amazon-sync)
+ * - getAmzMerchantListingAllData (via orchestrator amazon-sync)
+ * - processAmzMerchantListingAllData (via orchestrator amazon-sync)
+ *
+ * MOVED TO SHOPIFY-SYNC CHAIN (every 3 hours at :45):
+ * - shopifyGetProducts (via orchestrator shopify-sync)
+ * - shopifyCreateProduct (via orchestrator shopify-sync)
+ * - shopifyUploadImages (via orchestrator shopify-sync)
+ * - shopifyArchiveProducts (via orchestrator shopify-sync)
+ *
+ * COMPLETELY DISABLED (commented out):
+ * - All Catch marketplace jobs
+ * - Individual Amazon update commands (replaced by orchestrated amazon-sync)
+ * - Individual Shopify inventory/price updates (replaced by orchestrated main-sync)
  */
-Schedule::command(GetProductsFromEWebMain::class)->everyFifteenMinutes()->after(function () {
-    Artisan::call(GetProductsFromEWeb::class); //Amazon products
-});
-
-Schedule::command(GetBrandsFromEWeb::class)->dailyAt('00:05');
-Schedule::command(GetAmzMerchantListingAllData::class)->everyThreeHours();
-
-// Schedule::command(GetAmzMerchantListingAllData::class)->everyThreeHours()->after(function () {
-//     sleep(600);
-//     Artisan::call(ProcessAmzMerchantListingAllData::class);
-// });
-
-// Schedule::command(ProcessAmzMerchantListingAllData::class)->cron('32 */3 * * *');
-
-
-Schedule::command(AmazonUpdateProduct::class)->everyFifteenMinutes();
-Schedule::command(GetOrders::class)->everyFifteenMinutes();
-
-/**
- * Catch Crons
- */
-
-// The following three cron jobs must run in the same sequence.
-// Schedule::command('getProductsFromEWebCatch')->dailyAt('00:20');
-// Schedule::command('catchCheckIfExists')->dailyAt('00:50');
-// Schedule::command('catchListOffersOfShop')->dailyAt('01:20');
-
-// Schedule::command(GetProductsFromEWebCatch::class)->dailyAt('00:20')->after(function () {
-//     $this->call(CheckIfExists::class);
-// });
-// Schedule::command(ListOffersOfShop::class)->dailyAt('01:20');
-
-
-
-// Schedule::command(GetProductsFromEWebCatch::class)->everyFifteenMinutes()->between('02:00', '23:59');
-// Schedule::command('catchGenerateProductsCsv')->everyTwoHours()->between('02:00','23:59');
-// Schedule::command(GenerateProductsCsv::class)->cron('18 2 */4 * *');
-// Schedule::command(GenerateOffersCsv::class)->everyFifteenMinutes()->between('02:00', '23:59')
-//     ->after(function () {
-//         $this->call(SubmitImports::class);
-//     });
-
-// Schedule::command('catchSubmitImports')->everyThirtyMinutes()->between('02:00', '23:59');
-
-
-/**
- * Shopify Crons
- */
-
-Schedule::command(GetProducts::class)->everyTwoHours()->after(function () {
-    $this->call(CreateProduct::class);
-});
-
-Schedule::command(GetProducts::class)->cron("5 */2 * * *")->after(function () {
-    $this->call(CreateProduct::class);
-});
-
-
-// Schedule::command('shopifyCreateProduct')->everyThreeHours();
-
-Schedule::command(UpdateInventory::class)->everyFifteenMinutes();
-Schedule::command(UpdatePrice::class)->everyFifteenMinutes();
-Schedule::command('shopifyRetryFailedInventoryUpdates')->hourly(); // Retry failed inventory updates hourly
-Schedule::command(UploadImages::class)->everyThreeHours();
-Schedule::command(ArchiveProducts::class)->cron('20 */3 * * *');
-
-Schedule::command(UpdateProduct::class)->cron('0 20 * * 6');
-
-Schedule::command(CountImages::class)->dailyAt('17:00');
