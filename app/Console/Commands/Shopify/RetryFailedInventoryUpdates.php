@@ -5,7 +5,7 @@ namespace App\Console\Commands\Shopify;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\SyncJobController;
-use Shopify\Rest\Admin2024_10\InventoryLevel;
+use Shopify\Rest\Admin2025_04\InventoryLevel;
 use App\Models\ShopifyLocation;
 use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyService;

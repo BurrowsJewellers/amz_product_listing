@@ -6,8 +6,8 @@ use App\Services\ShopifyService;
 use Illuminate\Console\Command;
 use Shopify\Auth\FileSessionStorage;
 use Shopify\Auth\Session;
-use Shopify\Rest\Admin2024_01\Order;
-use Shopify\Rest\Admin2024_01\Product;
+use Shopify\Rest\Admin2025_04\Order;
+use Shopify\Rest\Admin2025_04\Product;
 
 class ShopifyTest extends Command
 {
