@@ -568,7 +568,7 @@ class GetProductsFromEWebMain extends Command
 
             if (isset($item->CataloguePriceStart) && $item->CataloguePriceStart !== '0001-01-01T00:00:00') {
                 try {
-                    $catalogueStart = Carbon::parse($item->CataloguePriceStart);
+                    $catalogueStart = Carbon::parse($item->CataloguePriceStart, 'UTC')->setTimezone(config('app.timezone'));
                 } catch (\Exception $e) {
                     // Invalid date format, skip
                 }
@@ -576,7 +576,7 @@ class GetProductsFromEWebMain extends Command
 
             if (isset($item->CataloguePriceEnd) && $item->CataloguePriceEnd !== '0001-01-01T00:00:00') {
                 try {
-                    $catalogueEnd = Carbon::parse($item->CataloguePriceEnd);
+                    $catalogueEnd = Carbon::parse($item->CataloguePriceEnd, 'UTC')->setTimezone(config('app.timezone'));
                 } catch (\Exception $e) {
                     // Invalid date format, skip
                 }
@@ -595,7 +595,7 @@ class GetProductsFromEWebMain extends Command
 
             if (isset($item->SpecialPriceStart) && $item->SpecialPriceStart !== '0001-01-01T00:00:00') {
                 try {
-                    $specialStart = Carbon::parse($item->SpecialPriceStart);
+                    $specialStart = Carbon::parse($item->SpecialPriceStart, 'UTC')->setTimezone(config('app.timezone'));
                 } catch (\Exception $e) {
                     // Invalid date format, skip
                 }
@@ -603,7 +603,7 @@ class GetProductsFromEWebMain extends Command
 
             if (isset($item->SpecialPriceEnd) && $item->SpecialPriceEnd !== '0001-01-01T00:00:00') {
                 try {
-                    $specialEnd = Carbon::parse($item->SpecialPriceEnd);
+                    $specialEnd = Carbon::parse($item->SpecialPriceEnd, 'UTC')->setTimezone(config('app.timezone'));
                 } catch (\Exception $e) {
                     // Invalid date format, skip
                 }
@@ -632,7 +632,7 @@ class GetProductsFromEWebMain extends Command
 
         if (isset($item->SpecialPriceStart) && $item->SpecialPriceStart !== '0001-01-01T00:00:00') {
             try {
-                $specialPriceStart = Carbon::parse($item->SpecialPriceStart);
+                $specialPriceStart = Carbon::parse($item->SpecialPriceStart, 'UTC')->setTimezone(config('app.timezone'));
             } catch (\Exception $e) {
                 // Invalid date format, skip
             }
@@ -640,7 +640,7 @@ class GetProductsFromEWebMain extends Command
 
         if (isset($item->SpecialPriceEnd) && $item->SpecialPriceEnd !== '0001-01-01T00:00:00') {
             try {
-                $specialPriceEnd = Carbon::parse($item->SpecialPriceEnd);
+                $specialPriceEnd = Carbon::parse($item->SpecialPriceEnd, 'UTC')->setTimezone(config('app.timezone'));
             } catch (\Exception $e) {
                 // Invalid date format, skip
             }
@@ -652,7 +652,7 @@ class GetProductsFromEWebMain extends Command
 
         if (isset($item->CataloguePriceStart) && $item->CataloguePriceStart !== '0001-01-01T00:00:00') {
             try {
-                $cataloguePriceStart = Carbon::parse($item->CataloguePriceStart);
+                $cataloguePriceStart = Carbon::parse($item->CataloguePriceStart, 'UTC')->setTimezone(config('app.timezone'));
             } catch (\Exception $e) {
                 // Invalid date format, skip
             }
@@ -660,7 +660,7 @@ class GetProductsFromEWebMain extends Command
 
         if (isset($item->CataloguePriceEnd) && $item->CataloguePriceEnd !== '0001-01-01T00:00:00') {
             try {
-                $cataloguePriceEnd = Carbon::parse($item->CataloguePriceEnd);
+                $cataloguePriceEnd = Carbon::parse($item->CataloguePriceEnd, 'UTC')->setTimezone(config('app.timezone'));
             } catch (\Exception $e) {
                 // Invalid date format, skip
             }
