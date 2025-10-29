@@ -2,8 +2,6 @@
 
 namespace App\Console\Commands\EWeb;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\SyncJobController;
 use App\Models\RetailEdgeProduct;
 use App\Models\RetailEdgeProductImage;
@@ -11,7 +9,9 @@ use App\Models\RetailEdgeProductIsd;
 use App\Models\Shopify\ShopifySku;
 use App\Services\RetailEdgeService;
 use Carbon\Carbon;
+use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class GetProductsFromEWebMain extends Command
@@ -94,12 +94,12 @@ class GetProductsFromEWebMain extends Command
                         ->where('sku', '!=', '')
                         ->pluck('sku')
                         ->toArray();
-                    Log::info("Found " . count($shopifySkus) . " Shopify SKUs from shopify_product_variants table.");
+                    Log::info('Found '.count($shopifySkus).' Shopify SKUs from shopify_product_variants table.');
 
                     ShopifySku::truncate();
-                    Log::info("Truncated ShopifySku table successfully.");
+                    Log::info('Truncated ShopifySku table successfully.');
 
-                    if (!empty($shopifySkus)) {
+                    if (! empty($shopifySkus)) {
                         $chunks = array_chunk($shopifySkus, 1000); // Insert in chunks for better performance
                         foreach ($chunks as $chunk) {
                             // Process signals if available
@@ -112,14 +112,15 @@ class GetProductsFromEWebMain extends Command
                             }, $chunk);
                             ShopifySku::insert($data);
                         }
-                        Log::info("Restored " . count($shopifySkus) . " Shopify SKUs to ShopifySku table.");
+                        Log::info('Restored '.count($shopifySkus).' Shopify SKUs to ShopifySku table.');
                     } else {
-                        Log::info("No Shopify SKUs to restore to ShopifySku table.");
+                        Log::info('No Shopify SKUs to restore to ShopifySku table.');
                     }
                 } catch (\Throwable $e) {
                     report($e);
-                    $job->update(['status' => 0, 'message' => "Error during ShopifySku preparation: " . $e->getMessage()]);
-                    Log::error("$marketplace $jobType failed during ShopifySku preparation: " . $e->getMessage());
+                    $job->update(['status' => 0, 'message' => 'Error during ShopifySku preparation: '.$e->getMessage()]);
+                    Log::error("$marketplace $jobType failed during ShopifySku preparation: ".$e->getMessage());
+
                     return; // Exit if ShopifySku preparation fails
                 }
 
@@ -140,38 +141,38 @@ class GetProductsFromEWebMain extends Command
 
                 // Start transaction for main database operations
                 DB::beginTransaction();
-                Log::info("Main transaction started for updating main product tables.");
+                Log::info('Main transaction started for updating main product tables.');
 
                 // Clear main tables (RetailEdgeProduct, RetailEdgeProductImage, RetailEdgeProductIsd) using DELETE to be transaction-safe
                 RetailEdgeProduct::query()->delete();
                 RetailEdgeProductImage::query()->delete();
                 RetailEdgeProductIsd::query()->delete();
-                Log::info("Deleted data from main tables: retail_edge_products, retail_edge_product_images, and retail_edge_product_isds.");
+                Log::info('Deleted data from main tables: retail_edge_products, retail_edge_product_images, and retail_edge_product_isds.');
 
                 // Copy data from temporary tables to main tables
                 DB::statement("INSERT INTO retail_edge_products SELECT * FROM {$tempProductTable}");
                 DB::statement("INSERT INTO retail_edge_product_images SELECT * FROM {$tempImageTable}");
                 DB::statement("INSERT INTO retail_edge_product_isds SELECT * FROM {$tempIsdTable}");
-                Log::info("Copied data from temporary tables to main tables.");
+                Log::info('Copied data from temporary tables to main tables.');
 
                 // Update Shopify products with new data from main tables
                 // This method uses the now-populated main tables.
                 $this->updateShopifyProducts();
 
                 DB::commit();
-                Log::info("Main transaction committed successfully.");
+                Log::info('Main transaction committed successfully.');
 
                 $job->update(['status' => 0, 'message' => null]); // Reset job status to success
                 Log::info("$marketplace $jobType finished successfully!");
             } catch (\Throwable $e) {
                 if (DB::connection()->transactionLevel() > 0) {
                     DB::rollBack();
-                    Log::info("Main transaction rolled back due to error.");
+                    Log::info('Main transaction rolled back due to error.');
                 }
                 report($e);
                 // Ensure job status is updated to reflect failure
-                $job->update(['status' => 0, 'message' => "Error during main processing: " . $e->getMessage()]);
-                Log::error("$marketplace $jobType failed: " . $e->getMessage() . " at " . $e->getFile() . ":" . $e->getLine());
+                $job->update(['status' => 0, 'message' => 'Error during main processing: '.$e->getMessage()]);
+                Log::error("$marketplace $jobType failed: ".$e->getMessage().' at '.$e->getFile().':'.$e->getLine());
             } finally {
                 // Drop temporary tables regardless of success or failure
                 DB::statement("DROP TABLE IF EXISTS {$tempProductTable}");
@@ -182,8 +183,8 @@ class GetProductsFromEWebMain extends Command
         } catch (\Throwable $e) {
             // Global exception handler to ensure job status is always reset
             report($e);
-            $job->update(['status' => 0, 'message' => "Unexpected error: " . $e->getMessage()]);
-            Log::error("$marketplace $jobType failed with unexpected error: " . $e->getMessage() . " at " . $e->getFile() . ":" . $e->getLine());
+            $job->update(['status' => 0, 'message' => 'Unexpected error: '.$e->getMessage()]);
+            Log::error("$marketplace $jobType failed with unexpected error: ".$e->getMessage().' at '.$e->getFile().':'.$e->getLine());
             throw $e; // Re-throw to maintain original behavior
         }
     }
@@ -198,14 +199,14 @@ class GetProductsFromEWebMain extends Command
         if ($this->currentJob) {
             $this->currentJob->update([
                 'status' => 0,
-                'message' => "Process terminated by signal {$signo} - use checkpoint to resume"
+                'message' => "Process terminated by signal {$signo} - use checkpoint to resume",
             ]);
         }
 
         // Clean up temporary tables if they exist
-        DB::statement("DROP TABLE IF EXISTS retail_edge_products_temp");
-        DB::statement("DROP TABLE IF EXISTS retail_edge_product_images_temp");
-        DB::statement("DROP TABLE IF EXISTS retail_edge_product_isds_temp");
+        DB::statement('DROP TABLE IF EXISTS retail_edge_products_temp');
+        DB::statement('DROP TABLE IF EXISTS retail_edge_product_images_temp');
+        DB::statement('DROP TABLE IF EXISTS retail_edge_product_isds_temp');
 
         echo "\n💾 Process was interrupted. You can resume from the last checkpoint using:\n";
         echo "php artisan getProductsFromEWebMain --resume-from=<checkpoint_number>\n\n";
@@ -217,7 +218,7 @@ class GetProductsFromEWebMain extends Command
     private function processProducts($tempProductTable, $tempImageTable, $tempIsdTable)
     {
         try {
-            $retailEdgeService = new RetailEdgeService();
+            $retailEdgeService = new RetailEdgeService;
 
             // Use streaming approach to avoid loading all items into memory
             $processedCount = 0;
@@ -230,7 +231,7 @@ class GetProductsFromEWebMain extends Command
             $totalChunks = ceil($totalItems / $chunkSize);
 
             $this->info("Processing {$totalItems} items from RetailEdge");
-            $this->info("Memory usage at start: " . $this->formatBytes(memory_get_usage(true)));
+            $this->info('Memory usage at start: '.$this->formatBytes(memory_get_usage(true)));
 
             if ($resumeFrom > 0) {
                 $this->info("Resuming from item {$resumeFrom}");
@@ -264,7 +265,7 @@ class GetProductsFromEWebMain extends Command
                 $batchImages = [];
                 $batchIsds = [];
 
-                $this->info("Processing chunk " . ($chunkIndex + 1) . "/{$totalChunks} (Memory: " . $this->formatBytes(memory_get_usage(true)) . ")");
+                $this->info('Processing chunk '.($chunkIndex + 1)."/{$totalChunks} (Memory: ".$this->formatBytes(memory_get_usage(true)).')');
 
                 foreach ($chunk as $item) {
                     // Process signals if available
@@ -290,12 +291,12 @@ class GetProductsFromEWebMain extends Command
                         $processedCount++;
 
                         if ($processedCount % 100 === 0) {
-                            $this->info("Processed {$processedCount}/{$totalItems} items (Memory: " . $this->formatBytes(memory_get_usage(true)) . ")");
+                            $this->info("Processed {$processedCount}/{$totalItems} items (Memory: ".$this->formatBytes(memory_get_usage(true)).')');
                         }
                     } catch (\Exception $e) {
                         $errorCount++;
                         report($e);
-                        Log::warning("Failed to process item: " . json_encode($item->SKU ?? 'Unknown SKU') . " Error: " . $e->getMessage());
+                        Log::warning('Failed to process item: '.json_encode($item->SKU ?? 'Unknown SKU').' Error: '.$e->getMessage());
                     }
 
                     // Clear item from memory
@@ -303,17 +304,19 @@ class GetProductsFromEWebMain extends Command
                 }
 
                 // Batch insert for this chunk
-                if (!empty($batchProducts)) {
+                if (! empty($batchProducts)) {
                     // Check for duplicate SKUs in this batch
                     $skuCounts = array_count_values(array_column($batchProducts, 'sku'));
-                    $duplicateSkus = array_filter($skuCounts, function($count) { return $count > 1; });
-                    if (!empty($duplicateSkus)) {
-                        Log::warning("Found duplicate SKUs in batch: " . json_encode(array_keys($duplicateSkus)));
+                    $duplicateSkus = array_filter($skuCounts, function ($count) {
+                        return $count > 1;
+                    });
+                    if (! empty($duplicateSkus)) {
+                        Log::warning('Found duplicate SKUs in batch: '.json_encode(array_keys($duplicateSkus)));
                         // Remove duplicates, keeping only the first occurrence
                         $uniqueProducts = [];
                         $seenSkus = [];
                         foreach ($batchProducts as $product) {
-                            if (!in_array($product['sku'], $seenSkus)) {
+                            if (! in_array($product['sku'], $seenSkus)) {
                                 $uniqueProducts[] = $product;
                                 $seenSkus[] = $product['sku'];
                             }
@@ -322,19 +325,19 @@ class GetProductsFromEWebMain extends Command
                     }
 
                     DB::table($tempProductTable)->insert($batchProducts);
-                    $this->info("Inserted " . count($batchProducts) . " products");
+                    $this->info('Inserted '.count($batchProducts).' products');
                 }
-                if (!empty($batchImages)) {
+                if (! empty($batchImages)) {
                     DB::table($tempImageTable)->insert($batchImages);
-                    $this->info("Inserted " . count($batchImages) . " images");
+                    $this->info('Inserted '.count($batchImages).' images');
                 }
-                if (!empty($batchIsds)) {
+                if (! empty($batchIsds)) {
                     // Check for duplicate SKU+index combinations
                     $isdKeys = [];
                     $uniqueIsds = [];
                     foreach ($batchIsds as $isd) {
-                        $key = $isd['sku'] . '-' . $isd['isd_index'];
-                        if (!in_array($key, $isdKeys)) {
+                        $key = $isd['sku'].'-'.$isd['isd_index'];
+                        if (! in_array($key, $isdKeys)) {
                             $uniqueIsds[] = $isd;
                             $isdKeys[] = $key;
                         } else {
@@ -342,9 +345,9 @@ class GetProductsFromEWebMain extends Command
                         }
                     }
 
-                    if (!empty($uniqueIsds)) {
+                    if (! empty($uniqueIsds)) {
                         DB::table($tempIsdTable)->insert($uniqueIsds);
-                        $this->info("Inserted " . count($uniqueIsds) . " ISDs");
+                        $this->info('Inserted '.count($uniqueIsds).' ISDs');
                     }
                 }
 
@@ -363,7 +366,7 @@ class GetProductsFromEWebMain extends Command
                     gc_enable();
                 }
 
-                // Clear opcache more frequently 
+                // Clear opcache more frequently
                 if (function_exists('opcache_reset') && ($chunkIndex + 1) % 2 == 0) {
                     opcache_reset();
                 }
@@ -392,7 +395,7 @@ class GetProductsFromEWebMain extends Command
                     $memoryLimitBytes = $this->convertToBytes($memoryLimit);
                     $memoryUsagePercent = ($currentMemory / $memoryLimitBytes) * 100;
 
-                    $this->info("Memory after chunk " . ($chunkIndex + 1) . " cleanup: " . $this->formatBytes($currentMemory) . " ({$memoryUsagePercent}% of limit)");
+                    $this->info('Memory after chunk '.($chunkIndex + 1).' cleanup: '.$this->formatBytes($currentMemory)." ({$memoryUsagePercent}% of limit)");
 
                     // If memory usage is getting too high, reduce chunk size
                     if ($memoryUsagePercent > 80 && $chunkSize > 25) {
@@ -411,16 +414,16 @@ class GetProductsFromEWebMain extends Command
             }
 
             $this->info("Completed processing {$processedCount}/{$totalItems} items with {$errorCount} errors.");
-            $this->info("Final memory usage: " . $this->formatBytes(memory_get_usage(true)));
+            $this->info('Final memory usage: '.$this->formatBytes(memory_get_usage(true)));
 
             // Clear checkpoint on successful completion
             $checkpointFile = storage_path('app/eweb_checkpoint.txt');
             if (file_exists($checkpointFile)) {
                 unlink($checkpointFile);
-                $this->info("Checkpoint cleared after successful completion");
+                $this->info('Checkpoint cleared after successful completion');
             }
         } catch (\Exception $e) {
-            Log::error("Error in processProducts: " . $e->getMessage());
+            Log::error('Error in processProducts: '.$e->getMessage());
             throw $e;
         }
     }
@@ -438,7 +441,7 @@ class GetProductsFromEWebMain extends Command
 
         $bytes /= pow(1024, $pow);
 
-        return round($bytes, $precision) . ' ' . $units[$pow];
+        return round($bytes, $precision).' '.$units[$pow];
     }
 
     /**
@@ -448,7 +451,7 @@ class GetProductsFromEWebMain extends Command
     {
         $val = trim($val);
         $last = strtolower($val[strlen($val) - 1]);
-        $val = (int)$val;
+        $val = (int) $val;
 
         switch ($last) {
             case 'g':
@@ -468,18 +471,18 @@ class GetProductsFromEWebMain extends Command
     private function processItemForBatch($item)
     {
         // Validate SKU format
-        if (!isset($item->SKU) || !preg_match('/^\d{3}-\d{3}-\d{5}$/', $item->SKU)) {
+        if (! isset($item->SKU) || ! preg_match('/^\d{3}-\d{3}-\d{5}$/', $item->SKU)) {
             return null;
         }
 
         $skuArray = array_map('trim', explode('-', $item->SKU));
-        $sku = $skuArray[1] . "-" . $skuArray[2];
+        $sku = $skuArray[1].'-'.$skuArray[2];
 
         $processedItem = $this->processItemAttributes($item, $skuArray);
         $result = [
             'product' => $this->createProductData($processedItem, $sku),
             'images' => [],
-            'isds' => []
+            'isds' => [],
         ];
 
         // Process images if they exist
@@ -498,12 +501,12 @@ class GetProductsFromEWebMain extends Command
     private function processItem($item, $tempProductTable, $tempImageTable, $tempIsdTable)
     {
         // Validate SKU format
-        if (!isset($item->SKU) || !preg_match('/^\d{3}-\d{3}-\d{5}$/', $item->SKU)) {
+        if (! isset($item->SKU) || ! preg_match('/^\d{3}-\d{3}-\d{5}$/', $item->SKU)) {
             return;
         }
 
         $skuArray = array_map('trim', explode('-', $item->SKU));
-        $sku = $skuArray[1] . "-" . $skuArray[2];
+        $sku = $skuArray[1].'-'.$skuArray[2];
 
         $processedItem = $this->processItemAttributes($item, $skuArray);
         $this->createProduct($processedItem, $sku, $tempProductTable);
@@ -529,7 +532,7 @@ class GetProductsFromEWebMain extends Command
             $isds = is_array($item->ISDs->ItemISD) ? $item->ISDs->ItemISD : [$item->ISDs->ItemISD];
 
             foreach ($isds as $other) {
-                if (!isset($other->Name) || !isset($other->Value)) {
+                if (! isset($other->Name) || ! isset($other->Value)) {
                     continue;
                 }
 
@@ -540,7 +543,7 @@ class GetProductsFromEWebMain extends Command
 
                 // Handle special case for department 022
                 if ($skuArray[1] == '022') {
-                    if (!isset($item->{$keyName})) {
+                    if (! isset($item->{$keyName})) {
                         $item->{$keyName} = trim($other->Value);
                     }
                 } else {
@@ -557,9 +560,59 @@ class GetProductsFromEWebMain extends Command
         $price = $item->RetailPrice;
         $compareAtPrice = 0;
 
-        if (isset($item->SpecialPrice) && $item->SpecialPrice > 0 && Carbon::parse($item->SpecialPriceEnd) > now()) {
-            $price = $item->SpecialPrice;
-            $compareAtPrice = $item->RetailPrice;
+        // Check if CataloguePrice is active (has priority over SpecialPrice)
+        if (isset($item->CataloguePrice) && $item->CataloguePrice > 0) {
+            // Check both start and end dates, treating '0001-01-01' as invalid
+            $catalogueStart = null;
+            $catalogueEnd = null;
+
+            if (isset($item->CataloguePriceStart) && $item->CataloguePriceStart !== '0001-01-01T00:00:00') {
+                try {
+                    $catalogueStart = Carbon::parse($item->CataloguePriceStart);
+                } catch (\Exception $e) {
+                    // Invalid date format, skip
+                }
+            }
+
+            if (isset($item->CataloguePriceEnd) && $item->CataloguePriceEnd !== '0001-01-01T00:00:00') {
+                try {
+                    $catalogueEnd = Carbon::parse($item->CataloguePriceEnd);
+                } catch (\Exception $e) {
+                    // Invalid date format, skip
+                }
+            }
+
+            if ($catalogueStart && $catalogueEnd && now()->between($catalogueStart, $catalogueEnd)) {
+                $price = $item->CataloguePrice;
+                $compareAtPrice = $item->RetailPrice;
+            }
+        }
+        // If CataloguePrice is not active, check SpecialPrice
+        elseif (isset($item->SpecialPrice) && $item->SpecialPrice > 0) {
+            // Check both start and end dates for SpecialPrice, treating '0001-01-01' as invalid
+            $specialStart = null;
+            $specialEnd = null;
+
+            if (isset($item->SpecialPriceStart) && $item->SpecialPriceStart !== '0001-01-01T00:00:00') {
+                try {
+                    $specialStart = Carbon::parse($item->SpecialPriceStart);
+                } catch (\Exception $e) {
+                    // Invalid date format, skip
+                }
+            }
+
+            if (isset($item->SpecialPriceEnd) && $item->SpecialPriceEnd !== '0001-01-01T00:00:00') {
+                try {
+                    $specialEnd = Carbon::parse($item->SpecialPriceEnd);
+                } catch (\Exception $e) {
+                    // Invalid date format, skip
+                }
+            }
+
+            if ($specialStart && $specialEnd && now()->between($specialStart, $specialEnd)) {
+                $price = $item->SpecialPrice;
+                $compareAtPrice = $item->RetailPrice;
+            }
         }
 
         $item->price = $price;
@@ -578,11 +631,39 @@ class GetProductsFromEWebMain extends Command
         $specialPriceEnd = null;
 
         if (isset($item->SpecialPriceStart) && $item->SpecialPriceStart !== '0001-01-01T00:00:00') {
-            $specialPriceStart = Carbon::parse($item->SpecialPriceStart);
+            try {
+                $specialPriceStart = Carbon::parse($item->SpecialPriceStart);
+            } catch (\Exception $e) {
+                // Invalid date format, skip
+            }
         }
 
         if (isset($item->SpecialPriceEnd) && $item->SpecialPriceEnd !== '0001-01-01T00:00:00') {
-            $specialPriceEnd = Carbon::parse($item->SpecialPriceEnd);
+            try {
+                $specialPriceEnd = Carbon::parse($item->SpecialPriceEnd);
+            } catch (\Exception $e) {
+                // Invalid date format, skip
+            }
+        }
+
+        // Parse catalogue price dates, treating '0001-01-01' as null
+        $cataloguePriceStart = null;
+        $cataloguePriceEnd = null;
+
+        if (isset($item->CataloguePriceStart) && $item->CataloguePriceStart !== '0001-01-01T00:00:00') {
+            try {
+                $cataloguePriceStart = Carbon::parse($item->CataloguePriceStart);
+            } catch (\Exception $e) {
+                // Invalid date format, skip
+            }
+        }
+
+        if (isset($item->CataloguePriceEnd) && $item->CataloguePriceEnd !== '0001-01-01T00:00:00') {
+            try {
+                $cataloguePriceEnd = Carbon::parse($item->CataloguePriceEnd);
+            } catch (\Exception $e) {
+                // Invalid date format, skip
+            }
         }
 
         return [
@@ -598,6 +679,10 @@ class GetProductsFromEWebMain extends Command
             'special_price' => $item->SpecialPrice ?? 0,
             'special_price_start' => $specialPriceStart,
             'special_price_end' => $specialPriceEnd,
+            'catalogue_name' => $item->CatalogueName ?? null,
+            'catalogue_price' => $item->CataloguePrice ?? 0,
+            'catalogue_price_start' => $cataloguePriceStart,
+            'catalogue_price_end' => $cataloguePriceEnd,
             'quantity' => isset($item->TotalAvailQOH) ? intval($item->TotalAvailQOH) : 0,
             'id1' => isset($item->ID1) ? trim($item->ID1) : '',
             'id2' => isset($item->ID2) ? trim($item->ID2) : '',
@@ -669,7 +754,7 @@ class GetProductsFromEWebMain extends Command
 
         $imageData = $this->processImagesForBatch($images, $sku);
 
-        if (!empty($imageData)) {
+        if (! empty($imageData)) {
             DB::table($tempImageTable)->insert($imageData);
         }
     }
@@ -691,7 +776,7 @@ class GetProductsFromEWebMain extends Command
             $isdName = isset($isd->Name) ? preg_replace('/\s+/', ' ', preg_replace('/[^a-zA-Z0-9 ]/', ' ', trim($isd->Name))) : null;
             $isdValue = isset($isd->Value) ? trim($isd->Value) : null;
 
-            if (!empty($isdName) && !empty($isdValue) && $isdValue != 'N/A') {
+            if (! empty($isdName) && ! empty($isdValue) && $isdValue != 'N/A') {
                 $isdData[] = [
                     'sku' => $sku,
                     'isd_index' => $isdIndex,
@@ -715,7 +800,7 @@ class GetProductsFromEWebMain extends Command
 
         $isdData = $this->processIsdsForBatch($isds, $sku);
 
-        if (!empty($isdData)) {
+        if (! empty($isdData)) {
             DB::table($tempIsdTable)->insert($isdData);
         }
     }
@@ -762,7 +847,7 @@ class GetProductsFromEWebMain extends Command
             ->update(['uploaded_to_shopify' => 0]);
         Log::info("Reset {$resetCount} RetailEdgeProducts uploaded_to_shopify flag to 0 (products not found in Shopify).");
 
-        $sql3 = "UPDATE shopify_product_variants spv
+        $sql3 = 'UPDATE shopify_product_variants spv
             JOIN retail_edge_products rep ON spv.sku = rep.sku
             SET
                 spv.inventory_requires_update = CASE
@@ -782,12 +867,12 @@ class GetProductsFromEWebMain extends Command
                 OR spv.price <> rep.price
                 OR IFNULL(spv.compare_at_price, 0) <> IFNULL(rep.compare_at_price, 0)
                 OR (rep.compare_at_price = 0 AND spv.compare_at_price IS NOT NULL AND spv.compare_at_price > 0)
-        ";
+        ';
         $updatedCount3 = DB::update($sql3);
         Log::info("Flagged {$updatedCount3} shopify_product_variants for price/inventory update (values will be updated after successful Shopify API sync).");
 
         // Additional verification step - check for any remaining mismatches
-        $verificationQuery = "SELECT COUNT(*) as mismatch_count
+        $verificationQuery = 'SELECT COUNT(*) as mismatch_count
             FROM shopify_product_variants spv
             JOIN retail_edge_products rep ON spv.sku = rep.sku
             WHERE spv.variant_id IS NOT NULL
@@ -795,7 +880,7 @@ class GetProductsFromEWebMain extends Command
                 spv.price <> rep.price
                 OR IFNULL(spv.compare_at_price, 0) <> IFNULL(rep.compare_at_price, 0)
                 OR spv.inventory_quantity <> rep.quantity
-            )";
+            )';
         $verificationResult = DB::selectOne($verificationQuery);
 
         if ($verificationResult && $verificationResult->mismatch_count > 0) {
@@ -812,11 +897,13 @@ class GetProductsFromEWebMain extends Command
         if ($service->hasValidCache()) {
             $cachedData = Storage::get(RetailEdgeService::STORAGE_FILE);
             $data = json_decode($cachedData, true);
+
             return count($data);
         }
 
         // If no cache, we'll need to fetch and count
         $activeItems = $service->getAllActiveItems();
+
         return count($activeItems);
     }
 
@@ -831,6 +918,7 @@ class GetProductsFromEWebMain extends Command
         } else {
             // If no cache, get fresh data but this will still use memory
             $items = $service->getAllActiveItems();
+
             return array_slice($items, $startIndex, $chunkSize);
         }
     }
@@ -840,18 +928,18 @@ class GetProductsFromEWebMain extends Command
      */
     private function getChunkFromFile($filePath, $startIndex, $chunkSize)
     {
-        if (!file_exists($filePath)) {
+        if (! file_exists($filePath)) {
             return [];
         }
 
         // Use a more memory-efficient approach for large files
         $handle = fopen($filePath, 'r');
-        if (!$handle) {
+        if (! $handle) {
             return [];
         }
 
         $json = '';
-        while (!feof($handle)) {
+        while (! feof($handle)) {
             $json .= fread($handle, 8192); // Read in 8KB chunks
         }
         fclose($handle);
@@ -859,7 +947,7 @@ class GetProductsFromEWebMain extends Command
         $data = json_decode($json, true);
         unset($json); // Free the JSON string immediately
 
-        if (!is_array($data)) {
+        if (! is_array($data)) {
             return [];
         }
 
@@ -873,6 +961,7 @@ class GetProductsFromEWebMain extends Command
         }, $chunk);
 
         unset($chunk); // Free chunk array
+
         return $result;
     }
 }
