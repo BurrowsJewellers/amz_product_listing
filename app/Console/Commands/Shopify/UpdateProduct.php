@@ -396,6 +396,15 @@ class UpdateProduct extends Command
             $tags[] = 'Pandora';
         }
 
+        // Add id2 tags if they exist
+        if (!empty($product->id2) && $product->id2 !== 'N/A') {
+            foreach (explode(',', $product->id2) as $id2Value) {
+                $trimmedValue = trim($id2Value);
+                if ($trimmedValue !== '') {
+                    $tags[] = $trimmedValue;
+                }
+            }
+        }
 
         return array_values(array_unique($tags)); // Return as indexed array
     }

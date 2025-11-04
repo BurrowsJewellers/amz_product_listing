@@ -338,7 +338,15 @@ class CreateProduct extends Command
                         } elseif ($vt == 'vt3') {
                             $variantTypeValue = $child->s_metal_type;
                         } elseif ($vt == 'vt4') {
-                            $variantTypeValue = $child->pendant_style;
+                            if ($child->s_cat == 'Bracelets') {
+                                // TODO - Aman
+                                // <a:ItemISD>
+                                // <a:Index>6</a:Index>
+                                // <a:Name>Style</a:Name>
+                                // <a:Value>Letter T</a:Value>
+                            } else {
+                                $variantTypeValue = $child->pendant_style;
+                            }
                         }
 
                         if (!empty($variantTypeValue)) {
@@ -871,6 +879,16 @@ class CreateProduct extends Command
                 if ($propValue !== '' && $propValue !== 'N/A') {
                     foreach (explode(",", $propValue) as $tempTag) {
                         $tags[] = $value . "_" . trim($tempTag);
+                    }
+                }
+            }
+
+            // Add id2 tags if they exist
+            if (!empty($product->id2) && $product->id2 !== 'N/A') {
+                foreach (explode(',', $product->id2) as $id2Value) {
+                    $trimmedValue = trim($id2Value);
+                    if ($trimmedValue !== '') {
+                        $tags[] = $trimmedValue;
                     }
                 }
             }
