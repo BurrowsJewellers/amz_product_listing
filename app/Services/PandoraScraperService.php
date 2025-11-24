@@ -7,7 +7,6 @@ use Symfony\Component\Process\Process;
 
 class PandoraScraperService
 {
-
     public function scrape(string $designNo): bool
     {
         try {
@@ -20,6 +19,7 @@ class PandoraScraperService
             }
         } catch (\Exception $e) {
             report($e);
+
             return false;
         }
     }
@@ -28,25 +28,28 @@ class PandoraScraperService
     {
         try {
             $pandoraProduct = $this->getPandoraProductByDesignNo($designNo);
+
             return json_decode($pandoraProduct->images);
         } catch (\Exception $e) {
             report($e);
+
             return [];
         }
     }
 
-    public function getPandoraProductByDesignNo(string $designNo): PandoraList|null
+    public function getPandoraProductByDesignNo(string $designNo): ?PandoraList
     {
         try {
             $pandoraProduct = PandoraList::where('design_no', $designNo)->whereNotNull('images')->first();
 
-            if (!$pandoraProduct) {
+            if (! $pandoraProduct) {
                 $this->scrape($designNo);
             }
 
             return PandoraList::where('design_no', $designNo)->whereNotNull('images')->firstOrFail();
         } catch (\Exception $e) {
             report($e);
+
             return null;
         }
     }

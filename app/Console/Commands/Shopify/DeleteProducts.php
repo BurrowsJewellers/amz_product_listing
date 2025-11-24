@@ -2,13 +2,11 @@
 
 namespace App\Console\Commands\Shopify;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
-use Shopify\Rest\Admin2025_04\Image;
-use App\Services\ShopifyService;
 use App\Http\Controllers\SyncJobController;
 use App\Models\ShopifyProduct;
-use App\Models\ShopifyProductVariant;
+use App\Services\ShopifyService;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 use Shopify\Rest\Admin2025_04\Product;
 
 class DeleteProducts extends Command
@@ -38,7 +36,7 @@ class DeleteProducts extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
+        if (! $job->isRunning()) {
             try {
                 Log::info("$marketplace $jobType started!");
                 $job->update(['status' => 1]);
@@ -65,7 +63,7 @@ class DeleteProducts extends Command
 
             $products = ShopifyProduct::where('id', '>', 13396)->pluck('product_id')->toArray();
 
-            $this->info("Found " . count($products) . " to delete.");
+            $this->info('Found '.count($products).' to delete.');
 
             foreach ($products as $productId) {
                 try {

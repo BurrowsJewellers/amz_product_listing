@@ -2,26 +2,26 @@
 
 namespace App\Console\Commands\Amazon;
 
+use App\Http\Controllers\AmzReportController;
+use App\Http\Controllers\SyncJobController;
+use App\Models\AmzRequestedReport;
+use App\Models\Product;
+use App\Services\Amazon\CatalogService;
+use App\Services\Amazon\ListingsReportService;
+use Exception;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use App\Http\Controllers\SyncJobController;
-use App\Http\Controllers\AmzReportController;
-use App\Models\AmzRequestedReport;
-use App\Models\Product;
-use App\Services\Amazon\AmazonSpApiService;
-use App\Services\Amazon\CatalogService;
-use App\Services\Amazon\ListingService;
-use App\Services\Amazon\ListingsReportService;
-use Exception;
 use InvalidArgumentException;
 
 class ProcessAmzMerchantListingAllData extends Command
 {
     protected $signature = 'processAmzMerchantListingAllData';
+
     protected $description = 'Process Amazon Merchant Listing All Data Report';
 
     private const REQUIRED_COLUMNS = ['asin1', 'seller-sku', 'status', 'price', 'quantity'];
+
     private const BATCH_SIZE = 1000; // Process records in batches
 
     public function handle()
@@ -32,6 +32,7 @@ class ProcessAmzMerchantListingAllData extends Command
 
         if ($job->isRunning()) {
             Log::info("$marketplace $jobType is already running.");
+
             return;
         }
 
@@ -48,7 +49,7 @@ class ProcessAmzMerchantListingAllData extends Command
 
         (new ListingsReportService)->processReports();
 
-        (new CatalogService())->searchItem();
+        (new CatalogService)->searchItem();
     }
 
     private function processReport($job)
@@ -56,18 +57,19 @@ class ProcessAmzMerchantListingAllData extends Command
         $reportType = 'GET_MERCHANT_LISTINGS_ALL_DATA';
         $skuArray = [];
 
-        $reportController = new AmzReportController();
+        $reportController = new AmzReportController;
         $reportController->downloadReports();
 
         $report = $this->getLatestUnprocessedReport($reportType);
 
-        if (!$report) {
+        if (! $report) {
             Log::info('No unprocessed reports found.');
             $job->update(['status' => 0]);
+
             return;
         }
 
-        if (!Storage::exists($report->file_name)) {
+        if (! Storage::exists($report->file_name)) {
             throw new InvalidArgumentException("Report file not found: {$report->file_name}");
         }
 
@@ -84,7 +86,7 @@ class ProcessAmzMerchantListingAllData extends Command
         return AmzRequestedReport::where([
             'report_type' => $reportType,
             'downloaded' => 1,
-            'processed' => 0
+            'processed' => 0,
         ])->orderBy('id', 'desc')->first();
     }
 
@@ -92,7 +94,7 @@ class ProcessAmzMerchantListingAllData extends Command
     {
         $report->update(['processed' => 3]); // Mark as processing
 
-        if (($handle = fopen($filePath, "r")) === FALSE) {
+        if (($handle = fopen($filePath, 'r')) === false) {
             throw new Exception("Failed to open file: $filePath");
         }
 
@@ -101,7 +103,7 @@ class ProcessAmzMerchantListingAllData extends Command
             $batch = [];
             $rowCount = 0;
 
-            while (($data = fgetcsv($handle, 0, "\t")) !== FALSE) {
+            while (($data = fgetcsv($handle, 0, "\t")) !== false) {
                 if (empty(array_filter($data))) {
                     continue; // Skip empty rows
                 }
@@ -117,13 +119,14 @@ class ProcessAmzMerchantListingAllData extends Command
                         $batch = [];
                     }
                 } catch (Exception $e) {
-                    Log::warning("Error processing row $rowCount: " . $e->getMessage());
+                    Log::warning("Error processing row $rowCount: ".$e->getMessage());
+
                     continue;
                 }
             }
 
             // Process remaining batch
-            if (!empty($batch)) {
+            if (! empty($batch)) {
                 $this->processBatch($batch);
             }
 
@@ -135,8 +138,8 @@ class ProcessAmzMerchantListingAllData extends Command
 
     private function validateHeaders($headers)
     {
-        if (!$headers) {
-            throw new InvalidArgumentException("Failed to read CSV headers");
+        if (! $headers) {
+            throw new InvalidArgumentException('Failed to read CSV headers');
         }
 
         $columnIndexes = [];
@@ -154,7 +157,7 @@ class ProcessAmzMerchantListingAllData extends Command
     private function mapProductData($row, $headers)
     {
         if (count($row) < max(array_values($headers))) {
-            throw new InvalidArgumentException("Row has insufficient columns");
+            throw new InvalidArgumentException('Row has insufficient columns');
         }
 
         $qty = (int) $row[$headers['quantity']];
@@ -179,9 +182,9 @@ class ProcessAmzMerchantListingAllData extends Command
                 $product->update([
                     'asin' => $productData['asin'],
                     'status' => $productData['status'],
-                    'exists_on_amazon' => !empty($productData['asin']) ? 1 : 0,
+                    'exists_on_amazon' => ! empty($productData['asin']) ? 1 : 0,
                     'price' => $productData['price'],
-                    'quantity' => $productData['quantity']
+                    'quantity' => $productData['quantity'],
                 ]);
             }
         }
@@ -197,7 +200,7 @@ class ProcessAmzMerchantListingAllData extends Command
             'image_feed_status' => 0,
             'inventory_feed_status' => 0,
             'status' => null,
-            'message' => null
+            'message' => null,
         ];
 
         Product::whereNull('asin')
@@ -212,7 +215,7 @@ class ProcessAmzMerchantListingAllData extends Command
         report($e);
         $job->update([
             'status' => 0,
-            'message' => $errorMessage
+            'message' => $errorMessage,
         ]);
     }
 }

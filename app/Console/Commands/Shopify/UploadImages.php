@@ -2,15 +2,12 @@
 
 namespace App\Console\Commands\Shopify;
 
+use App\Http\Controllers\SyncJobController;
+use App\Models\ShopifyProductVariant;
+use App\Services\ShopifyService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Shopify\Rest\Admin2025_04\Image;
-use App\Http\Controllers\SyncJobController;
-use App\Models\PandoraList;
-use App\Models\RetailEdgeProduct;
-use App\Services\ShopifyService;
-use App\Models\ShopifyProductVariant;
-use App\Services\PandoraScraperService;
 
 class UploadImages extends Command
 {
@@ -38,7 +35,7 @@ class UploadImages extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
+        if (! $job->isRunning()) {
             try {
                 Log::info("$marketplace $jobType started!");
                 $job->update(['status' => 1]);
@@ -57,7 +54,7 @@ class UploadImages extends Command
                                     $image->product_id = $variant->product_id;
                                     $image->src = $i->url;
                                     $image->variant_ids = [
-                                        $variant->variant_id
+                                        $variant->variant_id,
                                     ];
 
                                     $image->save(
@@ -74,11 +71,11 @@ class UploadImages extends Command
                         } else {
                             $variant->update(['images_requires_update' => 2]);
                             Log::debug("No images found on Retail Edge for {$variant->sku}");
-                            Log::debug("shopifyUploadImages sleep 60 seconds");
+                            Log::debug('shopifyUploadImages sleep 60 seconds');
                             sleep(60);
                         }
                     } else {
-                        $this->error("No variant found with images_requires_update = 1");
+                        $this->error('No variant found with images_requires_update = 1');
                     }
 
                     $count = ShopifyProductVariant::where('images_requires_update', 1)->count();
@@ -98,7 +95,6 @@ class UploadImages extends Command
         }
     }
 
-
     public function handleBackup()
     {
         $marketplace = 'Shopify';
@@ -106,7 +102,7 @@ class UploadImages extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
+        if (! $job->isRunning()) {
             try {
                 Log::info("$marketplace $jobType started!");
                 $job->update(['status' => 1]);
@@ -118,8 +114,8 @@ class UploadImages extends Command
                 while ($count) {
                     $variant = ShopifyProductVariant::where('images_requires_update', 1)->with(['images', 'product'])->first();
 
-                    if (!$variant) {
-                        $this->error("No variant found with images_requires_update = 1");
+                    if (! $variant) {
+                        $this->error('No variant found with images_requires_update = 1');
                     }
 
                     $this->info("Uploading images for {$variant->sku}");
@@ -131,7 +127,7 @@ class UploadImages extends Command
                                 $image->product_id = $variant->product_id;
                                 $image->src = $i->url;
                                 $image->variant_ids = [
-                                    $variant->variant_id
+                                    $variant->variant_id,
                                 ];
 
                                 $image->save(

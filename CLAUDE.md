@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Laravel 11 application that manages product listings across multiple e-commerce platforms: Amazon, Shopify, and Catch. It synchronizes product data from RetailEdge POS system to these platforms.
+This is a Laravel 11 application that manages product listings across multiple e-commerce platforms: Amazon and Shopify. It synchronizes product data from RetailEdge POS system to these platforms.
 
 ## Key Architecture
 
@@ -16,7 +16,6 @@ This is a Laravel 11 application that manages product listings across multiple e
 ### Command Structure
 - **Amazon Commands** (`app/Console/Commands/Amazon/`): Product feed generation, inventory updates, order management
 - **Shopify Commands** (`app/Console/Commands/Shopify/`): Product CRUD, inventory sync, metafield management, image uploads
-- **Catch Commands** (`app/Console/Commands/Catch/`): CSV generation and marketplace integration
 
 ### Dynamic Metafield System
 The application implements a sophisticated metafield assignment system that dynamically determines whether custom fields should be assigned at the product or variant level based on data analysis (see `MetafieldAssignmentService`).
@@ -79,5 +78,5 @@ php artisan amazon:submit-feed
 
 ## Environment Configuration
 - Copy `.env.example` to `.env` for initial setup
-- Key integrations require API credentials for Shopify, Amazon, RetailEdge, and Catch
+- Key integrations require API credentials for Shopify, Amazon, and RetailEdge
 - Queue connection should be set to `database` for production

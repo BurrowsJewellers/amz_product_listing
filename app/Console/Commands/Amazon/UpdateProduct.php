@@ -5,17 +5,20 @@ namespace App\Console\Commands\Amazon;
 use App\Http\Controllers\SyncJobController;
 use App\Models\Product;
 use App\Services\Amazon\AmazonSpApiService;
+use Exception;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
-use Exception;
 
 class UpdateProduct extends Command
 {
     protected $signature = 'amazonUpdateProduct';
+
     protected $description = 'Update product inventory and prices on Amazon Marketplace';
 
     private const BATCH_SIZE = 1000;
+
     private const MARKETPLACE = 'Amazon';
+
     private const JOB_TYPE = 'amazonUpdateProduct';
 
     protected AmazonSpApiService $amazonService;
@@ -35,21 +38,23 @@ class UpdateProduct extends Command
             $job = $this->initializeJob();
 
             if ($job->isRunning()) {
-                Log::info(self::MARKETPLACE . " " . self::JOB_TYPE . " is already running.");
+                Log::info(self::MARKETPLACE.' '.self::JOB_TYPE.' is already running.');
+
                 return Command::FAILURE;
             }
 
-            Log::info(self::MARKETPLACE . " " . self::JOB_TYPE . " started!");
+            Log::info(self::MARKETPLACE.' '.self::JOB_TYPE.' started!');
             $job->update(['status' => 1]);
 
             $this->processProducts($job);
 
             $job->update(['status' => 0, 'message' => null]);
-            Log::info(self::MARKETPLACE . " " . self::JOB_TYPE . " finished!");
+            Log::info(self::MARKETPLACE.' '.self::JOB_TYPE.' finished!');
 
             return Command::SUCCESS;
         } catch (Exception $e) {
             $this->handleFatalError($e, $job ?? null);
+
             return Command::FAILURE;
         }
     }
@@ -91,10 +96,10 @@ class UpdateProduct extends Command
                     try {
                         $success = $this->amazonService->updateProduct($product);
 
-                        if (!$success) {
+                        if (! $success) {
                             $job->update([
                                 'status' => 0,
-                                'message' => "Failed to update product {$product->sku}"
+                                'message' => "Failed to update product {$product->sku}",
                             ]);
                         }
                     } catch (Exception $e) {
@@ -118,7 +123,7 @@ class UpdateProduct extends Command
 
         $job->update([
             'status' => 0,
-            'message' => $errorMessage
+            'message' => $errorMessage,
         ]);
 
         $this->error($errorMessage);
@@ -129,14 +134,14 @@ class UpdateProduct extends Command
      */
     private function handleFatalError(Exception $e, $job = null): void
     {
-        $errorMessage = "Fatal error in " . self::JOB_TYPE . ": " . $e->getMessage();
+        $errorMessage = 'Fatal error in '.self::JOB_TYPE.': '.$e->getMessage();
         Log::error($errorMessage);
         report($e);
 
         if ($job) {
             $job->update([
                 'status' => 0,
-                'message' => $errorMessage
+                'message' => $errorMessage,
             ]);
         }
 

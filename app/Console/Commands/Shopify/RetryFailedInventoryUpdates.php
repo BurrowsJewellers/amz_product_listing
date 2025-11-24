@@ -2,13 +2,13 @@
 
 namespace App\Console\Commands\Shopify;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\SyncJobController;
-use Shopify\Rest\Admin2025_04\InventoryLevel;
 use App\Models\ShopifyLocation;
 use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyService;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
+use Shopify\Rest\Admin2025_04\InventoryLevel;
 
 class RetryFailedInventoryUpdates extends Command
 {
@@ -36,15 +36,16 @@ class RetryFailedInventoryUpdates extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
+        if (! $job->isRunning()) {
             try {
                 Log::info("$marketplace $jobType started!");
                 $job->update(['status' => 1]);
 
                 $location = ShopifyLocation::first();
-                if (!$location) {
+                if (! $location) {
                     Log::error("$marketplace $jobType failed: No Shopify location found");
                     $job->update(['status' => 0, 'message' => 'No Shopify location found']);
+
                     return;
                 }
 
@@ -55,9 +56,10 @@ class RetryFailedInventoryUpdates extends Command
                     ->count();
 
                 if ($failedCount === 0) {
-                    $this->info("No failed inventory updates to retry");
+                    $this->info('No failed inventory updates to retry');
                     $job->update(['status' => 0, 'message' => null]);
                     Log::info("$marketplace $jobType finished: No failed updates to retry");
+
                     return;
                 }
 
@@ -76,10 +78,11 @@ class RetryFailedInventoryUpdates extends Command
                         ->get();
 
                     foreach ($variants as $variant) {
-                        if (!$variant->retailEdgeProduct) {
+                        if (! $variant->retailEdgeProduct) {
                             Log::warning("Still missing RetailEdgeProduct for variant with SKU: {$variant->sku}");
                             $variant->update(['inventory_requires_update' => 3]); // Mark as permanently failed
                             $this->info("Marked variant {$variant->sku} as permanently failed due to missing RetailEdgeProduct");
+
                             continue;
                         }
 
@@ -90,13 +93,13 @@ class RetryFailedInventoryUpdates extends Command
                                 [
                                     'location_id' => $location->location_id,
                                     'inventory_item_id' => $variant->inventory_item_id,
-                                    'available' => $variant->retailEdgeProduct->quantity
+                                    'available' => $variant->retailEdgeProduct->quantity,
                                 ],
                             );
 
                             $variant->update([
                                 'inventory_quantity' => $variant->retailEdgeProduct->quantity,
-                                'inventory_requires_update' => 0
+                                'inventory_requires_update' => 0,
                             ]);
 
                             $successCount++;

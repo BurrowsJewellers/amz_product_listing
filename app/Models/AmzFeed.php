@@ -17,5 +17,4 @@ class AmzFeed extends Model
         'response_file_name',
         'processing_status',
     ];
-
 }

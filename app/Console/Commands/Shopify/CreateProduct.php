@@ -2,21 +2,19 @@
 
 namespace App\Console\Commands\Shopify;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\SyncJobController;
-use Shopify\Clients\Graphql;
 use App\Models\Brand;
-use App\Models\RetailEdgeProduct;
-use App\Models\RetailEdgeProductIsd;
-use App\Models\ShopifyMetafield;
-use App\Models\ShopifyProductVariantMetafield;
-use App\Models\ShopifyProductMetafield;
 use App\Models\PriceInventoryLog;
-use App\Services\ShopifyService;
-use App\Services\ShopifyConnectionService;
+use App\Models\RetailEdgeProduct;
+use App\Models\ShopifyMetafield;
+use App\Models\ShopifyProductMetafield;
+use App\Models\ShopifyProductVariantMetafield;
 use App\Services\MetafieldAssignmentService;
+use App\Services\ShopifyService;
+use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Shopify\Clients\Graphql;
 
 class CreateProduct extends Command
 {
@@ -44,17 +42,17 @@ class CreateProduct extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
+        if (! $job->isRunning()) {
             try {
                 Log::info("$marketplace $jobType started!");
                 $job->update(['status' => 1]);
                 $product_errors_occurred = false;
 
-                $pendingProducts = DB::select("SELECT rep.id, rep.sku
+                $pendingProducts = DB::select('SELECT rep.id, rep.sku
                     FROM retail_edge_products rep
                     LEFT JOIN shopify_product_variants spv ON rep.sku = spv.sku
                     WHERE spv.id IS NULL;
-                ");
+                ');
 
                 $pendingProductIds = [];
 
@@ -84,7 +82,7 @@ class CreateProduct extends Command
                 $client = new Graphql($session->getShop(), $session->getAccessToken());
 
                 while ($count) {
-                    $this->info('Count: ' . $count);
+                    $this->info('Count: '.$count);
                     $product = RetailEdgeProduct::withWhereHas('children', function ($children) {
                         $children->where('uploaded_to_shopify', 0);
                     })->with(['brand'])->where('quantity', '>', 0)->first();
@@ -102,7 +100,7 @@ class CreateProduct extends Command
                             'to_value' => 'initiating',
                             'status' => 'processing',
                             'message' => "Starting GraphQL product creation for: {$product->title}",
-                            'job_name' => 'shopifyCreateProduct'
+                            'job_name' => 'shopifyCreateProduct',
                         ]);
 
                         try {
@@ -119,7 +117,7 @@ class CreateProduct extends Command
                                     'to_value' => $createdProductData['id'],
                                     'status' => 'success',
                                     'message' => "Product created successfully with ID: {$createdProductData['id']}",
-                                    'job_name' => 'shopifyCreateProduct'
+                                    'job_name' => 'shopifyCreateProduct',
                                 ]);
 
                                 // Handle metafields after creation (same as UpdateProduct)
@@ -148,7 +146,7 @@ class CreateProduct extends Command
 
                                 $this->info("Successfully created product: {$product->title}");
                             } else {
-                                throw new \Exception("Product creation returned null data");
+                                throw new \Exception('Product creation returned null data');
                             }
                         } catch (\Exception $e) {
                             $product_errors_occurred = true;
@@ -163,7 +161,7 @@ class CreateProduct extends Command
                                 'to_value' => 'failed',
                                 'status' => 'failed',
                                 'message' => "Product creation failed: {$errorMessage}",
-                                'job_name' => 'shopifyCreateProduct'
+                                'job_name' => 'shopifyCreateProduct',
                             ]);
 
                             Log::error("Shopify GraphQL Exception for SKU {$product->sku}: {$errorMessage}");
@@ -206,9 +204,9 @@ class CreateProduct extends Command
         // Build product input for GraphQL
         $productInput = $this->buildProductInput($product);
 
-        $mutation = <<<GRAPHQL
-        mutation productCreate(\$product: ProductCreateInput!) {
-          productCreate(product: \$product) {
+        $mutation = <<<'GRAPHQL'
+        mutation productCreate($product: ProductCreateInput!) {
+          productCreate(product: $product) {
             product {
               id
               title
@@ -248,14 +246,14 @@ class CreateProduct extends Command
         }
         GRAPHQL;
 
-        $this->line("Executing GraphQL productCreate mutation...");
+        $this->line('Executing GraphQL productCreate mutation...');
         $response = $client->query(['query' => $mutation, 'variables' => ['product' => $productInput]]);
         $resultBody = json_decode($response->getBody()->getContents(), true);
 
         // Handle errors
         $errors = $this->handleGraphQLErrors($resultBody);
-        if (!empty($errors)) {
-            throw new \Exception("GraphQL Errors: " . implode(' | ', $errors));
+        if (! empty($errors)) {
+            throw new \Exception('GraphQL Errors: '.implode(' | ', $errors));
         }
 
         $createdProduct = $resultBody['data']['productCreate']['product'] ?? null;
@@ -300,7 +298,7 @@ class CreateProduct extends Command
         // Add template suffix for Pandora products
         if ($product->brand?->name === 'Pandora') {
             $productInput['templateSuffix'] = 'no-buy';
-            if (!in_array('Pandora', $productTags)) {
+            if (! in_array('Pandora', $productTags)) {
                 $productInput['tags'][] = 'Pandora';
             }
         }
@@ -318,7 +316,7 @@ class CreateProduct extends Command
 
         if ($product->children->count()) {
             foreach ($product->children as $child) {
-                $vts = array_filter(array_map('trim', array_map('strtolower', explode("-", $child->id3))));
+                $vts = array_filter(array_map('trim', array_map('strtolower', explode('-', $child->id3))));
 
                 foreach ($vts as $vt) {
                     $vt = trim($vt);
@@ -349,11 +347,11 @@ class CreateProduct extends Command
                             }
                         }
 
-                        if (!empty($variantTypeValue)) {
-                            if (!isset($variantOptions[$variantType])) {
+                        if (! empty($variantTypeValue)) {
+                            if (! isset($variantOptions[$variantType])) {
                                 $variantOptions[$variantType] = [];
                             }
-                            if (!in_array($variantTypeValue, $variantOptions[$variantType])) {
+                            if (! in_array($variantTypeValue, $variantOptions[$variantType])) {
                                 $variantOptions[$variantType][] = $variantTypeValue;
                             }
                         }
@@ -372,7 +370,7 @@ class CreateProduct extends Command
 
             $productOptions[] = [
                 'name' => $optionName,
-                'values' => $values
+                'values' => $values,
             ];
         }
 
@@ -402,7 +400,7 @@ class CreateProduct extends Command
 
             // Build option values for this variant
             $optionValues = [];
-            $vts = array_filter(array_map('trim', array_map('strtolower', explode("-", $child->id3))));
+            $vts = array_filter(array_map('trim', array_map('strtolower', explode('-', $child->id3))));
 
             foreach ($vts as $vt) {
                 $vt = trim($vt);
@@ -423,7 +421,7 @@ class CreateProduct extends Command
                         $variantTypeValue = $child->pendant_style;
                     }
 
-                    if (!empty($variantTypeValue)) {
+                    if (! empty($variantTypeValue)) {
                         $optionValues[] = $variantTypeValue;
                     }
                 }
@@ -433,6 +431,7 @@ class CreateProduct extends Command
             $optionKey = implode(' / ', $optionValues);
             if (in_array($optionKey, $existingVariants)) {
                 $this->line("Skipping variant {$child->sku} - option combination '{$optionKey}' already exists");
+
                 continue;
             }
 
@@ -446,10 +445,10 @@ class CreateProduct extends Command
             ];
         }
 
-        if (!empty($variants)) {
+        if (! empty($variants)) {
             $this->createVariantsBulk($variants, $client, $createdProduct);
         } else {
-            $this->line("No new variants to create - all option combinations already exist");
+            $this->line('No new variants to create - all option combinations already exist');
         }
     }
 
@@ -481,7 +480,7 @@ class CreateProduct extends Command
      */
     private function createVariantsBulk(array $variants, $client, array $createdProduct): void
     {
-        $this->line("Creating " . count($variants) . " variants using bulk creation...");
+        $this->line('Creating '.count($variants).' variants using bulk creation...');
         $this->createVariantsIndividually($variants, $client, $createdProduct);
     }
 
@@ -490,7 +489,7 @@ class CreateProduct extends Command
      */
     private function createVariantsIndividually(array $variants, $client, array $createdProduct): void
     {
-        $this->line("Using productVariantsBulkCreate for variant creation...");
+        $this->line('Using productVariantsBulkCreate for variant creation...');
 
         // Convert variants to the correct format for productVariantsBulkCreate
         $bulkVariants = [];
@@ -503,7 +502,7 @@ class CreateProduct extends Command
             ];
 
             // Add compareAtPrice if it's different from price
-            if (!empty($variant['compareAtPrice']) && $variant['compareAtPrice'] !== $variant['price']) {
+            if (! empty($variant['compareAtPrice']) && $variant['compareAtPrice'] !== $variant['price']) {
                 $bulkVariant['compareAtPrice'] = $variant['compareAtPrice'];
             }
 
@@ -514,7 +513,7 @@ class CreateProduct extends Command
             ];
 
             // Add option values if they exist (using optionId from created product)
-            if (!empty($variant['optionValues'])) {
+            if (! empty($variant['optionValues'])) {
                 $bulkVariant['optionValues'] = [];
                 foreach ($variant['optionValues'] as $index => $value) {
                     $optionId = $this->getOptionIdByIndex($createdProduct, $index);
@@ -530,9 +529,9 @@ class CreateProduct extends Command
             $bulkVariants[] = $bulkVariant;
         }
 
-        $mutation = <<<GRAPHQL
-        mutation productVariantsBulkCreate(\$productId: ID!, \$variants: [ProductVariantsBulkInput!]!) {
-          productVariantsBulkCreate(productId: \$productId, variants: \$variants) {
+        $mutation = <<<'GRAPHQL'
+        mutation productVariantsBulkCreate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+          productVariantsBulkCreate(productId: $productId, variants: $variants) {
             product {
               id
             }
@@ -557,26 +556,26 @@ class CreateProduct extends Command
                 'query' => $mutation,
                 'variables' => [
                     'productId' => $productId,
-                    'variants' => $bulkVariants
-                ]
+                    'variants' => $bulkVariants,
+                ],
             ]);
             $resultBody = json_decode($response->getBody()->getContents(), true);
 
             $userErrors = $resultBody['data']['productVariantsBulkCreate']['userErrors'] ?? ($resultBody['errors'] ?? []);
-            if (!empty($userErrors)) {
+            if (! empty($userErrors)) {
                 foreach ($userErrors as $error) {
-                    $this->error("Bulk variant creation error: {$error['message']} " . (isset($error['field']) ? json_encode($error['field']) : ''));
+                    $this->error("Bulk variant creation error: {$error['message']} ".(isset($error['field']) ? json_encode($error['field']) : ''));
                 }
             } else {
                 $createdVariants = $resultBody['data']['productVariantsBulkCreate']['productVariants'] ?? [];
-                $this->info("Successfully created " . count($createdVariants) . " variants using bulk creation");
+                $this->info('Successfully created '.count($createdVariants).' variants using bulk creation');
 
                 foreach ($createdVariants as $variant) {
                     $this->line("Created variant: {$variant['sku']} (ID: {$variant['id']})");
                 }
             }
         } catch (\Exception $e) {
-            $this->error("Exception during bulk variant creation: " . $e->getMessage());
+            $this->error('Exception during bulk variant creation: '.$e->getMessage());
         }
     }
 
@@ -585,7 +584,7 @@ class CreateProduct extends Command
      */
     private function getOptionIdByIndex(array $createdProduct, int $index): ?string
     {
-        if (!isset($createdProduct['options'])) {
+        if (! isset($createdProduct['options'])) {
             return null;
         }
 
@@ -604,7 +603,7 @@ class CreateProduct extends Command
     private function handleMetafieldsAfterCreation(RetailEdgeProduct $product, array $createdProductData, $client): void
     {
         // Use MetafieldAssignmentService (same as UpdateProduct)
-        $metafieldService = new MetafieldAssignmentService();
+        $metafieldService = new MetafieldAssignmentService;
         $assignment = $metafieldService->determineMetafieldAssignment($product);
 
         $this->line("Metafield assignment type: {$assignment['type']} for Product: {$product->sku}");
@@ -612,14 +611,14 @@ class CreateProduct extends Command
         $metafieldsToSet = [];
 
         // Handle product-level metafields (SAME as UpdateProduct)
-        if (!empty($assignment['product_metafields'])) {
-            $this->line("Processing " . count($assignment['product_metafields']) . " product-level metafields");
+        if (! empty($assignment['product_metafields'])) {
+            $this->line('Processing '.count($assignment['product_metafields']).' product-level metafields');
             foreach ($assignment['product_metafields'] as $metafield) {
                 $shopifyMetafieldDef = ShopifyMetafield::where('name', $metafield['isd_name'])
                     ->where('owner_type', 'PRODUCT')
                     ->first();
 
-                if ($shopifyMetafieldDef && !empty($metafield['value'])) {
+                if ($shopifyMetafieldDef && ! empty($metafield['value'])) {
                     $metafieldsToSet[] = [
                         'ownerId' => $createdProductData['id'], // Product GID
                         'namespace' => $shopifyMetafieldDef->namespace,
@@ -635,22 +634,23 @@ class CreateProduct extends Command
         }
 
         // Handle variant-level metafields (SAME as UpdateProduct)
-        if (!empty($assignment['variant_metafields'])) {
+        if (! empty($assignment['variant_metafields'])) {
             foreach ($assignment['variant_metafields'] as $sku => $metafields) {
                 // Find variant ID from created product data
                 $variantId = $this->findVariantIdBySku($createdProductData, $sku);
-                if (!$variantId) {
+                if (! $variantId) {
                     $this->warn("Could not find variant ID for SKU: {$sku}");
+
                     continue;
                 }
 
-                $this->line("Processing " . count($metafields) . " variant-level metafields for SKU: {$sku}");
+                $this->line('Processing '.count($metafields)." variant-level metafields for SKU: {$sku}");
                 foreach ($metafields as $metafield) {
                     $shopifyMetafieldDef = ShopifyMetafield::where('name', $metafield['isd_name'])
                         ->where('owner_type', 'PRODUCTVARIANT')
                         ->first();
 
-                    if ($shopifyMetafieldDef && !empty($metafield['value'])) {
+                    if ($shopifyMetafieldDef && ! empty($metafield['value'])) {
                         $metafieldsToSet[] = [
                             'ownerId' => $variantId, // Variant GID
                             'namespace' => $shopifyMetafieldDef->namespace,
@@ -667,7 +667,7 @@ class CreateProduct extends Command
         }
 
         // Batch process metafields in chunks of 250 (Shopify's limit)
-        if (!empty($metafieldsToSet)) {
+        if (! empty($metafieldsToSet)) {
             $this->processMetafieldsInBatches($metafieldsToSet, $product, $client);
         } else {
             $this->line("No metafields to set for product: {$product->sku}");
@@ -679,7 +679,7 @@ class CreateProduct extends Command
      */
     private function findVariantIdBySku(array $productData, string $sku): ?string
     {
-        if (!isset($productData['variants']['edges'])) {
+        if (! isset($productData['variants']['edges'])) {
             return null;
         }
 
@@ -700,14 +700,14 @@ class CreateProduct extends Command
         $errors = [];
 
         // Handle user errors (field-specific)
-        if (!empty($resultBody['data']['productCreate']['userErrors'])) {
+        if (! empty($resultBody['data']['productCreate']['userErrors'])) {
             foreach ($resultBody['data']['productCreate']['userErrors'] as $error) {
                 $errors[] = "Field '{$error['field']}': {$error['message']}";
             }
         }
 
         // Handle GraphQL errors (system-level)
-        if (!empty($resultBody['errors'])) {
+        if (! empty($resultBody['errors'])) {
             foreach ($resultBody['errors'] as $error) {
                 $errors[] = "GraphQL Error: {$error['message']}";
             }
@@ -723,7 +723,7 @@ class CreateProduct extends Command
     {
         try {
             // Use existing ShopifyService method if available, or implement custom logic
-            $shopifyService = new ShopifyService();
+            $shopifyService = new ShopifyService;
 
             // Convert GraphQL response to format expected by saveProductToDb
             $restFormatProduct = $this->convertGraphQLToRestFormat($productData, $product);
@@ -732,8 +732,8 @@ class CreateProduct extends Command
 
             $this->info("Product saved to database: {$product->title}");
         } catch (\Exception $e) {
-            $this->warn("Failed to save product to database: " . $e->getMessage());
-            Log::warning("Failed to save product to database for SKU {$product->sku}: " . $e->getMessage());
+            $this->warn('Failed to save product to database: '.$e->getMessage());
+            Log::warning("Failed to save product to database for SKU {$product->sku}: ".$e->getMessage());
         }
     }
 
@@ -796,10 +796,11 @@ class CreateProduct extends Command
     {
         $mktDescription = $product->marketing_description ?? '';
         if ($product->brand?->name == 'Pandora') {
-            $mktDescription .= " - Design number: " . $product->real_design_number;
+            $mktDescription .= ' - Design number: '.$product->real_design_number;
         } else {
-            $mktDescription .= " - Design number: " . $product->real_design_number;
+            $mktDescription .= ' - Design number: '.$product->real_design_number;
         }
+
         return $mktDescription;
     }
 
@@ -808,9 +809,9 @@ class CreateProduct extends Command
      */
     private function getProductData(string $productId, $client): ?array
     {
-        $query = <<<GRAPHQL
-        query getProduct(\$id: ID!) {
-          product(id: \$id) {
+        $query = <<<'GRAPHQL'
+        query getProduct($id: ID!) {
+          product(id: $id) {
             id
             title
             handle
@@ -853,7 +854,8 @@ class CreateProduct extends Command
 
             return $resultBody['data']['product'] ?? null;
         } catch (\Exception $e) {
-            $this->warn("Failed to fetch updated product data: " . $e->getMessage());
+            $this->warn('Failed to fetch updated product data: '.$e->getMessage());
+
             return null;
         }
     }
@@ -877,14 +879,14 @@ class CreateProduct extends Command
             foreach ($types as $type => $value) {
                 $propValue = $product->{$type} ?? '';
                 if ($propValue !== '' && $propValue !== 'N/A') {
-                    foreach (explode(",", $propValue) as $tempTag) {
-                        $tags[] = $value . "_" . trim($tempTag);
+                    foreach (explode(',', $propValue) as $tempTag) {
+                        $tags[] = $value.'_'.trim($tempTag);
                     }
                 }
             }
 
             // Add id2 tags if they exist
-            if (!empty($product->id2) && $product->id2 !== 'N/A') {
+            if (! empty($product->id2) && $product->id2 !== 'N/A') {
                 foreach (explode(',', $product->id2) as $id2Value) {
                     $trimmedValue = trim($id2Value);
                     if ($trimmedValue !== '') {
@@ -894,6 +896,7 @@ class CreateProduct extends Command
             }
         } catch (\Exception $e) {
             report($e);
+
             return [];
         }
 
@@ -912,7 +915,9 @@ class CreateProduct extends Command
                 // Find the corresponding metafield from our input
                 $inputMetafield = $metafieldsToSet[$index] ?? null;
 
-                if (!$inputMetafield) continue;
+                if (! $inputMetafield) {
+                    continue;
+                }
 
                 if (str_contains($inputMetafield['ownerId'], 'ProductVariant')) {
                     // This is a variant metafield, save it to variant metafields table
@@ -963,8 +968,8 @@ class CreateProduct extends Command
                 }
             }
         } catch (\Exception $e) {
-            $this->warn("Failed to save metafields to database for product {$product->sku}: " . $e->getMessage());
-            Log::warning("Failed to save metafields to database for product {$product->sku}: " . $e->getMessage());
+            $this->warn("Failed to save metafields to database for product {$product->sku}: ".$e->getMessage());
+            Log::warning("Failed to save metafields to database for product {$product->sku}: ".$e->getMessage());
         }
     }
 
@@ -977,11 +982,11 @@ class CreateProduct extends Command
         $totalMetafields = count($metafieldsToSet);
         $batches = array_chunk($metafieldsToSet, $batchSize);
 
-        $this->line("Processing {$totalMetafields} metafields in " . count($batches) . " batches of {$batchSize} for product: {$product->sku}");
+        $this->line("Processing {$totalMetafields} metafields in ".count($batches)." batches of {$batchSize} for product: {$product->sku}");
 
-        $metafieldsSetMutation = <<<GRAPHQL
-        mutation metafieldsSet(\$metafields: [MetafieldsSetInput!]!) {
-          metafieldsSet(metafields: \$metafields) {
+        $metafieldsSetMutation = <<<'GRAPHQL'
+        mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
+          metafieldsSet(metafields: $metafields) {
             metafields {
               id
               key
@@ -1003,14 +1008,14 @@ class CreateProduct extends Command
 
         foreach ($batches as $batchIndex => $batch) {
             $batchNumber = $batchIndex + 1;
-            $this->line("Processing batch {$batchNumber}/" . count($batches) . " (" . count($batch) . " metafields)");
+            $this->line("Processing batch {$batchNumber}/".count($batches).' ('.count($batch).' metafields)');
 
             try {
                 $response = $client->query(['query' => $metafieldsSetMutation, 'variables' => ['metafields' => $batch]]);
                 $resultBody = json_decode($response->getBody()->getContents(), true);
 
                 $userErrors = $resultBody['data']['metafieldsSet']['userErrors'] ?? ($resultBody['errors'] ?? []);
-                if (!empty($userErrors)) {
+                if (! empty($userErrors)) {
                     foreach ($userErrors as $error) {
                         $failedMetafieldIndex = $error['elementIndex'] ?? 'N/A';
                         $failedMetafield = ($failedMetafieldIndex !== 'N/A' && isset($batch[$failedMetafieldIndex])) ? $batch[$failedMetafieldIndex]['key'] : 'unknown';
@@ -1026,8 +1031,8 @@ class CreateProduct extends Command
                         'from_value' => null,
                         'to_value' => 'batch_failed',
                         'status' => 'failed',
-                        'message' => "Batch {$batchNumber} failed with " . count($userErrors) . " errors",
-                        'job_name' => 'shopifyCreateProduct'
+                        'message' => "Batch {$batchNumber} failed with ".count($userErrors).' errors',
+                        'job_name' => 'shopifyCreateProduct',
                     ]);
                 } else {
                     $createdMetafields = $resultBody['data']['metafieldsSet']['metafields'] ?? [];
@@ -1039,7 +1044,7 @@ class CreateProduct extends Command
                     $allResultBodies[] = [
                         'resultBody' => $resultBody,
                         'batch' => $batch,
-                        'batchOffset' => $batchIndex * $batchSize
+                        'batchOffset' => $batchIndex * $batchSize,
                     ];
                 }
 
@@ -1048,7 +1053,7 @@ class CreateProduct extends Command
                     usleep(500000); // 0.5 second delay
                 }
             } catch (\Exception $e) {
-                $this->error("Exception during metafieldsSet batch {$batchNumber} for product {$product->sku}: " . $e->getMessage());
+                $this->error("Exception during metafieldsSet batch {$batchNumber} for product {$product->sku}: ".$e->getMessage());
                 $totalFailed += count($batch);
 
                 // Log batch exception
@@ -1059,14 +1064,14 @@ class CreateProduct extends Command
                     'from_value' => null,
                     'to_value' => 'batch_exception',
                     'status' => 'failed',
-                    'message' => "Batch {$batchNumber} exception: " . $e->getMessage(),
-                    'job_name' => 'shopifyCreateProduct'
+                    'message' => "Batch {$batchNumber} exception: ".$e->getMessage(),
+                    'job_name' => 'shopifyCreateProduct',
                 ]);
             }
         }
 
         // Save all successful metafields to local database
-        if (!empty($allResultBodies)) {
+        if (! empty($allResultBodies)) {
             foreach ($allResultBodies as $batchData) {
                 $this->saveMetafieldsToDatabase($batchData['resultBody'], $batchData['batch'], $product);
             }
@@ -1084,7 +1089,7 @@ class CreateProduct extends Command
             'to_value' => "{$totalSuccessful}_of_{$totalMetafields}",
             'status' => $totalFailed > 0 ? 'partial' : 'success',
             'message' => "Metafield batch processing complete: {$totalSuccessful} successful, {$totalFailed} failed",
-            'job_name' => 'shopifyCreateProduct'
+            'job_name' => 'shopifyCreateProduct',
         ]);
     }
 
@@ -1093,7 +1098,7 @@ class CreateProduct extends Command
      */
     private function updateFirstVariantSku(array $createdProduct, RetailEdgeProduct $product, $client): void
     {
-        if (!isset($createdProduct['variants']['edges'][0])) {
+        if (! isset($createdProduct['variants']['edges'][0])) {
             return;
         }
 
@@ -1126,9 +1131,9 @@ class CreateProduct extends Command
                 'taxable' => true,
             ];
 
-            $mutation = <<<GRAPHQL
-            mutation productVariantsBulkUpdate(\$productId: ID!, \$variants: [ProductVariantsBulkInput!]!) {
-              productVariantsBulkUpdate(productId: \$productId, variants: \$variants) {
+            $mutation = <<<'GRAPHQL'
+            mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+              productVariantsBulkUpdate(productId: $productId, variants: $variants) {
                 product {
                   id
                 }
@@ -1152,13 +1157,13 @@ class CreateProduct extends Command
                     'query' => $mutation,
                     'variables' => [
                         'productId' => $createdProduct['id'],
-                        'variants' => [$variantInput]
-                    ]
+                        'variants' => [$variantInput],
+                    ],
                 ]);
                 $resultBody = json_decode($response->getBody()->getContents(), true);
 
                 $userErrors = $resultBody['data']['productVariantsBulkUpdate']['userErrors'] ?? ($resultBody['errors'] ?? []);
-                if (!empty($userErrors)) {
+                if (! empty($userErrors)) {
                     foreach ($userErrors as $error) {
                         $this->error("First variant SKU update error: {$error['message']}");
                     }
@@ -1166,7 +1171,7 @@ class CreateProduct extends Command
                     $this->info("Successfully updated first variant SKU to: {$firstChild->sku}");
                 }
             } catch (\Exception $e) {
-                $this->error("Exception updating first variant SKU: " . $e->getMessage());
+                $this->error('Exception updating first variant SKU: '.$e->getMessage());
             }
         }
     }
@@ -1188,9 +1193,9 @@ class CreateProduct extends Command
             $session = (new \App\Services\ShopifyService)->getSession();
             $client = new \Shopify\Clients\Graphql($session->getShop(), $session->getAccessToken());
 
-            $query = <<<GRAPHQL
-            query getVariant(\$id: ID!) {
-              productVariant(id: \$id) {
+            $query = <<<'GRAPHQL'
+            query getVariant($id: ID!) {
+              productVariant(id: $id) {
                 id
                 sku
               }
@@ -1201,12 +1206,12 @@ class CreateProduct extends Command
             $resultBody = json_decode($response->getBody()->getContents(), true);
 
             $variant = $resultBody['data']['productVariant'] ?? null;
-            if ($variant && !empty($variant['sku'])) {
+            if ($variant && ! empty($variant['sku'])) {
                 return $variant['sku'];
             }
         } catch (\Exception $e) {
             // If GraphQL query fails, fall back to the original logic
-            Log::warning("Failed to query variant SKU for GID {$variantGid}: " . $e->getMessage());
+            Log::warning("Failed to query variant SKU for GID {$variantGid}: ".$e->getMessage());
         }
 
         // Fallback: return null if we can't find the SKU

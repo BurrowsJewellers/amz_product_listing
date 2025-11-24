@@ -55,25 +55,6 @@
                     Amazon Reports</a>
             </li>
 
-
-            <li class="nav-title">Catch</li>
-
-            <li class="nav-item">
-                <a class="nav-link" href="{{ route('catch.products') }}">
-                    <svg class="nav-icon">
-                        <use xlink:href="{{ asset('vendors/@coreui/icons/svg/free.svg#cil-list') }}"></use>
-                    </svg>
-                    Products</a>
-            </li>
-
-            <li class="nav-item">
-                <a class="nav-link" href="{{ route('catch.imports.index') }}">
-                    <svg class="nav-icon">
-                        <use xlink:href="{{ asset('vendors/@coreui/icons/svg/free.svg#cil-list') }}"></use>
-                    </svg>
-                    Imports</a>
-            </li>
-
             <!-- <li class="nav-item">
                 <a class="nav-link" href="charts.html">
                     <svg class="nav-icon">

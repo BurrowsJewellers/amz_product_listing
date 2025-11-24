@@ -3,13 +3,12 @@
 namespace App\Services;
 
 use Shopify\ApiVersion;
+use Shopify\Auth\FileSessionStorage;
 use Shopify\Auth\Session;
 use Shopify\Context;
-use Shopify\Auth\FileSessionStorage;
 
 class ShopifyConnectionService
 {
-
     public function getSession(): Session
     {
         Context::initialize(

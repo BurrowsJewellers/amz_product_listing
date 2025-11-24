@@ -192,14 +192,14 @@ class GetProductsFromEWebMain extends Command
     /**
      * Handle system signals for graceful shutdown
      */
-    public function handleSignal($signo)
+    public function handleSignal(int $signal, int|false $previousExitCode = 0): int|false
     {
-        Log::warning("GetProductsFromEWebMain received signal {$signo}. Shutting down gracefully...");
+        Log::warning("GetProductsFromEWebMain received signal {$signal}. Shutting down gracefully...");
 
         if ($this->currentJob) {
             $this->currentJob->update([
                 'status' => 0,
-                'message' => "Process terminated by signal {$signo} - use checkpoint to resume",
+                'message' => "Process terminated by signal {$signal} - use checkpoint to resume",
             ]);
         }
 
@@ -211,8 +211,9 @@ class GetProductsFromEWebMain extends Command
         echo "\n💾 Process was interrupted. You can resume from the last checkpoint using:\n";
         echo "php artisan getProductsFromEWebMain --resume-from=<checkpoint_number>\n\n";
 
-        Log::info("GetProductsFromEWebMain shut down gracefully after receiving signal {$signo}");
-        exit(1);
+        Log::info("GetProductsFromEWebMain shut down gracefully after receiving signal {$signal}");
+
+        return 1;
     }
 
     private function processProducts($tempProductTable, $tempImageTable, $tempIsdTable)

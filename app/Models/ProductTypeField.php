@@ -16,13 +16,13 @@ class ProductTypeField extends Model
         'sort_order',
     ];
 
-    public function productType() {
+    public function productType()
+    {
         return $this->belongsTo(ProductType::class);
     }
 
-    public function value() {
+    public function value()
+    {
         return $this->hasOne(ProductFieldValue::class, 'product_type_field_id', 'id')->whereNotNull('product_type_field_id');
     }
-
-
 }

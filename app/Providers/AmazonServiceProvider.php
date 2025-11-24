@@ -2,10 +2,10 @@
 
 namespace App\Providers;
 
-use Illuminate\Support\ServiceProvider;
+use App\Services\Amazon\AmazonSpApiService;
 use App\Services\Amazon\CatalogService;
 use App\Services\Amazon\ListingService;
-use App\Services\Amazon\AmazonSpApiService;
+use Illuminate\Support\ServiceProvider;
 
 class AmazonServiceProvider extends ServiceProvider
 {

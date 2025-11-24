@@ -35,7 +35,7 @@ class AmazonListings extends Model
         'pending_quantity',
         'fulfilment_channel',
         'merchant_shipping_group',
-        'status'
+        'status',
     ];
 
     protected $casts = [

@@ -35,7 +35,7 @@ class ExtractProductUrl extends Command
                     $html = $product->search_response;
 
                     // Create a new DOMDocument object
-                    $dom = new DOMDocument();
+                    $dom = new DOMDocument;
 
                     // Load the HTML, using the @ to suppress warnings for malformed HTML
                     @$dom->loadHTML($html);
@@ -48,22 +48,22 @@ class ExtractProductUrl extends Command
 
                     if ($productDiv) {
                         // Find the 'a' tag within this div
-                        $link = $xpath->query(".//a", $productDiv)->item(0);
+                        $link = $xpath->query('.//a', $productDiv)->item(0);
 
                         $pData = [];
                         if ($link) {
                             $href = $link->getAttribute('href');
 
-                            $pData['product_url'] = "https://au.pandora.net" . $href;
+                            $pData['product_url'] = 'https://au.pandora.net'.$href;
 
-                            echo "Href: " . $href . "\n";
+                            echo 'Href: '.$href."\n";
                             // Find the span with data-auto="lblSearchProductName"
                             $nameSpan = $xpath->query("//*[@data-auto='lblSearchProductName']")->item(0);
 
                             if ($nameSpan) {
                                 $productName = $nameSpan->textContent;
                                 $pData['product_name'] = $productName;
-                                echo "Product Name: " . $productName . "\n";
+                                echo 'Product Name: '.$productName."\n";
                             } else {
                                 echo "Product name not found\n";
                             }

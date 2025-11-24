@@ -18,12 +18,13 @@ class EWebShortCode extends Model
         'classification_path',
     ];
 
-    public function productType() {
+    public function productType()
+    {
         return $this->belongsTo(ProductType::class);
     }
 
-    public function marketplace() {
+    public function marketplace()
+    {
         return $this->belongsTo(Marketplace::class);
     }
-
 }

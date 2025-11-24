@@ -3,9 +3,9 @@
 namespace App\Console\Commands\Pandora;
 
 use App\Models\PandoraList;
-use Illuminate\Console\Command;
 use DOMDocument;
 use DOMXPath;
+use Illuminate\Console\Command;
 
 class ExtractImagesUrl extends Command
 {
@@ -41,7 +41,7 @@ class ExtractImagesUrl extends Command
                         $html = $product->product_response;
 
                         libxml_use_internal_errors(true); // Suppress libxml errors
-                        $dom = new DOMDocument();
+                        $dom = new DOMDocument;
                         $dom->loadHTML($html);
                         libxml_clear_errors();
 
@@ -60,7 +60,7 @@ class ExtractImagesUrl extends Command
                                 if (json_last_error() === JSON_ERROR_NONE && isset($img_data['hires'])) {
                                     $links[] = $img_data['hires'];
                                 } else {
-                                    echo "Could not parse JSON or 'hires' key not found: " . $data_img . "\n";
+                                    echo "Could not parse JSON or 'hires' key not found: ".$data_img."\n";
                                 }
                             }
                         }
@@ -68,7 +68,7 @@ class ExtractImagesUrl extends Command
                         // Convert the links array to JSON
                         $links_json = json_encode($links, JSON_PRETTY_PRINT);
 
-                        if (!empty($links)) {
+                        if (! empty($links)) {
                             $product->update(['images' => $links_json]);
                         }
                     } else {

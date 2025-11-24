@@ -19,9 +19,8 @@ class AmzMarketplace extends Model
         'status',
     ];
 
-
-    public function scopeActive($query){
+    public function scopeActive($query)
+    {
         return $query->where('status', 1);
     }
-
 }

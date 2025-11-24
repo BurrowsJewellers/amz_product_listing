@@ -9,9 +9,6 @@ class MetafieldAssignmentService
 {
     /**
      * Determine how metafields should be assigned for a given product
-     *
-     * @param RetailEdgeProduct $product
-     * @return array
      */
     public function determineMetafieldAssignment(RetailEdgeProduct $product): array
     {
@@ -23,7 +20,7 @@ class MetafieldAssignmentService
             return [
                 'type' => 'PRODUCT_ONLY',
                 'product_metafields' => $this->getAllProductISDs($product),
-                'variant_metafields' => []
+                'variant_metafields' => [],
             ];
         }
 
@@ -33,9 +30,6 @@ class MetafieldAssignmentService
 
     /**
      * Get all ISDs for a product (used when single variant)
-     *
-     * @param RetailEdgeProduct $product
-     * @return array
      */
     private function getAllProductISDs(RetailEdgeProduct $product): array
     {
@@ -47,11 +41,11 @@ class MetafieldAssignmentService
         $isds = RetailEdgeProductIsd::where('sku', $targetSku)->get();
 
         foreach ($isds as $isd) {
-            if (!empty($isd->isd_value)) {
+            if (! empty($isd->isd_value)) {
                 $productMetafields[] = [
                     'isd_name' => $isd->isd_name,
                     'value' => $isd->isd_value,
-                    'key_suffix' => '_product'
+                    'key_suffix' => '_product',
                 ];
             }
         }
@@ -62,9 +56,7 @@ class MetafieldAssignmentService
     /**
      * Analyze metafields for multi-variant products
      *
-     * @param RetailEdgeProduct $product
-     * @param \Illuminate\Database\Eloquent\Collection $children
-     * @return array
+     * @param  \Illuminate\Database\Eloquent\Collection  $children
      */
     private function analyzeForMultiVariant(RetailEdgeProduct $product, $children): array
     {
@@ -76,7 +68,7 @@ class MetafieldAssignmentService
         foreach ($children as $child) {
             $childISDs = RetailEdgeProductIsd::where('sku', $child->sku)->get();
             foreach ($childISDs as $isd) {
-                if (!empty($isd->isd_value)) {
+                if (! empty($isd->isd_value)) {
                     $allISDs[$isd->isd_name][$child->sku] = $isd->isd_value;
                 }
             }
@@ -97,7 +89,7 @@ class MetafieldAssignmentService
                 $commonMetafields[] = [
                     'isd_name' => $isdName,
                     'value' => reset($uniqueValues),
-                    'key_suffix' => '_product'
+                    'key_suffix' => '_product',
                 ];
             } else {
                 // Different values → Variant metafields
@@ -105,7 +97,7 @@ class MetafieldAssignmentService
                     $variantMetafields[$sku][] = [
                         'isd_name' => $isdName,
                         'value' => $value,
-                        'key_suffix' => '_variant'
+                        'key_suffix' => '_variant',
                     ];
                 }
             }
@@ -114,7 +106,7 @@ class MetafieldAssignmentService
         return [
             'type' => 'MIXED',
             'product_metafields' => $commonMetafields,
-            'variant_metafields' => $variantMetafields
+            'variant_metafields' => $variantMetafields,
         ];
     }
 }

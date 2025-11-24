@@ -22,6 +22,6 @@ class DatabaseSeeder extends Seeder
         $this->call(CategoryFieldSeeder::class);
         $this->call(SyncJobsSeeder::class);
         $this->call(EWebShortCodeSeeder::class);
-        
+
     }
 }

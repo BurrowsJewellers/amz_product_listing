@@ -2,12 +2,12 @@
 
 namespace App\Console\Commands\Shopify;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\SyncJobController;
 use App\Models\ShopifyProduct;
 use App\Services\ShopifyService;
+use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Shopify\Rest\Admin2025_04\Product;
 
 class ArchiveProducts extends Command
@@ -36,7 +36,7 @@ class ArchiveProducts extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
+        if (! $job->isRunning()) {
             try {
                 Log::info("$marketplace $jobType started!");
                 $job->update(['status' => 1]);
@@ -78,11 +78,11 @@ class ArchiveProducts extends Command
 
                             ShopifyProduct::where('id', $p->pid)->update(['status' => $status]);
 
-                            $msg = $p->title . ' marked as ' . $status;
+                            $msg = $p->title.' marked as '.$status;
                             $this->info($msg);
                             Log::debug($msg);
                         } catch (\Exception $e) {
-                            $msg = 'There was an error while upading the status of ' . $p->title . ' to ' . $status;
+                            $msg = 'There was an error while upading the status of '.$p->title.' to '.$status;
                             Log::debug($msg);
                             $this->error($msg);
                         }

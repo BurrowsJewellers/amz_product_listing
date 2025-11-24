@@ -2,13 +2,12 @@
 
 namespace App\Console\Commands\Shopify;
 
+use App\Http\Controllers\SyncJobController;
+use App\Models\RetailEdgeProduct;
+use App\Services\ShopifyService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use App\Http\Controllers\SyncJobController;
-use App\Models\ShopifyProduct;
-use App\Models\RetailEdgeProduct;
-use App\Services\ShopifyService;
 use Shopify\Clients\Graphql;
 
 class UpdateProductDescriptions extends Command
@@ -43,9 +42,9 @@ class UpdateProductDescriptions extends Command
             'skipped' => 0,
             'errors' => 0,
             'pandora_skipped' => 0,
-            'already_has_design_number' => 0
+            'already_has_design_number' => 0,
         ],
-        'last_cursor' => null
+        'last_cursor' => null,
     ];
 
     /**
@@ -63,7 +62,7 @@ class UpdateProductDescriptions extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
+        if (! $job->isRunning()) {
             try {
                 Log::info("$marketplace $jobType started!");
                 $job->update(['status' => 1]);
@@ -86,9 +85,9 @@ class UpdateProductDescriptions extends Command
                     $this->loadProgress();
                     if ($this->progress['stats']['total_processed'] > 0) {
                         $this->info('📊 Resuming from previous progress:');
-                        $this->info('   - Total processed: ' . $this->progress['stats']['total_processed']);
-                        $this->info('   - Updated: ' . $this->progress['stats']['updated']);
-                        $this->info('   - Skipped: ' . $this->progress['stats']['skipped']);
+                        $this->info('   - Total processed: '.$this->progress['stats']['total_processed']);
+                        $this->info('   - Updated: '.$this->progress['stats']['updated']);
+                        $this->info('   - Skipped: '.$this->progress['stats']['skipped']);
                     }
                 }
 
@@ -104,9 +103,9 @@ class UpdateProductDescriptions extends Command
             } catch (\Exception $e) {
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
                 report($e);
-                $this->error('❌ Error: ' . $e->getMessage());
-                Log::error("$marketplace $jobType failed: " . $e->getMessage(), ['exception' => $e]);
-                
+                $this->error('❌ Error: '.$e->getMessage());
+                Log::error("$marketplace $jobType failed: ".$e->getMessage(), ['exception' => $e]);
+
                 // Save progress even on error
                 $this->saveProgress();
             }
@@ -131,9 +130,9 @@ class UpdateProductDescriptions extends Command
 
             try {
                 // GraphQL query to get products with their descriptions
-                $query = <<<GRAPHQL
-                query getProducts(\$first: Int!, \$after: String) {
-                  products(first: \$first, after: \$after) {
+                $query = <<<'GRAPHQL'
+                query getProducts($first: Int!, $after: String) {
+                  products(first: $first, after: $after) {
                     edges {
                       node {
                         id
@@ -160,14 +159,14 @@ class UpdateProductDescriptions extends Command
 
                 $variables = [
                     'first' => 50, // Smaller batch size for descriptions
-                    'after' => $cursor
+                    'after' => $cursor,
                 ];
 
                 $response = $this->client->query(['query' => $query, 'variables' => $variables]);
                 $resultBody = json_decode($response->getBody()->getContents(), true);
 
                 if (isset($resultBody['errors'])) {
-                    throw new \Exception('GraphQL errors: ' . json_encode($resultBody['errors']));
+                    throw new \Exception('GraphQL errors: '.json_encode($resultBody['errors']));
                 }
 
                 $products = $resultBody['data']['products']['edges'] ?? [];
@@ -192,7 +191,7 @@ class UpdateProductDescriptions extends Command
                 }
 
             } catch (\Exception $e) {
-                $this->error("❌ Failed to fetch products: " . $e->getMessage());
+                $this->error('❌ Failed to fetch products: '.$e->getMessage());
                 $this->progress['stats']['errors']++;
                 throw $e;
             }
@@ -206,32 +205,34 @@ class UpdateProductDescriptions extends Command
     {
         $productId = $product['id'];
         $productGidNumber = str_replace('gid://shopify/Product/', '', $productId);
-        
+
         // Skip if already processed
         if (in_array($productGidNumber, $this->progress['processed_product_ids'])) {
             return;
         }
 
         $this->progress['stats']['total_processed']++;
-        
+
         try {
             // Get SKU from first variant
             $sku = $product['variants']['edges'][0]['node']['sku'] ?? null;
-            
+
             if (empty($sku)) {
                 $this->line("   ⚠️ Skipping product '{$product['title']}' - No SKU found");
                 $this->progress['stats']['skipped']++;
                 $this->progress['processed_product_ids'][] = $productGidNumber;
+
                 return;
             }
 
             // Find RetailEdgeProduct by SKU
             $retailEdgeProduct = RetailEdgeProduct::where('sku', $sku)->first();
-            
-            if (!$retailEdgeProduct) {
+
+            if (! $retailEdgeProduct) {
                 $this->line("   ⚠️ Skipping product '{$product['title']}' - RetailEdgeProduct not found for SKU: {$sku}");
                 $this->progress['stats']['skipped']++;
                 $this->progress['processed_product_ids'][] = $productGidNumber;
+
                 return;
             }
 
@@ -240,26 +241,29 @@ class UpdateProductDescriptions extends Command
                 $this->line("   ⏭️ Skipping Pandora product: {$product['title']}");
                 $this->progress['stats']['pandora_skipped']++;
                 $this->progress['processed_product_ids'][] = $productGidNumber;
+
                 return;
             }
 
             // Check if description already contains design number
             $currentDescription = $product['descriptionHtml'] ?? '';
             $designNumber = $retailEdgeProduct->real_design_number ?? '';
-            
+
             if (empty($designNumber)) {
                 $this->line("   ⚠️ Skipping product '{$product['title']}' - No design number available");
                 $this->progress['stats']['skipped']++;
                 $this->progress['processed_product_ids'][] = $productGidNumber;
+
                 return;
             }
 
             // Check if description already ends with design number
-            $designNumberPattern = "Design number: " . $designNumber;
+            $designNumberPattern = 'Design number: '.$designNumber;
             if (str_contains($currentDescription, $designNumberPattern)) {
                 $this->line("   ✅ Product '{$product['title']}' already has design number");
                 $this->progress['stats']['already_has_design_number']++;
                 $this->progress['processed_product_ids'][] = $productGidNumber;
+
                 return;
             }
 
@@ -267,7 +271,7 @@ class UpdateProductDescriptions extends Command
             $newDescription = $this->buildProductDescription($retailEdgeProduct);
 
             // Update product description
-            if (!$this->option('dry-run')) {
+            if (! $this->option('dry-run')) {
                 $this->updateProductDescription($productId, $newDescription, $product['title']);
                 $this->info("   ✨ Updated: {$product['title']} - Added design number: {$designNumber}");
             } else {
@@ -278,7 +282,7 @@ class UpdateProductDescriptions extends Command
             $this->progress['processed_product_ids'][] = $productGidNumber;
 
         } catch (\Exception $e) {
-            $this->error("   ❌ Failed to process product '{$product['title']}': " . $e->getMessage());
+            $this->error("   ❌ Failed to process product '{$product['title']}': ".$e->getMessage());
             $this->progress['stats']['errors']++;
             $this->progress['processed_product_ids'][] = $productGidNumber;
         }
@@ -289,9 +293,9 @@ class UpdateProductDescriptions extends Command
      */
     private function updateProductDescription(string $productId, string $description, string $title): void
     {
-        $mutation = <<<GRAPHQL
-        mutation productUpdate(\$input: ProductInput!) {
-          productUpdate(input: \$input) {
+        $mutation = <<<'GRAPHQL'
+        mutation productUpdate($input: ProductInput!) {
+          productUpdate(input: $input) {
             product {
               id
               title
@@ -308,8 +312,8 @@ class UpdateProductDescriptions extends Command
         $variables = [
             'input' => [
                 'id' => $productId,
-                'descriptionHtml' => $description
-            ]
+                'descriptionHtml' => $description,
+            ],
         ];
 
         try {
@@ -317,16 +321,16 @@ class UpdateProductDescriptions extends Command
             $resultBody = json_decode($response->getBody()->getContents(), true);
 
             $userErrors = $resultBody['data']['productUpdate']['userErrors'] ?? [];
-            if (!empty($userErrors)) {
-                $errorMessages = array_map(fn($e) => $e['message'], $userErrors);
-                throw new \Exception('GraphQL errors: ' . implode(', ', $errorMessages));
+            if (! empty($userErrors)) {
+                $errorMessages = array_map(fn ($e) => $e['message'], $userErrors);
+                throw new \Exception('GraphQL errors: '.implode(', ', $errorMessages));
             }
 
             // Small delay after successful update
             usleep(500000); // 0.5 second delay
 
         } catch (\Exception $e) {
-            throw new \Exception("Failed to update product description: " . $e->getMessage());
+            throw new \Exception('Failed to update product description: '.$e->getMessage());
         }
     }
 
@@ -337,12 +341,12 @@ class UpdateProductDescriptions extends Command
     private function buildProductDescription(RetailEdgeProduct $product): string
     {
         $mktDescription = $product->marketing_description ?? '';
-        
+
         // Add design number to all products (not just Pandora)
-        if (!empty($product->real_design_number)) {
-            $mktDescription .= " - Design number: " . $product->real_design_number;
+        if (! empty($product->real_design_number)) {
+            $mktDescription .= ' - Design number: '.$product->real_design_number;
         }
-        
+
         return $mktDescription;
     }
 
@@ -379,9 +383,9 @@ class UpdateProductDescriptions extends Command
                 'skipped' => 0,
                 'errors' => 0,
                 'pandora_skipped' => 0,
-                'already_has_design_number' => 0
+                'already_has_design_number' => 0,
             ],
-            'last_cursor' => null
+            'last_cursor' => null,
         ];
 
         if (Storage::exists($this->progressFile)) {
@@ -397,13 +401,13 @@ class UpdateProductDescriptions extends Command
         $this->info('');
         $this->info('📊 Final Statistics:');
         $this->info('====================');
-        $this->info('Total Processed: ' . $this->progress['stats']['total_processed']);
-        $this->info('Updated: ' . $this->progress['stats']['updated']);
-        $this->info('Pandora Skipped: ' . $this->progress['stats']['pandora_skipped']);
-        $this->info('Already Had Design Number: ' . $this->progress['stats']['already_has_design_number']);
-        $this->info('Other Skipped: ' . $this->progress['stats']['skipped']);
-        $this->info('Errors: ' . $this->progress['stats']['errors']);
-        
+        $this->info('Total Processed: '.$this->progress['stats']['total_processed']);
+        $this->info('Updated: '.$this->progress['stats']['updated']);
+        $this->info('Pandora Skipped: '.$this->progress['stats']['pandora_skipped']);
+        $this->info('Already Had Design Number: '.$this->progress['stats']['already_has_design_number']);
+        $this->info('Other Skipped: '.$this->progress['stats']['skipped']);
+        $this->info('Errors: '.$this->progress['stats']['errors']);
+
         if ($this->option('dry-run')) {
             $this->warn('');
             $this->warn('🔍 This was a DRY RUN - no actual changes were made');

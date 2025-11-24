@@ -2,23 +2,27 @@
 
 namespace App\Services\Amazon;
 
-use App\Models\Product;
 use App\Exceptions\AmazonApiException;
+use App\Models\Product;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Log;
 
 class CatalogService
 {
     private string $sellerId;
+
     private string $marketplaceId;
+
     private string $currency;
+
     private AmazonSpApiService $amazonService;
+
     private ListingService $listingService;
 
     public function __construct(?AmazonSpApiService $amazonService = null, ?ListingService $listingService = null)
     {
-        $this->amazonService = $amazonService ?? new AmazonSpApiService();
-        $this->listingService = $listingService ?? new ListingService();
+        $this->amazonService = $amazonService ?? new AmazonSpApiService;
+        $this->listingService = $listingService ?? new ListingService;
         $this->sellerId = config('amazon.spapi.seller_id');
         $this->marketplaceId = config('amazon.spapi.marketplace_id');
         $this->currency = config('amazon.spapi.currency');
@@ -41,8 +45,6 @@ class CatalogService
     /**
      * Process a single product - search in catalog and submit as appropriate
      *
-     * @param Product $product
-     * @return bool
      * @throws AmazonApiException
      */
     public function processProduct(Product $product): bool
@@ -69,6 +71,7 @@ class CatalogService
                 if ($itemSearchResults->numberOfResults > 0) {
                     Log::info("{$product->sku}, found in Amazon Catalog");
                     echo "{$product->sku} found in Amazon Catalog.\n";
+
                     return $this->processExistingProduct($product, $itemSearchResults->items[0]);
                 }
             } elseif ($product->upc) {
@@ -86,6 +89,7 @@ class CatalogService
                 if ($itemSearchResults->numberOfResults > 0) {
                     Log::info("{$product->sku}, found in Amazon Catalog");
                     echo "{$product->sku} found in Amazon Catalog.\n";
+
                     return $this->processExistingProduct($product, $itemSearchResults->items[0]);
                 }
             }
@@ -93,11 +97,12 @@ class CatalogService
             // If we get here, either the product wasn't found in the catalog or it doesn't have EAN/UPC
             // Submit as a new product
             Log::info("{$product->sku}, submitting new product to Amazon");
+
             return $this->processNewProduct($product);
         } catch (\Exception $e) {
             Log::error("Failed to process product {$product->sku}", [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'trace' => $e->getTraceAsString(),
             ]);
 
             throw new AmazonApiException(
@@ -112,6 +117,7 @@ class CatalogService
      * Search and process items in Amazon catalog
      *
      * @return array<string, mixed> Processing results
+     *
      * @throws AmazonApiException
      */
     public function searchItem(): array
@@ -124,7 +130,7 @@ class CatalogService
             $results = [
                 'success' => 0,
                 'failed' => 0,
-                'errors' => []
+                'errors' => [],
             ];
 
             foreach ($products as $product) {
@@ -137,7 +143,7 @@ class CatalogService
                         $results['failed']++;
                         $results['errors'][] = [
                             'sku' => $product->sku,
-                            'message' => 'Failed to process product'
+                            'message' => 'Failed to process product',
                         ];
                     }
 
@@ -146,12 +152,12 @@ class CatalogService
                     $results['failed']++;
                     $results['errors'][] = [
                         'sku' => $product->sku,
-                        'message' => $e->getMessage()
+                        'message' => $e->getMessage(),
                     ];
 
                     Log::error("Failed to process product {$product->sku}", [
                         'error' => $e->getMessage(),
-                        'trace' => $e->getTraceAsString()
+                        'trace' => $e->getTraceAsString(),
                     ]);
                 }
             }
@@ -175,16 +181,12 @@ class CatalogService
     {
         return Product::where([
             'submitted' => 0,
-            'exists_on_amazon' => 0
+            'exists_on_amazon' => 0,
         ])->get();
     }
 
     /**
      * Process existing product on Amazon
-     *
-     * @param Product $product
-     * @param object $item
-     * @return bool
      */
     private function processExistingProduct(Product $product, object $item): bool
     {
@@ -192,21 +194,19 @@ class CatalogService
             $product->update([
                 'exists_on_amazon' => 1,
                 'asin' => $item->asin,
-                'amz_product_type' => $item->productTypes[0]->productType
+                'amz_product_type' => $item->productTypes[0]->productType,
             ]);
 
             return $this->listingService->submitOfferOnly($product);
         } catch (\Exception $e) {
             Log::error("Failed to process existing product {$product->sku}: {$e->getMessage()}");
+
             return false;
         }
     }
 
     /**
      * Process new product for Amazon
-     *
-     * @param Product $product
-     * @return bool
      */
     private function processNewProduct(Product $product): bool
     {
@@ -214,6 +214,7 @@ class CatalogService
             return $this->listingService->submitNewListing($product);
         } catch (\Exception $e) {
             Log::error("Failed to process new product {$product->sku}: {$e->getMessage()}");
+
             return false;
         }
     }

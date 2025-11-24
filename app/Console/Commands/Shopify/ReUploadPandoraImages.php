@@ -2,13 +2,13 @@
 
 namespace App\Console\Commands\Shopify;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
-use Shopify\Rest\Admin2025_04\Image;
 use App\Http\Controllers\SyncJobController;
 use App\Models\PandoraList;
 use App\Models\ShopifyProduct;
 use App\Services\ShopifyService;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
+use Shopify\Rest\Admin2025_04\Image;
 
 class ReUploadPandoraImages extends Command
 {
@@ -36,7 +36,7 @@ class ReUploadPandoraImages extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
+        if (! $job->isRunning()) {
             try {
                 Log::info("$marketplace $jobType started!");
                 $job->update(['status' => 1]);
@@ -46,7 +46,7 @@ class ReUploadPandoraImages extends Command
 
                 foreach ($shopifyProducts as $shopifyProduct) {
                     try {
-                        $this->info("=============================================================");
+                        $this->info('=============================================================');
                         $this->info($shopifyProduct->title);
 
                         $skusArray = [];
@@ -62,16 +62,16 @@ class ReUploadPandoraImages extends Command
                             // Delete the existing product images from Shopify
                             $images = Image::all(
                                 $session,
-                                ["product_id" => $shopifyProduct->product_id]
+                                ['product_id' => $shopifyProduct->product_id]
                             );
                             foreach ($images as $image) {
                                 $this->info("Image id: {$image->id}");
                                 Image::delete(
                                     $session,
                                     $image->id,
-                                    ["product_id" => $shopifyProduct->product_id],
+                                    ['product_id' => $shopifyProduct->product_id],
                                 );
-                                $this->info("Image deleted");
+                                $this->info('Image deleted');
                             }
 
                             // Re-upload the fresh images
@@ -87,7 +87,7 @@ class ReUploadPandoraImages extends Command
                                         $image->product_id = $variant->product_id;
                                         $image->src = $i;
                                         $image->variant_ids = [
-                                            $variant->variant_id
+                                            $variant->variant_id,
                                         ];
 
                                         $image->save(

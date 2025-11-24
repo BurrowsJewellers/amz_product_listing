@@ -2,11 +2,11 @@
 
 namespace App\Console\Commands\Amazon;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\SyncJobController;
 use App\Models\Product;
 use App\Services\Amazon\CatalogService;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 class GenerateAmzProductsJson extends Command
 {
@@ -32,7 +32,6 @@ class GenerateAmzProductsJson extends Command
     /**
      * Create a new command instance.
      *
-     * @param CatalogService $catalogService
      * @return void
      */
     public function __construct(CatalogService $catalogService)
@@ -53,6 +52,7 @@ class GenerateAmzProductsJson extends Command
 
         if ($job->isRunning()) {
             Log::info("$marketplace $jobType is already running.");
+
             return;
         }
 
@@ -84,13 +84,13 @@ class GenerateAmzProductsJson extends Command
             Log::info("$marketplace $jobType finished!");
         } catch (\Exception $e) {
             $job->update(['status' => 0, 'message' => $e->getMessage()]);
-            Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
+            Log::error('Error : '.$e->getFile().' : '.$e->getMessage().' Line : '.$e->getLine());
         }
     }
 
     /**
      * Get count of unprocessed products
-     * 
+     *
      * @return int
      */
     private function getUnprocessedProductsCount()
@@ -107,8 +107,8 @@ class GenerateAmzProductsJson extends Command
 
     /**
      * Get unprocessed products
-     * 
-     * @param int $limit
+     *
+     * @param  int  $limit
      * @return \Illuminate\Database\Eloquent\Collection
      */
     private function getUnprocessedProducts($limit)
@@ -121,7 +121,7 @@ class GenerateAmzProductsJson extends Command
             'category',
             'productType',
             'eWebCode',
-            'images'
+            'images',
         ])
             ->where(['json_generated' => 0, 'exists_on_amazon' => 0])
             ->whereNotNull('brand_id')
@@ -136,16 +136,16 @@ class GenerateAmzProductsJson extends Command
 
     /**
      * Process products using the Catalog Service
-     * 
-     * @param \Illuminate\Database\Eloquent\Collection $products
+     *
+     * @param  \Illuminate\Database\Eloquent\Collection  $products
      * @return void
      */
     private function processProducts($products)
     {
         foreach ($products as $product) {
             try {
-                $this->info('Processing SKU: ' . $product->sku);
-                Log::info('Processing SKU: ' . $product->sku);
+                $this->info('Processing SKU: '.$product->sku);
+                Log::info('Processing SKU: '.$product->sku);
 
                 // Mark the product as processed regardless of the outcome
                 // This prevents the same product from being processed repeatedly if there's an issue

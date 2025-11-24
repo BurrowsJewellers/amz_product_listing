@@ -5,17 +5,17 @@ namespace App\Services\Amazon;
 use App\Http\Controllers\AmzReportController;
 use App\Models\Amazon\AmazonListings;
 use App\Models\AmzRequestedReport;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 use InvalidArgumentException;
 
 class ListingsReportService
 {
     public function importListingsFromTsv(string $filePath, AmzRequestedReport $report): array
     {
-        if (!Storage::exists($filePath)) {
+        if (! Storage::exists($filePath)) {
             throw new \Exception("TSV file not found at path: {$filePath}");
             $report->update(['processed' => 2, 'api_response' => "TSV file not found at path: {$filePath}"]);
         }
@@ -34,7 +34,7 @@ class ListingsReportService
             'created' => 0,
             'updated' => 0,
             'failed' => 0,
-            'errors' => []
+            'errors' => [],
         ];
 
         foreach ($lines as $line) {
@@ -64,6 +64,7 @@ class ListingsReportService
             }
         }
         $report->update(['processed' => 1]);
+
         return $statistics;
     }
 
@@ -72,6 +73,7 @@ class ListingsReportService
         // Convert column names to snake_case and remove special characters
         $column = strtolower(trim($column));
         $column = str_replace('-', '_', $column);
+
         return $column;
     }
 
@@ -81,7 +83,7 @@ class ListingsReportService
         $data['item_is_marketplace'] = strtolower($data['item_is_marketplace']) === 'y';
 
         // Parse date
-        if (!empty($data['open_date'])) {
+        if (! empty($data['open_date'])) {
             $data['open_date'] = Carbon::createFromFormat(
                 'd/m/Y H:i:s T',
                 $data['open_date']
@@ -103,7 +105,7 @@ class ListingsReportService
         try {
             $reportType = 'GET_MERCHANT_LISTINGS_ALL_DATA';
 
-            $reportController = new AmzReportController();
+            $reportController = new AmzReportController;
             $reportController->downloadReports();
 
             $report = AmzRequestedReport::where([
@@ -114,12 +116,13 @@ class ListingsReportService
                 ->where('created_at', '>', now()->subHours(4))
                 ->orderBy('id', 'desc')->first();
 
-            if (!$report) {
+            if (! $report) {
                 Log::info('No unprocessed reports found.');
+
                 return;
             }
 
-            if (!Storage::exists($report->file_name)) {
+            if (! Storage::exists($report->file_name)) {
                 throw new InvalidArgumentException("ListingsReportService: Report file not found: {$report->file_name}");
             }
 
@@ -128,7 +131,7 @@ class ListingsReportService
             // -- Query 1: Update products that need to be submitted to Amazon
             // -- This finds SKUs with web_option_boolean7=1 that aren't in amazon_listings
             DB::select(
-                "UPDATE retail_edge_products rep
+                'UPDATE retail_edge_products rep
                     JOIN products p ON p.sku = rep.sku
                     LEFT JOIN amazon_listings al ON al.seller_sku = rep.sku
                     SET 
@@ -142,20 +145,20 @@ class ListingsReportService
                     WHERE 
                         rep.web_option_boolean7 = 1 
                         AND al.seller_sku IS NULL;
-            "
+            '
             );
 
             // -- Query 2: Update products that should not be on Amazon
             // -- This updates products where web_option_boolean7=0
             DB::select(
-                "UPDATE products p
+                'UPDATE products p
                     JOIN retail_edge_products rep ON rep.sku = p.sku
                     SET 
                         p.quantity = 0,
                         p.inventory_feed_status = 0
                     WHERE 
                         rep.web_option_boolean7 = 0;
-            "
+            '
             );
         } catch (\Exception $e) {
             throw $e;

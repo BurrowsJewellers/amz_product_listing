@@ -2,13 +2,13 @@
 
 namespace App\Console\Commands\Shopify;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\SyncJobController;
+use App\Models\PriceInventoryLog;
 use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyService;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 use Shopify\Rest\Admin2025_04\Variant;
-use App\Models\PriceInventoryLog;
 
 class UpdatePrice extends Command
 {
@@ -50,24 +50,25 @@ class UpdatePrice extends Command
                 $variant = ShopifyProductVariant::with('retailEdgeProduct')->whereNotNull('variant_id')->where('price_requires_update', 1)->first();
 
                 if ($variant) {
-                    if (!$variant->retailEdgeProduct) {
+                    if (! $variant->retailEdgeProduct) {
                         $skuValue = $variant->sku ?: '[EMPTY SKU]';
                         Log::warning("Missing RetailEdgeProduct for price update on SKU: {$skuValue} (Variant ID: {$variant->id})");
                         PriceInventoryLog::create([
                             'marketplace' => $marketplace,
-                            'item_identifier' => $skuValue ?? (string)$variant->variant_id,
+                            'item_identifier' => $skuValue ?? (string) $variant->variant_id,
                             'change_type' => 'price',
                             'from_value' => $variant->price,
                             'to_value' => null,
                             'status' => 'failed',
                             'job_name' => $this->signature,
-                            'message' => "Missing RetailEdgeProduct. Price update skipped.",
+                            'message' => 'Missing RetailEdgeProduct. Price update skipped.',
                         ]);
                         $variant->update(['price_requires_update' => 2]);
                         $this->info("Marked variant {$skuValue} (ID: {$variant->id}) for review due to missing RetailEdgeProduct.");
                         usleep(1500000);
                         $count = ShopifyProductVariant::whereNotNull('variant_id')->where('price_requires_update', 1)->count();
                         $this->info("Remaining {$count}");
+
                         continue;
                     }
 
@@ -91,14 +92,13 @@ class UpdatePrice extends Command
                             $compareAtPriceIsSetForApi = true;
                         }
 
-
                         $shopifyVariantApi->save(
                             true, // Update Object
                         );
 
                         PriceInventoryLog::create([
                             'marketplace' => $marketplace,
-                            'item_identifier' => $variant->sku ?? (string)$variant->variant_id,
+                            'item_identifier' => $variant->sku ?? (string) $variant->variant_id,
                             'change_type' => 'price',
                             'from_value' => $originalPrice,
                             'to_value' => $newPrice,
@@ -110,7 +110,7 @@ class UpdatePrice extends Command
                         if ($compareAtPriceIsSetForApi) {
                             PriceInventoryLog::create([
                                 'marketplace' => $marketplace,
-                                'item_identifier' => $variant->sku ?? (string)$variant->variant_id,
+                                'item_identifier' => $variant->sku ?? (string) $variant->variant_id,
                                 'change_type' => 'compare_at_price',
                                 'from_value' => $originalCompareAtPrice,
                                 'to_value' => $newCompareAtPrice,
@@ -124,7 +124,7 @@ class UpdatePrice extends Command
                         $variant->update([
                             'price' => $newPrice,
                             'compare_at_price' => $newCompareAtPrice,
-                            'price_requires_update' => 0
+                            'price_requires_update' => 0,
                         ]); // Status updated after successful API call and logging
 
                     } catch (\Exception $e) {
@@ -132,25 +132,25 @@ class UpdatePrice extends Command
 
                         PriceInventoryLog::create([
                             'marketplace' => $marketplace,
-                            'item_identifier' => $variant->sku ?? (string)$variant->variant_id,
+                            'item_identifier' => $variant->sku ?? (string) $variant->variant_id,
                             'change_type' => 'price',
                             'from_value' => $originalPrice,
                             'to_value' => $newPrice,
                             'status' => 'failed',
                             'job_name' => $this->signature,
-                            'message' => "API Error: " . $e->getMessage(),
+                            'message' => 'API Error: '.$e->getMessage(),
                         ]);
                         // Also log failed compare_at_price if it was attempted
                         if ($compareAtPriceIsSetForApi) {
                             PriceInventoryLog::create([
                                 'marketplace' => $marketplace,
-                                'item_identifier' => $variant->sku ?? (string)$variant->variant_id,
+                                'item_identifier' => $variant->sku ?? (string) $variant->variant_id,
                                 'change_type' => 'compare_at_price',
                                 'from_value' => $originalCompareAtPrice,
                                 'to_value' => $newCompareAtPrice,
                                 'status' => 'failed',
                                 'job_name' => $this->signature,
-                                'message' => "API Error (attempting to update compare_at_price): " . $e->getMessage(),
+                                'message' => 'API Error (attempting to update compare_at_price): '.$e->getMessage(),
                             ]);
                         }
                         $variant->update(['price_requires_update' => 2]);

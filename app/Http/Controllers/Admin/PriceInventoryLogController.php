@@ -3,8 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
 use App\Models\PriceInventoryLog;
+use Illuminate\Http\Request;
 use Yajra\DataTables\Facades\DataTables; // Import DataTables
 
 class PriceInventoryLogController extends Controller
@@ -12,7 +12,6 @@ class PriceInventoryLogController extends Controller
     /**
      * Display a listing of the resource.
      *
-     * @param Request $request
      * @return \Illuminate\Http\Response|\Illuminate\Http\JsonResponse
      */
     public function index(Request $request)
@@ -29,7 +28,8 @@ class PriceInventoryLogController extends Controller
                 })
                 ->editColumn('status', function ($log) {
                     $color = $log->status == 'success' ? 'green' : 'red';
-                    return '<span style="color:' . $color . ';">' . ucfirst($log->status) . '</span>';
+
+                    return '<span style="color:'.$color.';">'.ucfirst($log->status).'</span>';
                 })
                 ->editColumn('message', function ($log) {
                     return \Illuminate\Support\Str::limit($log->message, 100);
@@ -53,7 +53,7 @@ class PriceInventoryLogController extends Controller
             $initialQuery->where('marketplace', $request->input('marketplace'));
         }
         if ($request->filled('item_identifier')) {
-            $initialQuery->where('item_identifier', 'like', '%' . $request->input('item_identifier') . '%');
+            $initialQuery->where('item_identifier', 'like', '%'.$request->input('item_identifier').'%');
         }
         if ($request->filled('change_type')) {
             $initialQuery->where('change_type', $request->input('change_type'));

@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands\Amazon;
 
-use Illuminate\Console\Command;
 use App\Http\Controllers\AmzFeedController;
+use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
 class SubmitAmzXmlFeed extends Command
@@ -29,10 +29,10 @@ class SubmitAmzXmlFeed extends Command
     {
         try {
             $type = $this->argument('type');
-            $feedController = new AmzFeedController();
+            $feedController = new AmzFeedController;
             $feedController->submitFeed($type);
         } catch (\Exception $e) {
-            Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
+            Log::error('Error : '.$e->getFile().' : '.$e->getMessage().' Line : '.$e->getLine());
         }
     }
 }

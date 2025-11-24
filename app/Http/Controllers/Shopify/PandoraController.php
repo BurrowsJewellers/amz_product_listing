@@ -16,13 +16,13 @@ class PandoraController extends Controller
         try {
             $retailEdgeProduct = RetailEdgeProduct::where('real_design_number', $request->design_no)->first();
 
-            if (!$retailEdgeProduct) {
+            if (! $retailEdgeProduct) {
                 throw new \Exception("RetailEdge Product not found with real_design_number {$request->design_no}");
             }
 
             $variant = ShopifyProductVariant::where('sku', $retailEdgeProduct->sku)->first();
 
-            if (!$variant) {
+            if (! $variant) {
                 throw new \Exception("Shopify variant not found with SKU {$retailEdgeProduct->sku}");
             }
 
@@ -35,13 +35,13 @@ class PandoraController extends Controller
                 ],
                 [
                     'sku' => $retailEdgeProduct->sku,
-                    'search_response' => "From Chrome Extension",
+                    'search_response' => 'From Chrome Extension',
                     'product_name' => $request->product_name,
                     'product_description' => $request->product_description,
                     'product_url' => $request->product_url,
-                    'product_response' => "From Chrome Extension",
+                    'product_response' => 'From Chrome Extension',
                     'discontinued' => 0,
-                    'images' => "Blob",
+                    'images' => 'Blob',
                 ]
             );
 
@@ -56,6 +56,7 @@ class PandoraController extends Controller
                 ->header('Access-Control-Allow-Headers', 'Content-Type, X-Requested-With');
         } catch (\Exception $e) {
             report($e);
+
             return response()->json('failed', 500);
         }
     }

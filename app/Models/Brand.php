@@ -13,5 +13,4 @@ class Brand extends Model
         'name',
         'brand_id',
     ];
-
 }

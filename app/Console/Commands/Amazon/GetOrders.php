@@ -3,15 +3,15 @@
 namespace App\Console\Commands\Amazon;
 
 use App\Http\Controllers\SyncJobController;
-use App\Models\RetailEdgeProduct;
-use App\Services\Amazon\AmazonSpApiService;
-use Illuminate\Console\Command;
-use Carbon\Carbon;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use App\Models\Amazon\AmazonOrder;
 use App\Models\Amazon\AmazonOrderItem;
+use App\Models\RetailEdgeProduct;
+use App\Services\Amazon\AmazonSpApiService;
 use App\Services\RetailEdgeService;
+use Carbon\Carbon;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class GetOrders extends Command
 {
@@ -40,6 +40,7 @@ class GetOrders extends Command
 
         if ($job->isRunning()) {
             Log::info("$marketplace $jobType is already running.");
+
             return;
         }
 
@@ -56,7 +57,7 @@ class GetOrders extends Command
         } catch (\Exception $e) {
             report($e);
             $job->update(['status' => 0, 'message' => $e->getMessage()]);
-            Log::error("$marketplace $jobType failed: " . $e->getMessage());
+            Log::error("$marketplace $jobType failed: ".$e->getMessage());
             var_dump($e->getMessage());
         }
     }
@@ -69,7 +70,7 @@ class GetOrders extends Command
             // $dataElements = ['buyerInfo', 'shippingAddress'];
             // $amazonService = new AmazonSpApiService($dataElements);
 
-            $amazonService = new AmazonSpApiService();
+            $amazonService = new AmazonSpApiService;
             $sellerConnector = $amazonService->getSellerConnector();
             $ordersApi = $sellerConnector->ordersV0();
 
@@ -106,7 +107,7 @@ class GetOrders extends Command
                     $this->error("Error processing order {$order->amazonOrderId}: {$e->getMessage()}");
                     Log::error("Error processing Amazon order: {$e->getMessage()}", [
                         'order_id' => $order->amazonOrderId ?? 'unknown',
-                        'exception' => $e
+                        'exception' => $e,
                     ]);
                     // Update job status to 0 on error
                     $job->update(['status' => 0, 'message' => "Error processing order {$order->amazonOrderId}: {$e->getMessage()}"]);
@@ -164,7 +165,7 @@ class GetOrders extends Command
 
         return AmazonOrder::updateOrCreate(
             [
-                'amazon_order_id' => $order->amazonOrderId
+                'amazon_order_id' => $order->amazonOrderId,
             ],
             [
                 'sales_channel' => $order->salesChannel ?? null,
@@ -249,7 +250,7 @@ class GetOrders extends Command
             AmazonOrderItem::updateOrCreate(
                 [
                     'amazon_order_id' => $amazonOrderId,
-                    'order_item_id' => $item->orderItemId ?? null
+                    'order_item_id' => $item->orderItemId ?? null,
                 ],
                 [
                     'asin' => $item->asin ?? null,
@@ -298,8 +299,9 @@ class GetOrders extends Command
                     // Get the product from RetailEdge API by SKU
                     $product = (new RetailEdgeService)->getActiveItemBySKU($item->seller_sku);
 
-                    if (!$product) {
+                    if (! $product) {
                         Log::warn("Product with SKU {$item->seller_sku} not found in RetailEdge");
+
                         continue;
                     }
                 } catch (\Exception $e) {
@@ -308,27 +310,28 @@ class GetOrders extends Command
                     throw $e; // Re-throw to be caught by the handle method
                 }
 
-                $skuParts = explode("-", $item->seller_sku);
+                $skuParts = explode('-', $item->seller_sku);
                 $stockNum = end($skuParts);
 
                 $webOrderLines[] = [
-                    "CategoryID" => $product->CategoryID ?? 1,
-                    "SKU" => $product->SKU,
-                    "StockNum" => $stockNum,
-                    "LineNum" => $stockNum,
-                    "Quantity" => $item->quantity_ordered,
-                    "UnitSellPrice" => $item->item_price_amount ?? 0,
-                    "UnitSellTax" => $item->item_tax_amount ?? 0,
-                    "UnitFullPrice" => $item->item_price_amount ?? 0,
-                    "UnitFullTax" => $item->item_tax_amount ?? 0,
-                    "ItemDescription" => $item->title ?? $product->title ?? '',
-                    "IsNote" => false,
-                    "DesignNumber" => $product->RealDesignNum ?? '',
+                    'CategoryID' => $product->CategoryID ?? 1,
+                    'SKU' => $product->SKU,
+                    'StockNum' => $stockNum,
+                    'LineNum' => $stockNum,
+                    'Quantity' => $item->quantity_ordered,
+                    'UnitSellPrice' => $item->item_price_amount ?? 0,
+                    'UnitSellTax' => $item->item_tax_amount ?? 0,
+                    'UnitFullPrice' => $item->item_price_amount ?? 0,
+                    'UnitFullTax' => $item->item_tax_amount ?? 0,
+                    'ItemDescription' => $item->title ?? $product->title ?? '',
+                    'IsNote' => false,
+                    'DesignNumber' => $product->RealDesignNum ?? '',
                 ];
             }
 
             if (empty($webOrderLines)) {
                 Log::warn("No valid order lines found for order {$amazonOrder->amazon_order_id}");
+
                 // We'll continue to the next order, but we won't set job status to 0 here
                 // as this might be a valid case (e.g., all items in the order are not in RetailEdge)
                 continue;
@@ -345,38 +348,38 @@ class GetOrders extends Command
 
             // Create order data structure
             $orderData = [
-                "OrderToUpload" => [
-                    "CustomerFirstName" => $firstName,
+                'OrderToUpload' => [
+                    'CustomerFirstName' => $firstName,
                     'CustomerID' => $amazonOrder->amazon_order_id,
-                    "CustomerLastName" => $lastName,
-                    "CustomerEmail" => $amazonOrder->buyer_email ?? '',
-                    "CustomerPhone" => $amazonOrder->buyer_phone ?? '',
-                    "CustomerAddress" => $amazonOrder->shipping_address1 ?? 'Default',
-                    "CustomerSuburb" => $amazonOrder->shipping_city ?? '',
-                    "CustomerState" => $amazonOrder->shipping_state_or_region ?? '',
-                    "CustomerPostcode" => $amazonOrder->shipping_postal_code ?? '',
-                    "CustomerCountry" => $amazonOrder->shipping_country_code ?? '',
-                    "DeliveryType" => "ShipToAddress", // Pickup, ShipToAddress
-                    "OrderDate" => Carbon::parse($amazonOrder->purchase_date)->timezone('Australia/Melbourne')->format('c'),
-                    "OrderID" => $amazonOrder->amazon_order_id,
-                    "StoreID" => 1,
-                    "Lines" => [
-                        "WebOrderLine" => $webOrderLines
+                    'CustomerLastName' => $lastName,
+                    'CustomerEmail' => $amazonOrder->buyer_email ?? '',
+                    'CustomerPhone' => $amazonOrder->buyer_phone ?? '',
+                    'CustomerAddress' => $amazonOrder->shipping_address1 ?? 'Default',
+                    'CustomerSuburb' => $amazonOrder->shipping_city ?? '',
+                    'CustomerState' => $amazonOrder->shipping_state_or_region ?? '',
+                    'CustomerPostcode' => $amazonOrder->shipping_postal_code ?? '',
+                    'CustomerCountry' => $amazonOrder->shipping_country_code ?? '',
+                    'DeliveryType' => 'ShipToAddress', // Pickup, ShipToAddress
+                    'OrderDate' => Carbon::parse($amazonOrder->purchase_date)->timezone('Australia/Melbourne')->format('c'),
+                    'OrderID' => $amazonOrder->amazon_order_id,
+                    'StoreID' => 1,
+                    'Lines' => [
+                        'WebOrderLine' => $webOrderLines,
                     ],
-                    "ShippingPrice" => $totalShipping,
-                    "ShippingPriceExTax" => $totalShipping,
-                    "ShippingTax" => 0,
-                    "TotalFullPrice" => $totalPrice,
-                    "TotalFullPriceExTax" => $totalPrice,
-                    "TotalFullTax" => 0,
-                    "TotalSellPrice" => $totalPrice,
-                    "TotalSellPriceExTax" => $totalPrice,
-                    "TotalSellTax" => 0,
-                ]
+                    'ShippingPrice' => $totalShipping,
+                    'ShippingPriceExTax' => $totalShipping,
+                    'ShippingTax' => 0,
+                    'TotalFullPrice' => $totalPrice,
+                    'TotalFullPriceExTax' => $totalPrice,
+                    'TotalFullTax' => 0,
+                    'TotalSellPrice' => $totalPrice,
+                    'TotalSellPriceExTax' => $totalPrice,
+                    'TotalSellTax' => 0,
+                ],
             ];
 
             // Create instance of your service
-            $retailEdgeService = new RetailEdgeService();
+            $retailEdgeService = new RetailEdgeService;
 
             try {
                 $this->info("Sending order {$amazonOrder->amazon_order_id} to Retail Edge");
@@ -387,7 +390,7 @@ class GetOrders extends Command
 
                 // Get the last request for debugging
                 $lastRequest = $retailEdgeService->getEwebSoapClient()->__getLastRequest();
-                $this->info("Request XML:\n" . $lastRequest . "\n\n");
+                $this->info("Request XML:\n".$lastRequest."\n\n");
 
                 // Handle the response
                 if ($response) {
@@ -399,29 +402,29 @@ class GetOrders extends Command
                 $job->update(['status' => 0, 'message' => $e->faultstring]);
 
                 $this->error("SOAP Fault for order {$amazonOrder->amazon_order_id}:");
-                $this->error("Fault code: " . $e->faultcode);
-                $this->error("Fault string: " . $e->faultstring);
+                $this->error('Fault code: '.$e->faultcode);
+                $this->error('Fault string: '.$e->faultstring);
 
                 // Get the last request and response for debugging
                 $lastRequest = $retailEdgeService->getEwebSoapClient()->__getLastRequest();
                 $lastResponse = $retailEdgeService->getEwebSoapClient()->__getLastResponse();
 
-                $this->error("\nLast Request:\n" . $lastRequest);
-                $this->error("\nLast Response:\n" . $lastResponse);
+                $this->error("\nLast Request:\n".$lastRequest);
+                $this->error("\nLast Response:\n".$lastResponse);
 
-                Log::error("Error pushing Amazon order to Retail Edge", [
+                Log::error('Error pushing Amazon order to Retail Edge', [
                     'order_id' => $amazonOrder->amazon_order_id,
                     'error' => $e->getMessage(),
                     'request' => $lastRequest,
-                    'response' => $lastResponse
+                    'response' => $lastResponse,
                 ]);
             } catch (\Exception $e) {
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
 
-                $this->error("General Exception for order {$amazonOrder->amazon_order_id}: " . $e->getMessage());
-                Log::error("General error pushing Amazon order to Retail Edge", [
+                $this->error("General Exception for order {$amazonOrder->amazon_order_id}: ".$e->getMessage());
+                Log::error('General error pushing Amazon order to Retail Edge', [
                     'order_id' => $amazonOrder->amazon_order_id,
-                    'error' => $e->getMessage()
+                    'error' => $e->getMessage(),
                 ]);
             }
         }

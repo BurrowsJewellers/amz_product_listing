@@ -2,10 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use App\Models\SyncJob;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 
 class SyncJobController extends Controller
 {
@@ -30,6 +29,7 @@ class SyncJobController extends Controller
         }
 
         $job = $query->first();
+
         return $job ? $job->is_paused : false;
     }
 
@@ -51,7 +51,7 @@ class SyncJobController extends Controller
      */
     public static function canStart($type, $marketplace = null): bool
     {
-        return !self::isPaused($type, $marketplace) && !self::isRunning($type, $marketplace);
+        return ! self::isPaused($type, $marketplace) && ! self::isRunning($type, $marketplace);
     }
 
     /**
@@ -67,11 +67,11 @@ class SyncJobController extends Controller
         $updated = $query->update([
             'is_paused' => true,
             'paused_at' => Carbon::now(),
-            'paused_by' => $pausedBy
+            'paused_by' => $pausedBy,
         ]);
 
         if ($updated) {
-            Log::info("Job paused: {$type}" . ($marketplace ? " ({$marketplace})" : "") . " by {$pausedBy}");
+            Log::info("Job paused: {$type}".($marketplace ? " ({$marketplace})" : '')." by {$pausedBy}");
         }
 
         return $updated > 0;
@@ -90,11 +90,11 @@ class SyncJobController extends Controller
         $updated = $query->update([
             'is_paused' => false,
             'paused_at' => null,
-            'paused_by' => null
+            'paused_by' => null,
         ]);
 
         if ($updated) {
-            Log::info("Job resumed: {$type}" . ($marketplace ? " ({$marketplace})" : "") . " by {$resumedBy}");
+            Log::info("Job resumed: {$type}".($marketplace ? " ({$marketplace})" : '')." by {$resumedBy}");
         }
 
         return $updated > 0;
@@ -109,7 +109,7 @@ class SyncJobController extends Controller
         $status = [];
 
         foreach ($jobs as $job) {
-            $key = $job->type . ($job->marketplace ? ":{$job->marketplace}" : '');
+            $key = $job->type.($job->marketplace ? ":{$job->marketplace}" : '');
             $status[$key] = [
                 'type' => $job->type,
                 'marketplace' => $job->marketplace,
@@ -133,10 +133,11 @@ class SyncJobController extends Controller
         $updated = SyncJob::update([
             'is_paused' => true,
             'paused_at' => Carbon::now(),
-            'paused_by' => $pausedBy
+            'paused_by' => $pausedBy,
         ]);
 
         Log::warning("All jobs paused by {$pausedBy}");
+
         return $updated;
     }
 
@@ -148,10 +149,11 @@ class SyncJobController extends Controller
         $updated = SyncJob::update([
             'is_paused' => false,
             'paused_at' => null,
-            'paused_by' => null
+            'paused_by' => null,
         ]);
 
         Log::info("All jobs resumed by {$resumedBy}");
+
         return $updated;
     }
 

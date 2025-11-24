@@ -7,19 +7,18 @@ use App\Models\Category;
 use App\Models\Product;
 use App\Models\ProductFieldValue;
 use App\Models\ProductType;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class ProductController extends Controller
 {
-
     public function index()
     {
         if (request()->ajax()) {
             return datatables()->eloquent(Product::query())
                 ->addColumn('action', function ($row) {
-                    $btn = '<a href="' . route('product.edit', [$row->id]) . '" class="edit btn btn-primary btn-sm">View</a>';
+                    $btn = '<a href="'.route('product.edit', [$row->id]).'" class="edit btn btn-primary btn-sm">View</a>';
+
                     return $btn;
                 })
                 ->editColumn('message', function ($row) {
@@ -30,22 +29,23 @@ class ProductController extends Controller
                     } else {
                         $html = '';
                     }
+
                     return $html;
                 })
                 ->rawColumns(['action', 'message'])
                 // ->make(true);
                 ->toJson();
         }
+
         return view('product.index');
     }
-
 
     public function edit($id)
     {
         try {
             $product = Product::with(['categoryFields.value' => function ($query) use ($id) {
                 $query->where('product_id', $id);
-            }, 'productTypeFields.value'  => function ($query) use ($id) {
+            }, 'productTypeFields.value' => function ($query) use ($id) {
                 $query->where('product_id', $id);
             }])->findOrFail($id);
 
@@ -56,10 +56,9 @@ class ProductController extends Controller
             // return $product;
             return view('product.edit', compact('product', 'brands', 'categories', 'productTypes'));
         } catch (\Exception $e) {
-            Log::debug('ProdictController@edit ' . $e->getMessage());
+            Log::debug('ProdictController@edit '.$e->getMessage());
         }
     }
-
 
     public function save()
     {
@@ -67,7 +66,7 @@ class ProductController extends Controller
             $product = Product::findOrFail(request()->id);
             $categoryHasChanged = $product->category_id !== intval(request()->category_id) ? true : false;
 
-            $fillable = (new Product())->getFillable();
+            $fillable = (new Product)->getFillable();
 
             $category = Category::with('fields')->findOrFail(request()->category_id);
             $productType = ProductType::with('fields')->findOrFail(request()->product_type_id);
@@ -102,7 +101,7 @@ class ProductController extends Controller
                 ProductFieldValue::where('product_id', $product->id)->delete();
             }
 
-            if (!empty($merged)) {
+            if (! empty($merged)) {
                 foreach ($merged as $value) {
                     ProductFieldValue::updateOrCreate(
                         [
@@ -118,10 +117,12 @@ class ProductController extends Controller
             }
 
             DB::commit();
+
             return redirect('products')->with('success', 'Product details saved successfully.');
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::debug('ProdictController@edit ' . $e->getMessage() . ' at line ' . $e->getLine());
+            Log::debug('ProdictController@edit '.$e->getMessage().' at line '.$e->getLine());
+
             return back()->with('error', 'Counld not save product details.');
         }
     }

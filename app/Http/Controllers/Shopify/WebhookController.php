@@ -12,7 +12,6 @@ use Shopify\Webhooks\Topics;
 
 class WebhookController extends Controller
 {
-
     public function __construct()
     {
         // Important line to call Context::initialize function
@@ -27,17 +26,19 @@ class WebhookController extends Controller
             // Log request body
             Log::info('Request Body: ', $request->all());
 
-            Registry::addHandler(Topics::ORDERS_CREATE, new OrderCreated());
+            Registry::addHandler(Topics::ORDERS_CREATE, new OrderCreated);
             $response = Registry::process($request->header(), $request->getContent());
 
             if ($response->isSuccess()) {
                 return response('ok');
             } else {
-                Log::error("Webhook handler failed with message: " . $response->getErrorMessage());
+                Log::error('Webhook handler failed with message: '.$response->getErrorMessage());
+
                 return response('failed', 500);
             }
         } catch (\Exception $e) {
             report($e);
+
             return response('failed', 500);
         }
     }

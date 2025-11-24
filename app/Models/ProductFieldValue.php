@@ -18,20 +18,23 @@ class ProductFieldValue extends Model
         'value',
     ];
 
-    public function category() {
+    public function category()
+    {
         return $this->belongsTo(Category::class);
     }
 
-    public function productType() {
+    public function productType()
+    {
         return $this->belongsTo(ProductType::class);
     }
 
-    public function categoryField() {
+    public function categoryField()
+    {
         return $this->belongsTo(CategoryField::class, 'category_field_id', 'id')->orderBy('sort_order', 'asc');
     }
 
-    public function productTypeField() {
+    public function productTypeField()
+    {
         return $this->belongsTo(ProductTypeField::class, 'product_type_field_id', 'id')->orderBy('sort_order', 'asc');
     }
-
 }

@@ -29,17 +29,17 @@ class ScrapeImages extends Command
     public function handle()
     {
         try {
-            $brandId = '1-21'; //Pandora
+            $brandId = '1-21'; // Pandora
             $retailEdgeProducts = RetailEdgeProduct::where('brand_id', $brandId)->with('pandoraScraped:id,design_no,images')->select('id', 'sku', 'real_design_number', 'brand_id')->get();
 
             foreach ($retailEdgeProducts as $retailEdgeProduct) {
                 $this->info($retailEdgeProduct->sku);
                 if (is_null($retailEdgeProduct->pandoraScraped?->images)) {
-                    $this->info('Scraping Pandora Images for ' . $retailEdgeProduct->sku);
-                    $pandoraService = new PandoraScraperService();
+                    $this->info('Scraping Pandora Images for '.$retailEdgeProduct->sku);
+                    $pandoraService = new PandoraScraperService;
                     $pandoraService->getPandoraProductByDesignNo($retailEdgeProduct->real_design_number);
                     PandoraList::where('design_no', $retailEdgeProduct->real_design_number)->update(['sku' => $retailEdgeProduct->sku]);
-                    $this->info('Pandora Images scraped for ' . $retailEdgeProduct->sku);
+                    $this->info('Pandora Images scraped for '.$retailEdgeProduct->sku);
                 }
                 sleep(10);
             }

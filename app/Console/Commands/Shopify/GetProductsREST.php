@@ -38,7 +38,7 @@ class GetProductsREST extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
+        if (! $job->isRunning()) {
             try {
                 Log::info("$marketplace $jobType started!");
                 $job->update(['status' => 1]);
@@ -46,19 +46,16 @@ class GetProductsREST extends Command
                 /**
                  * Get Shopify locations
                  */
-
                 $this->getLocations();
 
                 /**
                  * Get Shopify products
                  */
-
                 $this->getProducts();
 
                 /**
                  * Get Shopify inventory levels
                  */
-
                 $this->getInventoryLevels();
 
                 $job->update(['status' => 0, 'message' => null]);
@@ -84,7 +81,7 @@ class GetProductsREST extends Command
 
             $body = $response->getDecodedBody();
 
-            if (!empty($body) && isset($body['locations']) && count($body['locations']) > 0) {
+            if (! empty($body) && isset($body['locations']) && count($body['locations']) > 0) {
                 foreach ($body['locations'] as $locationData) {
                     try {
                         ShopifyLocation::updateOrCreate(
@@ -132,10 +129,10 @@ class GetProductsREST extends Command
 
                 $body = $response->getDecodedBody();
 
-                if (!empty($body) && isset($body['products']) && count($body['products']) > 0) {
+                if (! empty($body) && isset($body['products']) && count($body['products']) > 0) {
                     foreach ($body['products'] as $productData) {
                         try {
-                            $this->info('product id : ' . $productData['id']);
+                            $this->info('product id : '.$productData['id']);
                             $productIds[] = $productData['id'];
                             // if ($productData['status'] !== 'archived') {
                             (new ShopifyService)->saveProductToDb($productData);
@@ -189,10 +186,10 @@ class GetProductsREST extends Command
 
                 $body = $response->getDecodedBody();
 
-                if (!empty($body) && isset($body['inventory_levels']) && count($body['inventory_levels']) > 0) {
+                if (! empty($body) && isset($body['inventory_levels']) && count($body['inventory_levels']) > 0) {
                     foreach ($body['inventory_levels'] as $inventoryLevelData) {
                         try {
-                            $this->info('product id : ' . $inventoryLevelData['inventory_item_id']);
+                            $this->info('product id : '.$inventoryLevelData['inventory_item_id']);
                             (new ShopifyService)->saveInventoryLevelToDb($inventoryLevelData);
                         } catch (\Exception $e) {
                             $this->error($e->getMessage());
@@ -231,12 +228,12 @@ class GetProductsREST extends Command
         foreach ($shopifyProducts as $shopifyProduct) {
             try {
                 $shopifyProduct->forceDelete();
-                $message = 'Product deleted successfully: ' . $shopifyProduct->product_id;
+                $message = 'Product deleted successfully: '.$shopifyProduct->product_id;
                 $this->info($message);
                 Log::debug($message);
             } catch (\Exception $e) {
                 DB::statement('SET FOREIGN_KEY_CHECKS = 1;');
-                $message = 'Error while deleting shopify product. ' . $e->getMessage();
+                $message = 'Error while deleting shopify product. '.$e->getMessage();
                 $this->info($message);
                 Log::debug($message);
             }
@@ -255,13 +252,13 @@ class GetProductsREST extends Command
                     ShopifyInventoryLevel::where('inventory_item_id', $variant->inventory_item_id)->delete();
                     $variant->delete();
                 }
-                $message = 'Product deleted successfully: ' . $shopifyProduct->product_id;
+                $message = 'Product deleted successfully: '.$shopifyProduct->product_id;
                 $shopifyProduct->forceDelete();
                 $this->info($message);
                 Log::debug($message);
             } catch (\Exception $e) {
                 DB::statement('SET FOREIGN_KEY_CHECKS = 1;');
-                $message = 'Error while deleting shopify product. ' . $e->getMessage();
+                $message = 'Error while deleting shopify product. '.$e->getMessage();
                 $this->info($message);
                 Log::debug($message);
             }

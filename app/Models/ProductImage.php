@@ -16,5 +16,4 @@ class ProductImage extends Model
         'height',
         'url',
     ];
-
 }

@@ -18,7 +18,7 @@ return new class extends Migration
             $table->foreignId('product_type_id')->nullable()->constrained();
             $table->string('amz_recommended_browse_node')->nullable();
             $table->boolean('button_cell')->default(false);
-            $table->string('classification_path', )->nullable();
+            $table->string('classification_path')->nullable();
             $table->timestamps();
         });
     }

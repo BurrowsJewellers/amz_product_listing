@@ -36,7 +36,7 @@ class GetWebhooks extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
+        if (! $job->isRunning()) {
             try {
                 Log::info("$marketplace $jobType started!");
                 $job->update(['status' => 1]);
@@ -48,7 +48,7 @@ class GetWebhooks extends Command
 
                 $body = $response->getDecodedBody();
 
-                if (!empty($body) && isset($body['webhooks']) && count($body['webhooks']) > 0) {
+                if (! empty($body) && isset($body['webhooks']) && count($body['webhooks']) > 0) {
                     foreach ($body['webhooks'] as $webhookData) {
                         try {
                             ShopifyWebhook::updateOrCreate(

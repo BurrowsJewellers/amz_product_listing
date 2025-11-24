@@ -62,7 +62,7 @@ class RegisterOrdersCreateWebhook extends Command
                 dd($shopifyWebhook);
             }
         } else {
-            Log::error("Webhook registration failed with response: \n" . var_export($response, true));
+            Log::error("Webhook registration failed with response: \n".var_export($response, true));
         }
     }
 }

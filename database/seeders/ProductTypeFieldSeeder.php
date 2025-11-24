@@ -2,12 +2,11 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
-use Illuminate\Database\Seeder;
 use App\Models\Category;
 use App\Models\Marketplace;
 use App\Models\ProductType;
 use App\Models\ProductTypeField;
+use Illuminate\Database\Seeder;
 
 class ProductTypeFieldSeeder extends Seeder
 {

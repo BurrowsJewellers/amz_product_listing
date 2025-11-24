@@ -2,11 +2,11 @@
 
 namespace App\Console\Commands\Amazon;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\AmzFeedController;
 use App\Http\Controllers\SyncJobController;
 use App\Models\Product;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 class GenerateAmzProductsXml extends Command
 {
@@ -34,7 +34,7 @@ class GenerateAmzProductsXml extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
+        if (! $job->isRunning()) {
             Log::info("$marketplace $jobType started!");
             $job->update(['status' => 1]);
 
@@ -67,7 +67,7 @@ class GenerateAmzProductsXml extends Command
 
                         $dom = new \DOMDocument('1.0', 'utf-8');
 
-                        $envelop = $dom->createElement("AmazonEnvelope");
+                        $envelop = $dom->createElement('AmazonEnvelope');
                         $envelop->setAttribute('xsi:noNamespaceSchemaLocation', 'amzn-envelope.xsd');
 
                         $header = $dom->createElement('Header');
@@ -81,12 +81,13 @@ class GenerateAmzProductsXml extends Command
 
                         $productIds = [];
                         foreach ($products as $product) {
-                            $this->info('SKU ' . $product->sku);
-                            Log::info('SKU ' . $product->sku);
+                            $this->info('SKU '.$product->sku);
+                            Log::info('SKU '.$product->sku);
 
-                            if (!$product->brand) {
+                            if (! $product->brand) {
                                 $this->error('Brand name is not set. Skipping the record.');
                                 Log::error('Brand name is not set. Skipping the record.');
+
                                 continue;
                             }
 
@@ -99,7 +100,7 @@ class GenerateAmzProductsXml extends Command
                             } elseif ($product->ean) {
                                 if ($product->brand->name == 'Ania Haie') {
                                     $standardProductIDType = 'UPC';
-                                    $standardProductIDValue = '0' . $product->ean;
+                                    $standardProductIDValue = '0'.$product->ean;
                                 } else {
                                     $standardProductIDType = 'EAN';
                                     $standardProductIDValue = $product->ean;
@@ -109,8 +110,9 @@ class GenerateAmzProductsXml extends Command
                                 $standardProductIDValue = $product->upc;
                             }
 
-                            if (!$standardProductIDType) {
+                            if (! $standardProductIDType) {
                                 $this->error('standardProductIDType is not set.');
+
                                 continue;
                             }
 
@@ -142,7 +144,7 @@ class GenerateAmzProductsXml extends Command
                             $elementDescriptionData->appendChild($dom->createElement('Title', htmlspecialchars($product->title)));
                             $elementDescriptionData->appendChild($dom->createElement('Brand', $product->brand->name));
 
-                            $productDescription = str_replace("Product Description:", '', $product->description);
+                            $productDescription = str_replace('Product Description:', '', $product->description);
 
                             $elementDescription = $dom->createElement('Description');
                             $elementDescription->appendChild($dom->createCDATASection($productDescription));
@@ -151,7 +153,7 @@ class GenerateAmzProductsXml extends Command
                             $dataBulletPoint1 = $productDescription;
 
                             if (strlen($dataBulletPoint1) > 500) {
-                                $dataBulletPoint1 = substr($dataBulletPoint1, 0, 490) . '...';
+                                $dataBulletPoint1 = substr($dataBulletPoint1, 0, 490).'...';
                             }
 
                             $elementBulletPoint1 = $dom->createElement('BulletPoint');
@@ -168,14 +170,14 @@ class GenerateAmzProductsXml extends Command
                             $targetAudience = $product->eWebCode->code[1] == 'W' ? 'women' : 'men';
                             $elementDescriptionData->appendChild($dom->createElement('TargetAudience', $targetAudience));
 
-                            $elementDescriptionData->appendChild($dom->createElement('IsGiftWrapAvailable', "true"));
+                            $elementDescriptionData->appendChild($dom->createElement('IsGiftWrapAvailable', 'true'));
                             $elementDescriptionData->appendChild($dom->createElement('RecommendedBrowseNode', $product->eWebCode->amz_recommended_browse_node));
                             $elementDescriptionData->appendChild($dom->createElement('MerchantShippingGroupName', $product->retail_price2 > 100 ? 'Over $100' : 'Sub $100 order'));
 
                             // Battery
                             $elementBattery = $dom->createElement('Battery');
-                            $elementBattery->appendChild($dom->createElement('AreBatteriesIncluded', $product->eWebCode->button_cell === 1 ? "true" : "false"));
-                            $elementBattery->appendChild($dom->createElement('AreBatteriesRequired', $product->eWebCode->button_cell === 1 ? "true" : "false"));
+                            $elementBattery->appendChild($dom->createElement('AreBatteriesIncluded', $product->eWebCode->button_cell === 1 ? 'true' : 'false'));
+                            $elementBattery->appendChild($dom->createElement('AreBatteriesRequired', $product->eWebCode->button_cell === 1 ? 'true' : 'false'));
 
                             $elementDescriptionData->appendChild($elementBattery);
 
@@ -188,7 +190,7 @@ class GenerateAmzProductsXml extends Command
 
                             $elementDescriptionData->appendChild($dom->createElement('CountryOfOrigin', $product->country_of_origin));
                             // $elementDescriptionData->appendChild($dom->createElement('ItemTypeName', substr(htmlspecialchars($product->item_type_name), 0, 47) . '...'));
-                            $elementDescriptionData->appendChild($dom->createElement('ItemTypeName', htmlspecialchars(substr($product->title, 0, 47) . "...")));
+                            $elementDescriptionData->appendChild($dom->createElement('ItemTypeName', htmlspecialchars(substr($product->title, 0, 47).'...')));
 
                             $elementProd->appendChild($elementDescriptionData);
 
@@ -203,7 +205,7 @@ class GenerateAmzProductsXml extends Command
                             }
 
                             foreach ($product->fields as $productField) {
-                                if (!$productField->categoryField && $productField->productTypeField) {
+                                if (! $productField->categoryField && $productField->productTypeField) {
                                     $elementProductTypeName->appendChild($dom->createElement($productField->productTypeField->amz_name, $productField->value));
                                 }
 
@@ -222,7 +224,7 @@ class GenerateAmzProductsXml extends Command
                                 //     $elementProductTypeName->appendChild($dom->createElement($productField->productTypeField->amz_name, $productField->value));
                                 // } else
 
-                                if ($productField->categoryField && !$productField->productTypeField) {
+                                if ($productField->categoryField && ! $productField->productTypeField) {
                                     $elementCategoryName->appendChild($dom->createElement($productField->categoryField->amz_name, $productField->value));
                                 }
                             }
@@ -247,13 +249,13 @@ class GenerateAmzProductsXml extends Command
                         }
 
                         $xmlRoot = $dom->appendChild($envelop);
-                        $xmlRoot->setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:xsi', "http://www.w3.org/2001/XMLSchema-instance");
+                        $xmlRoot->setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
 
                         $dom->formatOutput = true;
                         $xml = $dom->saveXML();
 
-                        if (!empty($productIds)) {
-                            $feedController = new AmzFeedController();
+                        if (! empty($productIds)) {
+                            $feedController = new AmzFeedController;
                             $feedController->createAmzFeed($xml, 'POST_PRODUCT_DATA', $productIds);
                         }
                     }
@@ -271,7 +273,7 @@ class GenerateAmzProductsXml extends Command
                 $job->update(['status' => 0, 'message' => null]);
             } catch (\Exception $e) {
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
-                Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
+                Log::error('Error : '.$e->getFile().' : '.$e->getMessage().' Line : '.$e->getLine());
             }
 
             Log::info("$marketplace $jobType finished!");

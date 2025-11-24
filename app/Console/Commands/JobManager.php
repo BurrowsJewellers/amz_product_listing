@@ -2,8 +2,8 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
 use App\Http\Controllers\SyncJobController;
+use Illuminate\Console\Command;
 
 class JobManager extends Command
 {
@@ -58,7 +58,8 @@ class JobManager extends Command
 
             default:
                 $this->error("Invalid action: {$action}");
-                $this->info("Available actions: pause, resume, status, pause-all, resume-all");
+                $this->info('Available actions: pause, resume, status, pause-all, resume-all');
+
                 return 1;
         }
 
@@ -67,35 +68,37 @@ class JobManager extends Command
 
     private function pauseJob($type, $marketplace, $by)
     {
-        if (!$type) {
-            $this->error("Job type is required for pause action");
+        if (! $type) {
+            $this->error('Job type is required for pause action');
+
             return;
         }
 
         $success = SyncJobController::pauseJob($type, $marketplace, $by);
 
         if ($success) {
-            $jobName = $type . ($marketplace ? ":{$marketplace}" : '');
+            $jobName = $type.($marketplace ? ":{$marketplace}" : '');
             $this->info("✅ Successfully paused job: {$jobName}");
         } else {
-            $this->error("❌ Failed to pause job or job not found");
+            $this->error('❌ Failed to pause job or job not found');
         }
     }
 
     private function resumeJob($type, $marketplace, $by)
     {
-        if (!$type) {
-            $this->error("Job type is required for resume action");
+        if (! $type) {
+            $this->error('Job type is required for resume action');
+
             return;
         }
 
         $success = SyncJobController::resumeJob($type, $marketplace, $by);
 
         if ($success) {
-            $jobName = $type . ($marketplace ? ":{$marketplace}" : '');
+            $jobName = $type.($marketplace ? ":{$marketplace}" : '');
             $this->info("✅ Successfully resumed job: {$jobName}");
         } else {
-            $this->error("❌ Failed to resume job or job not found");
+            $this->error('❌ Failed to resume job or job not found');
         }
     }
 
@@ -104,18 +107,20 @@ class JobManager extends Command
         $jobs = SyncJobController::getAllJobsStatus();
 
         if (empty($jobs)) {
-            $this->info("No jobs found in the system.");
+            $this->info('No jobs found in the system.');
+
             return;
         }
 
         // Filter by specific type if provided
         if ($specificType) {
-            $jobs = array_filter($jobs, function($job) use ($specificType) {
+            $jobs = array_filter($jobs, function ($job) use ($specificType) {
                 return $job['type'] === $specificType;
             });
 
             if (empty($jobs)) {
                 $this->warn("No jobs found for type: {$specificType}");
+
                 return;
             }
         }
@@ -159,17 +164,18 @@ class JobManager extends Command
         $totalCount = count($jobs);
 
         $this->newLine();
-        $this->info("Summary:");
+        $this->info('Summary:');
         $this->info("  Total jobs: {$totalCount}");
         $this->info("  Running: {$runningCount}");
         $this->info("  Paused: {$pausedCount}");
-        $this->info("  Idle: " . ($totalCount - $runningCount - $pausedCount));
+        $this->info('  Idle: '.($totalCount - $runningCount - $pausedCount));
     }
 
     private function pauseAllJobs($by)
     {
-        if (!$this->confirm('Are you sure you want to pause ALL jobs? This is an emergency stop.', false)) {
+        if (! $this->confirm('Are you sure you want to pause ALL jobs? This is an emergency stop.', false)) {
             $this->info('Operation cancelled.');
+
             return;
         }
 
@@ -180,8 +186,9 @@ class JobManager extends Command
 
     private function resumeAllJobs($by)
     {
-        if (!$this->confirm('Are you sure you want to resume ALL jobs?', false)) {
+        if (! $this->confirm('Are you sure you want to resume ALL jobs?', false)) {
             $this->info('Operation cancelled.');
+
             return;
         }
 
@@ -194,6 +201,7 @@ class JobManager extends Command
         if (strlen($string) <= $length) {
             return $string;
         }
-        return substr($string, 0, $length - 3) . '...';
+
+        return substr($string, 0, $length - 3).'...';
     }
 }

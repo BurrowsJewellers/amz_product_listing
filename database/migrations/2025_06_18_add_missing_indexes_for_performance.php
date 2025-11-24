@@ -15,10 +15,10 @@ return new class extends Migration
         Schema::table('shopify_product_variants', function (Blueprint $table) {
             // Critical index for JOIN operations with retail_edge_products
             $table->index('sku', 'idx_shopify_product_variants_sku');
-            
+
             // Index for filtering variants that need updates
             $table->index('requires_update', 'idx_shopify_product_variants_requires_update');
-            
+
             // Composite index for common query pattern
             $table->index(['sku', 'requires_update'], 'idx_shopify_product_variants_sku_requires_update');
         });
@@ -27,10 +27,10 @@ return new class extends Migration
         Schema::table('retail_edge_products', function (Blueprint $table) {
             // Index for filtering by upload status
             $table->index('uploaded_to_shopify', 'idx_retail_edge_products_uploaded_to_shopify');
-            
+
             // Index for quantity filtering
             $table->index('quantity', 'idx_retail_edge_products_quantity');
-            
+
             // Composite index for common query pattern
             $table->index(['uploaded_to_shopify', 'quantity'], 'idx_retail_edge_products_upload_quantity');
         });

@@ -1,17 +1,15 @@
 <?php
 
-use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\DashboardController;
-use App\Http\Controllers\ProductController;
-use App\Http\Controllers\ProfileController;
-use App\Http\Controllers\ProductTypeController;
+use App\Http\Controllers\Admin\PriceInventoryLogController;
 use App\Http\Controllers\AmzFeedController;
 use App\Http\Controllers\AmzReportController;
-use App\Http\Controllers\Catch\ImportController;
-use App\Http\Controllers\Catch\ProductController as CatchProductController;
+use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\ProductController;
+use App\Http\Controllers\ProductTypeController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\Shopify\PandoraController;
 use App\Http\Controllers\Shopify\WebhookController;
-use App\Http\Controllers\Admin\PriceInventoryLogController;
+use Illuminate\Support\Facades\Route;
 
 /*
 |--------------------------------------------------------------------------
@@ -56,15 +54,6 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/amazon/report/download', [AmzReportController::class, 'downloadReport'])->name('amazon.report.download');
 
     Route::get('/get/producttypes', [ProductTypeController::class, 'getProductTypes'])->name('get.productTypes');
-
-    Route::prefix('/catch')->name('catch.')->group(function () {
-        Route::get('/products', [CatchProductController::class, 'index'])->name('products');
-        Route::get('/product/edit/{id}', [CatchProductController::class, 'edit'])->name('product.edit');
-        Route::post('/product/save', [CatchProductController::class, 'save'])->name('product.save');
-
-        Route::get('/imports', [ImportController::class, 'index'])->name('imports.index');
-        Route::get('/import/download', [ImportController::class, 'downloadCsv'])->name('import.download');
-    });
 
     // Price Inventory Logs
     Route::get('/price-inventory-logs', [PriceInventoryLogController::class, 'index'])->name('price_inventory_logs.index');

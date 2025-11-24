@@ -14,12 +14,13 @@ class Category extends Model
         'marketplace_id',
     ];
 
-    public function fields(){
+    public function fields()
+    {
         return $this->hasMany(CategoryField::class);
     }
 
-    public function productTypes() {
+    public function productTypes()
+    {
         return $this->hasMany(ProductType::class);
     }
-
 }

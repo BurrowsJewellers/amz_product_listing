@@ -2,12 +2,12 @@
 
 namespace App\Console\Commands\Shopify;
 
+use App\Http\Controllers\SyncJobController;
+use App\Models\ShopifyProductVariant;
+use App\Services\ShopifyService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Shopify\Rest\Admin2025_04\Image;
-use App\Services\ShopifyService;
-use App\Http\Controllers\SyncJobController;
-use App\Models\ShopifyProductVariant;
 
 class CountImages extends Command
 {
@@ -35,7 +35,7 @@ class CountImages extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
+        if (! $job->isRunning()) {
             try {
                 Log::info("$marketplace $jobType started!");
                 $job->update(['status' => 1]);
@@ -71,8 +71,9 @@ class CountImages extends Command
                 $processedCount++;
                 $skuValue = $variant->sku ? $variant->sku : '[EMPTY SKU]';
 
-                if (!$variant->product_id) {
+                if (! $variant->product_id) {
                     $this->warn("Skipping variant {$skuValue} (ID: {$variant->id}) - Missing product_id");
+
                     continue;
                 }
 
@@ -80,7 +81,7 @@ class CountImages extends Command
                 $retryCount = 0;
                 $success = false;
 
-                while (!$success && $retryCount < $maxRetries) {
+                while (! $success && $retryCount < $maxRetries) {
                     try {
                         if ($retryCount > 0) {
                             $this->info("Retry #{$retryCount} for SKU: {$skuValue}");
@@ -91,7 +92,7 @@ class CountImages extends Command
                         $this->info("Fetching images count for SKU: {$skuValue} ({$processedCount}/{$totalVariants})");
                         $resp = Image::count(
                             $session,
-                            ["product_id" => $variant->product_id],
+                            ['product_id' => $variant->product_id],
                         );
 
                         $this->info("Found {$resp['count']} images.");

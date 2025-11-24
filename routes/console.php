@@ -51,33 +51,33 @@ Schedule::command('job:orchestrator shopify-sync')
 Schedule::command(GetBrandsFromEWeb::class)
     ->dailyAt('00:05')
     ->when(function () {
-        return !\App\Http\Controllers\SyncJobController::isPaused('getBrandsFromEWeb');
+        return ! \App\Http\Controllers\SyncJobController::isPaused('getBrandsFromEWeb');
     });
 
 Schedule::command(CountImages::class)
     ->dailyAt('17:00')
     ->when(function () {
-        return !\App\Http\Controllers\SyncJobController::isPaused('shopifyCountImages');
+        return ! \App\Http\Controllers\SyncJobController::isPaused('shopifyCountImages');
     });
 
 Schedule::command(UpdateProduct::class)
     ->dailyAt('20:00')
     ->when(function () {
-        return !\App\Http\Controllers\SyncJobController::isPaused('shopify:update-product');
+        return ! \App\Http\Controllers\SyncJobController::isPaused('shopify:update-product');
     });
 
 // Hourly retry jobs
 Schedule::command('shopifyRetryFailedInventoryUpdates')
     ->hourly()
     ->when(function () {
-        return !\App\Http\Controllers\SyncJobController::isPaused('shopifyRetryFailedInventoryUpdates');
+        return ! \App\Http\Controllers\SyncJobController::isPaused('shopifyRetryFailedInventoryUpdates');
     });
 
 // Legacy single job (kept for backward compatibility, but with pause checking)
 Schedule::command('getProductsFromEWeb')
     ->everyFifteenMinutes()
     ->when(function () {
-        return !\App\Http\Controllers\SyncJobController::isPaused('getProductsFromEWeb');
+        return ! \App\Http\Controllers\SyncJobController::isPaused('getProductsFromEWeb');
     });
 
 // ========================================
@@ -104,7 +104,6 @@ Schedule::command('getProductsFromEWeb')
  * - shopifyArchiveProducts (via orchestrator shopify-sync)
  *
  * COMPLETELY DISABLED (commented out):
- * - All Catch marketplace jobs
  * - Individual Amazon update commands (replaced by orchestrated amazon-sync)
  * - Individual Shopify inventory/price updates (replaced by orchestrated main-sync)
  */

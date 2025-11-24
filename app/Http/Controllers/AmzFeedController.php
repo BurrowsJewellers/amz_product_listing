@@ -2,24 +2,24 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
+use App\Models\AmzFeed;
+use App\Models\Product;
+use GuzzleHttp\Client;
+use GuzzleHttp\Psr7\Request;
 use Illuminate\Http\Request as Req;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use SellingPartnerApi\Model\FeedsV20210630\CreateFeedDocumentSpecification;
-use SellingPartnerApi\Model\FeedsV20210630\CreateFeedSpecification;
 use SellingPartnerApi\Api\FeedsV20210630Api as FeedsApi;
 use SellingPartnerApi\Document;
-use GuzzleHttp\Client;
-use GuzzleHttp\Psr7\Request;
-use App\Models\AmzFeed;
-use App\Models\Product;
-use App\Http\Controllers\AmzConfigController;
+use SellingPartnerApi\Model\FeedsV20210630\CreateFeedDocumentSpecification;
+use SellingPartnerApi\Model\FeedsV20210630\CreateFeedSpecification;
 
 class AmzFeedController extends Controller
 {
     public $types;
+
     public $processingStatus;
+
     public $marketplaceIds;
 
     public function __construct()
@@ -47,24 +47,24 @@ class AmzFeedController extends Controller
         $this->marketplaceIds = ['A39IBJ37TRP1C6'];
     }
 
-    public function createAmzFeed($data, $type, array $ids = null)
+    public function createAmzFeed($data, $type, ?array $ids = null)
     {
         try {
-            if (!array_key_exists($type, $this->types)) {
+            if (! array_key_exists($type, $this->types)) {
                 $error = "Error in AmzFeedController : $type is not in types array.";
                 Log::error($error);
                 exit($error);
             }
 
-            $fileName = $type . '_' . time() . '.xml';
+            $fileName = $type.'_'.time().'.xml';
 
             // $data = mb_convert_encoding($data, 'UTF-8');
             $data = utf8_encode($data);
 
             $dom = new \DOMDocument;
-            $dom->preserveWhiteSpace = FALSE;
+            $dom->preserveWhiteSpace = false;
             $dom->loadXML($data);
-            $dom->formatOutput = TRUE;
+            $dom->formatOutput = true;
 
             $data = $dom->saveXML(null, LIBXML_NOEMPTYTAG);
 
@@ -72,7 +72,7 @@ class AmzFeedController extends Controller
 
             if ($storage) {
                 $feed = AmzFeed::create([
-                    'type'      => $type,
+                    'type' => $type,
                     'file_name' => $fileName,
                     'processing_status' => 'XML_GENERATED',
                 ]);
@@ -95,14 +95,14 @@ class AmzFeedController extends Controller
                 Log::error($error);
             }
         } catch (\Exception $e) {
-            Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
+            Log::error('Error : '.$e->getFile().' : '.$e->getMessage().' Line : '.$e->getLine());
         }
     }
 
     public function submitFeed($type)
     {
         try {
-            if (!array_key_exists($type, $this->types)) {
+            if (! array_key_exists($type, $this->types)) {
                 $error = "Error in AmzFeedController : $type is not in types array.";
                 Log::error($error);
                 exit($error);
@@ -113,7 +113,7 @@ class AmzFeedController extends Controller
             if ($feeds->count()) {
                 $feedType = $this->types[$type];
 
-                $config = (new AmzConfigController())->getConfig();
+                $config = (new AmzConfigController)->getConfig();
 
                 $feedsApiInstance = new FeedsApi($config);
 
@@ -133,12 +133,12 @@ class AmzFeedController extends Controller
 
                             if ($feedDocumentId && $url) {
                                 // $client = new Client(['exceptions' => false]);
-                                $client = new Client();
+                                $client = new Client;
 
                                 $request = new Request(
                                     'PUT',
                                     $url,
-                                    array('Content-Type' => $contentType),
+                                    ['Content-Type' => $contentType],
                                     $xml
                                 );
 
@@ -147,10 +147,10 @@ class AmzFeedController extends Controller
 
                                 if ($statusCode == 200) {
                                     $specifications = [
-                                        'feed_type'             => $feedType,
-                                        'marketplace_ids'       => $this->marketplaceIds,
+                                        'feed_type' => $feedType,
+                                        'marketplace_ids' => $this->marketplaceIds,
                                         'input_feed_document_id' => $feedDocumentId,
-                                        'feed_options'          => null
+                                        'feed_options' => null,
                                     ];
 
                                     $body = new CreateFeedSpecification($specifications);
@@ -166,29 +166,28 @@ class AmzFeedController extends Controller
 
                                     if ($feed) {
                                         $feed = AmzFeed::where('id', $id)->first();
-                                        $newName = $feedId . '_' . $feed->type . '.xml';
+                                        $newName = $feedId.'_'.$feed->type.'.xml';
                                         $move = Storage::disk('local')->move($feed->file_name, $newName);
                                         if ($move) {
                                             $feed->update(['file_name' => $newName]);
                                         }
                                     }
 
-
                                     // Storage::disk('local')->put('result.json', $response);
                                 } else {
-                                    Log::error("Error in AmzFeedController - statusCode : " . $statusCode);
+                                    Log::error('Error in AmzFeedController - statusCode : '.$statusCode);
                                 }
                             }
                         }
                     } catch (\Exception $e) {
-                        Log::error('Error in AmzFeedController : ' . $e->getMessage());
+                        Log::error('Error in AmzFeedController : '.$e->getMessage());
                     }
 
                     sleep(150);
                 }
             }
         } catch (\Exception $e) {
-            Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
+            Log::error('Error : '.$e->getFile().' : '.$e->getMessage().' Line : '.$e->getLine());
         }
     }
 
@@ -203,7 +202,7 @@ class AmzFeedController extends Controller
         $productDataFeed = false;
 
         if ($feeds->count()) {
-            $config = (new AmzConfigController())->getConfig();
+            $config = (new AmzConfigController)->getConfig();
             $feedsApiInstance = new FeedsApi($config);
 
             foreach ($feeds as $feed) {
@@ -222,7 +221,7 @@ class AmzFeedController extends Controller
                         $contents = $docToDownload->download();
                         // $data = $docToDownload->getData();
 
-                        $fileName = $feed->feed_id . '_response.xml';
+                        $fileName = $feed->feed_id.'_response.xml';
                         Storage::disk('local')->put($fileName, $contents);
                         $feed->update(['response_file_name' => $fileName, 'processing_status' => $processingStatus]);
                         sleep(5);
@@ -230,7 +229,7 @@ class AmzFeedController extends Controller
                         $feed->update(['processing_status' => $processingStatus]);
                     }
                 } catch (\Exception $e) {
-                    Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
+                    Log::error('Error : '.$e->getFile().' : '.$e->getMessage().' Line : '.$e->getLine());
                     throw new \Exception($e->getMessage());
                 }
             }
@@ -245,31 +244,34 @@ class AmzFeedController extends Controller
     public function updateMessage()
     {
         $feeds = AmzFeed::where(['type' => 'POST_PRODUCT_DATA', 'processing_status' => 'DONE'])->whereNotNull('response_file_name')->get();
-        Log::debug('Found ' . $feeds->count() . ' feeds for updating error messages from feeds.');
+        Log::debug('Found '.$feeds->count().' feeds for updating error messages from feeds.');
 
         $messagesArray = [];
 
         foreach ($feeds as $feed) {
             try {
-                if (!Storage::exists($feed->response_file_name)) {
+                if (! Storage::exists($feed->response_file_name)) {
                     echo "$feed->response_file_name not found.\n";
                     $feed->update(['processing_status' => 'Response file not found!']);
+
                     return;
                 }
 
                 $contents = Storage::disk('local')->get($feed->response_file_name);
 
-                if (!$contents) {
+                if (! $contents) {
                     echo "$feed->response_file_name empty.\n";
                     $feed->update(['processing_status' => 'Response file is empty!']);
+
                     return;
                 }
 
                 $data = simplexml_load_string($contents);
 
-                if (!$data) {
+                if (! $data) {
                     echo "$feed->response_file_name empty.\n";
                     $feed->update(['processing_status' => 'Response file is empty!']);
+
                     return;
                 }
 
@@ -282,7 +284,7 @@ class AmzFeedController extends Controller
 
                 if ($MessagesWithError > 0 || $MessagesWithWarning > 0) {
                     foreach ($ProcessingReport->Result as $r) {
-                        $sku = str_replace("%", "", $r->AdditionalInfo->SKU);
+                        $sku = str_replace('%', '', $r->AdditionalInfo->SKU);
                         $message = html_entity_decode($r->ResultDescription, ENT_QUOTES | ENT_HTML5);
                         $messagesArray[$sku][] = $message;
                     }
@@ -291,12 +293,12 @@ class AmzFeedController extends Controller
                 $feed->update(['processing_status' => 'FINISHED']);
             } catch (\Exception $e) {
                 $feed->update(['processing_status' => $e->getMessage()]);
-                $this->error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
-                Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
+                $this->error('Error : '.$e->getFile().' : '.$e->getMessage().' Line : '.$e->getLine());
+                Log::error('Error : '.$e->getFile().' : '.$e->getMessage().' Line : '.$e->getLine());
             }
         }
 
-        if (!empty($messagesArray)) {
+        if (! empty($messagesArray)) {
             Product::where('id', '>', 0)->update(['message' => null]);
 
             foreach ($messagesArray as $sku => $messages) {
@@ -307,9 +309,9 @@ class AmzFeedController extends Controller
                     $i++;
                 }
 
-                echo 'SKU : ' . $sku . "\n";
-                echo 'Message : ' . $m . "\n";
-                echo '===================================' . "\n";
+                echo 'SKU : '.$sku."\n";
+                echo 'Message : '.$m."\n";
+                echo '==================================='."\n";
 
                 // $product = Product::where('sku', $sku)->update(['message' => implode("<br>", $messages)]);
                 $product = Product::where('sku', $sku)->update(['message' => $m]);
@@ -321,15 +323,18 @@ class AmzFeedController extends Controller
     {
         if (request()->ajax()) {
             $feeds = AmzFeed::query();
+
             return datatables()->of($feeds)
                 ->addColumn('feed_xml', function ($feed) {
                     $link = route('amazon.feed.download', ['id' => $feed->id, 'type' => 'feed']);
-                    return '<a href="' . $link . '">Download</a>';
+
+                    return '<a href="'.$link.'">Download</a>';
                 })
                 ->addColumn('response_xml', function ($feed) {
                     if ($feed->response_file_name) {
                         $link = route('amazon.feed.download', ['id' => $feed->id, 'type' => 'response']);
-                        return '<a href="' . $link . '">Download</a>';
+
+                        return '<a href="'.$link.'">Download</a>';
                     } else {
                         return '';
                     }
@@ -344,6 +349,7 @@ class AmzFeedController extends Controller
                 ->rawColumns(['feed_xml', 'response_xml'])
                 ->toJson();
         }
+
         return view('amazon.feeds');
     }
 
@@ -359,12 +365,12 @@ class AmzFeedController extends Controller
                 $file = $feed->response_file_name;
             }
 
-            if (!Storage::disk('local')->exists($file)) {
+            if (! Storage::disk('local')->exists($file)) {
                 return 'Report not found!';
             }
 
             if ($file) {
-                return response()->download(storage_path('/app/' . $file));
+                return response()->download(storage_path('/app/'.$file));
             } else {
                 return 'Report not found!';
             }

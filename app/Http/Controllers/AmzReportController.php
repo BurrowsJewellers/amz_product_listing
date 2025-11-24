@@ -2,15 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AmzRequestedReport;
+use App\Services\Amazon\AmazonSpApiService;
+use DateTime;
 use Illuminate\Http\Request as Req;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use SellingPartnerApi\Api\ReportsV20210630Api;
-use SellingPartnerApi\Document;
-use App\Models\AmzRequestedReport;
-use App\Services\Amazon\AmazonSpApiService;
 use SellingPartnerApi\Seller\ReportsV20210630\Dto\CreateReportSpecification;
-use DateTime;
 
 class AmzReportController extends Controller
 {
@@ -30,7 +28,7 @@ class AmzReportController extends Controller
 
             $specification = new CreateReportSpecification(reportType: $reportType, marketplaceIds: [$marketplace->marketplace_id], dataStartTime: $dataStartTime, dataEndTime: $dataEndTime);
 
-            $sellerConnector = (new AmazonSpApiService())->getSellerConnector();
+            $sellerConnector = (new AmazonSpApiService)->getSellerConnector();
             $reportsApi = $sellerConnector->reportsV20210630();
 
             $response = $reportsApi->createReport($specification);
@@ -39,7 +37,7 @@ class AmzReportController extends Controller
 
             if ($createReportResponse->reportId) {
                 $reportId = $createReportResponse->reportId;
-                $file_name = $reportType . '_' . $reportId . '.txt';
+                $file_name = $reportType.'_'.$reportId.'.txt';
 
                 AmzRequestedReport::create([
                     'report_id' => $reportId,
@@ -62,7 +60,7 @@ class AmzReportController extends Controller
 
             if ($reports->count()) {
                 foreach ($reports as $report) {
-                    $sellerConnector = (new AmazonSpApiService())->getSellerConnector();
+                    $sellerConnector = (new AmazonSpApiService)->getSellerConnector();
                     $reportsApi = $sellerConnector->reportsV20210630();
                     Log::info("Downloading $report->report_type report.");
 
@@ -109,10 +107,12 @@ class AmzReportController extends Controller
     {
         if (request()->ajax()) {
             $reports = AmzRequestedReport::with('marketplace');
+
             return datatables()->of($reports)
                 ->addColumn('download', function ($report) {
                     $link = route('amazon.report.download', ['id' => $report->id, 'type' => 'feed']);
-                    return '<a href="' . $link . '">Download</a>';
+
+                    return '<a href="'.$link.'">Download</a>';
                 })
                 ->editColumn('created_at', function ($report) {
                     return $report->created_at->format('Y-m-d H:i:s');
@@ -123,9 +123,9 @@ class AmzReportController extends Controller
                 ->rawColumns(['download'])
                 ->toJson();
         }
+
         return view('amazon.reports');
     }
-
 
     public function downloadReport(Req $request)
     {
@@ -133,11 +133,11 @@ class AmzReportController extends Controller
             $report = AmzRequestedReport::where('id', $request->id)->first();
 
             if ($report) {
-                if (!Storage::disk('local')->exists($report->file_name)) {
+                if (! Storage::disk('local')->exists($report->file_name)) {
                     return 'Report not found!';
                 }
 
-                return response()->download(storage_path('/app/' . $report->file_name));
+                return response()->download(storage_path('/app/'.$report->file_name));
             } else {
                 return 'Report not found!';
             }

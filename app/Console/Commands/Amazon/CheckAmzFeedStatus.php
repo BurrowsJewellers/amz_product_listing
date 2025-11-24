@@ -6,7 +6,6 @@ use App\Http\Controllers\AmzFeedController;
 use App\Http\Controllers\SyncJobController;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 
 class CheckAmzFeedStatus extends Command
 {
@@ -34,18 +33,18 @@ class CheckAmzFeedStatus extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
+        if (! $job->isRunning()) {
             Log::info("$marketplace $jobType started!");
             $job->update(['status' => 1]);
 
             try {
-                $feedController = new AmzFeedController();
+                $feedController = new AmzFeedController;
                 $feedController->checkFeedStatus();
                 $feedController->updateMessage();
                 $job->update(['status' => 0, 'message' => null]);
             } catch (\Exception $e) {
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
-                Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
+                Log::error('Error : '.$e->getFile().' : '.$e->getMessage().' Line : '.$e->getLine());
             }
             Log::info("$marketplace $jobType finished!");
         } else {

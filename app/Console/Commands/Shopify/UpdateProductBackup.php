@@ -2,14 +2,14 @@
 
 namespace App\Console\Commands\Shopify;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\SyncJobController;
 use App\Models\Brand;
 use App\Models\RetailEdgeProduct;
 use App\Models\RetailEdgeProductIsd;
 use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyService;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 use Shopify\Rest\Admin2025_04\Product;
 
 class UpdateProductBackup extends Command
@@ -38,7 +38,7 @@ class UpdateProductBackup extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
+        if (! $job->isRunning()) {
             try {
                 Log::info("$marketplace $jobType started!");
                 // $job->update(['status' => 1]);
@@ -59,15 +59,14 @@ class UpdateProductBackup extends Command
                 $variants = ShopifyProductVariant::withWhereHas('retailEdgeProduct')->with('product')->whereIn('sku', $skus)->select('id', 'shopify_product_id', 'product_id', 'sku')->get();
 
                 foreach ($variants as $variant) {
-                    $this->info('Updating: ' . $variant->sku);
+                    $this->info('Updating: '.$variant->sku);
                     $productTags = $this->calculateTags($variant->retailEdgeProduct, $variant->product->tags);
 
                     if ($variant->retailEdgeProduct->brand?->name == 'Pandora') {
                         $productTags[] = 'Pandora';
                     }
 
-                    $tags = implode(",", $productTags);
-
+                    $tags = implode(',', $productTags);
 
                     // Fetch and add ISDs as metafields
                     $isds = RetailEdgeProductIsd::where('sku', $variant->sku)->get();
@@ -81,17 +80,16 @@ class UpdateProductBackup extends Command
                             $key = trim($key);                             // Trim leading/trailing spaces
                             $metafieldKey = str_replace(' ', '_', $key);   // Replace spaces with underscores
 
-                            if (!empty($metafieldKey) && !empty($isd->isd_value)) {
+                            if (! empty($metafieldKey) && ! empty($isd->isd_value)) {
                                 $metafields[] = [
                                     'key' => $metafieldKey,
                                     'value' => $isd->isd_value,
                                     'type' => 'single_line_text_field',
-                                    'namespace' => 'retail_edge_isd'
+                                    'namespace' => 'retail_edge_isd',
                                 ];
                             }
                         }
                     }
-
 
                     try {
                         $product = new Product($session);
@@ -127,7 +125,7 @@ class UpdateProductBackup extends Command
         }
     }
 
-    private function calculateTags(RetailEdgeProduct $product, string|array $existingTags = null): array
+    private function calculateTags(RetailEdgeProduct $product, string|array|null $existingTags = null): array
     {
         $tags = $this->normalizeExistingTags($existingTags);
 
@@ -152,7 +150,8 @@ class UpdateProductBackup extends Command
             return [];
         }
 
-        $tags = is_array($existingTags) ? $existingTags : explode(",", $existingTags);
+        $tags = is_array($existingTags) ? $existingTags : explode(',', $existingTags);
+
         return array_map('trim', $tags);
     }
 
@@ -160,8 +159,8 @@ class UpdateProductBackup extends Command
     {
         $propertyValue = $product->{$propertyName} ?? '';
         if ($propertyValue !== '' && $propertyValue !== 'N/A') {
-            foreach (explode(",", $propertyValue) as $tagValue) {
-                $tags[] = trim($tagPrefix) . "_" . trim($tagValue);
+            foreach (explode(',', $propertyValue) as $tagValue) {
+                $tags[] = trim($tagPrefix).'_'.trim($tagValue);
             }
         }
     }

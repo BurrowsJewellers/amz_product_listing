@@ -2,17 +2,17 @@
 
 namespace App\Console\Commands\Shopify;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\SyncJobController;
+use App\Models\PriceInventoryLog;
+use App\Models\ShopifyLocation;
+use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyService;
-use Shopify\Rest\Admin2025_04\Variant;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log; // Renamed to avoid conflict with Model
 use Shopify\Rest\Admin2025_04\InventoryLevel;
-use Shopify\Rest\Admin2025_04\Product as ShopifyProductAPI; // Renamed to avoid conflict with Model
-use App\Models\ShopifyLocation;
-use App\Models\ShopifyProduct; // Eloquent Model
-use App\Models\PriceInventoryLog;
+use Shopify\Rest\Admin2025_04\Product as ShopifyProductAPI; // Eloquent Model
+use Shopify\Rest\Admin2025_04\Variant;
 
 class UpdatePriceAndInventory extends Command
 {
@@ -47,7 +47,7 @@ class UpdatePriceAndInventory extends Command
             $session = (new ShopifyService)->getSession();
             $location = ShopifyLocation::first();
 
-            if (!$location) {
+            if (! $location) {
                 Log::error("$marketplace $jobType failed: No Shopify location found for inventory updates.");
                 PriceInventoryLog::create([
                     'marketplace' => $marketplace,
@@ -58,11 +58,12 @@ class UpdatePriceAndInventory extends Command
                     'message' => 'No Shopify location found for inventory updates. Command halted.',
                 ]);
                 $job->update(['status' => 0, 'message' => 'No Shopify location found for inventory updates. Price updates might have been attempted.']);
+
                 return;
             }
 
             // --- Price Update Logic ---
-            $this->info("Starting Price Updates...");
+            $this->info('Starting Price Updates...');
             $priceUpdateCount = ShopifyProductVariant::whereNotNull('variant_id')->where('price_requires_update', 1)->count();
             $this->info("Products requiring price update: {$priceUpdateCount}");
 
@@ -73,18 +74,18 @@ class UpdatePriceAndInventory extends Command
                     ->first();
 
                 if ($variantForPrice) {
-                    if (!$variantForPrice->retailEdgeProduct) {
+                    if (! $variantForPrice->retailEdgeProduct) {
                         $skuValue = $variantForPrice->sku ?: '[EMPTY SKU]';
                         Log::warning("Missing RetailEdgeProduct for price update on SKU: {$skuValue} (Variant ID: {$variantForPrice->id})");
                         PriceInventoryLog::create([
                             'marketplace' => $marketplace,
-                            'item_identifier' => $skuValue ?? (string)$variantForPrice->variant_id,
+                            'item_identifier' => $skuValue ?? (string) $variantForPrice->variant_id,
                             'change_type' => 'price',
                             'from_value' => $variantForPrice->price,
                             'to_value' => null,
                             'status' => 'failed',
                             'job_name' => $this->signature,
-                            'message' => "Missing RetailEdgeProduct. Price update skipped.",
+                            'message' => 'Missing RetailEdgeProduct. Price update skipped.',
                         ]);
                         $variantForPrice->update(['price_requires_update' => 2]);
                         $this->info("Marked variant {$skuValue} (ID: {$variantForPrice->id}) for review due to missing RetailEdgeProduct.");
@@ -93,6 +94,7 @@ class UpdatePriceAndInventory extends Command
                         if ($priceUpdateCount > 0) {
                             $this->info("Remaining products for price update: {$priceUpdateCount}");
                         }
+
                         continue;
                     }
 
@@ -119,7 +121,7 @@ class UpdatePriceAndInventory extends Command
 
                         PriceInventoryLog::create([
                             'marketplace' => $marketplace,
-                            'item_identifier' => $variantForPrice->sku ?? (string)$variantForPrice->variant_id,
+                            'item_identifier' => $variantForPrice->sku ?? (string) $variantForPrice->variant_id,
                             'change_type' => 'price',
                             'from_value' => $originalPrice,
                             'to_value' => $newPrice,
@@ -131,7 +133,7 @@ class UpdatePriceAndInventory extends Command
                         if ($compareAtPriceIsSetForApi) {
                             PriceInventoryLog::create([
                                 'marketplace' => $marketplace,
-                                'item_identifier' => $variantForPrice->sku ?? (string)$variantForPrice->variant_id,
+                                'item_identifier' => $variantForPrice->sku ?? (string) $variantForPrice->variant_id,
                                 'change_type' => 'compare_at_price',
                                 'from_value' => $originalCompareAtPrice,
                                 'to_value' => $newCompareAtPrice,
@@ -145,32 +147,32 @@ class UpdatePriceAndInventory extends Command
                         $variantForPrice->update([
                             'price' => $newPrice,
                             'compare_at_price' => $newCompareAtPrice,
-                            'price_requires_update' => 0
+                            'price_requires_update' => 0,
                         ]);
                     } catch (\Exception $e) {
                         Log::error("Error updating price for SKU {$variantForPrice->sku} (Variant ID: {$variantForPrice->variant_id}). Error: {$e->getMessage()}");
                         PriceInventoryLog::create([
                             'marketplace' => $marketplace,
-                            'item_identifier' => $variantForPrice->sku ?? (string)$variantForPrice->variant_id,
+                            'item_identifier' => $variantForPrice->sku ?? (string) $variantForPrice->variant_id,
                             'change_type' => 'price',
                             'from_value' => $originalPrice,
                             'to_value' => $newPrice,
                             'status' => 'failed',
                             'job_name' => $this->signature,
-                            'message' => "API Error: " . $e->getMessage(),
+                            'message' => 'API Error: '.$e->getMessage(),
                         ]);
 
                         $attemptedCompareAtPriceUpdateInPayload = (isset($newCompareAtPrice) && ($newCompareAtPrice !== $newPrice || $newCompareAtPrice === null));
                         if ($attemptedCompareAtPriceUpdateInPayload) {
                             PriceInventoryLog::create([
                                 'marketplace' => $marketplace,
-                                'item_identifier' => $variantForPrice->sku ?? (string)$variantForPrice->variant_id,
+                                'item_identifier' => $variantForPrice->sku ?? (string) $variantForPrice->variant_id,
                                 'change_type' => 'compare_at_price',
                                 'from_value' => $originalCompareAtPrice,
                                 'to_value' => $newCompareAtPrice,
                                 'status' => 'failed',
                                 'job_name' => $this->signature,
-                                'message' => "API Error (attempting compare_at_price): " . $e->getMessage(),
+                                'message' => 'API Error (attempting compare_at_price): '.$e->getMessage(),
                             ]);
                         }
                         $variantForPrice->update(['price_requires_update' => 2]);
@@ -182,12 +184,12 @@ class UpdatePriceAndInventory extends Command
                     $this->info("Remaining products for price update: {$priceUpdateCount}");
                 }
             }
-            $this->info("Price updates completed.");
+            $this->info('Price updates completed.');
 
-            $this->info("Starting Inventory Updates...");
+            $this->info('Starting Inventory Updates...');
             $this->processRegularInventoryUpdates($location, $session, $marketplace);
             $this->processFailedInventoryUpdates($location, $session, $marketplace);
-            $this->info("Inventory updates completed.");
+            $this->info('Inventory updates completed.');
 
             $job->update(['status' => 0, 'message' => null]);
             Log::info("$marketplace $jobType finished successfully!");
@@ -195,13 +197,13 @@ class UpdatePriceAndInventory extends Command
             $job->update(['status' => 0, 'message' => $e->getMessage()]);
             report($e);
             Log::error("$marketplace $jobType failed. Error: {$e->getMessage()}");
-            $this->error("Command failed: " . $e->getMessage());
+            $this->error('Command failed: '.$e->getMessage());
         }
     }
 
     private function processRegularInventoryUpdates($location, $session, $marketplace)
     {
-        $this->info("Processing regular inventory updates...");
+        $this->info('Processing regular inventory updates...');
         $inventoryUpdateCount = ShopifyProductVariant::whereNotNull('inventory_item_id')->where('inventory_requires_update', 1)->count();
         $this->info("Products requiring inventory update: {$inventoryUpdateCount}");
 
@@ -212,18 +214,18 @@ class UpdatePriceAndInventory extends Command
                 ->first();
 
             if ($variantForInventory) {
-                if (!$variantForInventory->retailEdgeProduct) {
+                if (! $variantForInventory->retailEdgeProduct) {
                     $skuValue = $variantForInventory->sku ?: '[EMPTY SKU]';
                     Log::warning("Missing RetailEdgeProduct for inventory update on SKU: {$skuValue} (Variant ID: {$variantForInventory->id})");
                     PriceInventoryLog::create([
                         'marketplace' => $marketplace,
-                        'item_identifier' => $skuValue ?? (string)$variantForInventory->inventory_item_id,
+                        'item_identifier' => $skuValue ?? (string) $variantForInventory->inventory_item_id,
                         'change_type' => 'inventory',
                         'from_value' => $variantForInventory->inventory_quantity,
                         'to_value' => null,
                         'status' => 'failed',
                         'job_name' => $this->signature,
-                        'message' => "Missing RetailEdgeProduct. Inventory update skipped.",
+                        'message' => 'Missing RetailEdgeProduct. Inventory update skipped.',
                     ]);
                     $variantForInventory->update(['inventory_requires_update' => 2]);
                     $this->info("Marked variant {$skuValue} (ID: {$variantForInventory->id}) for review due to missing RetailEdgeProduct.");
@@ -237,13 +239,13 @@ class UpdatePriceAndInventory extends Command
                             [
                                 'location_id' => $location->location_id,
                                 'inventory_item_id' => $variantForInventory->inventory_item_id,
-                                'available' => $targetInventory
+                                'available' => $targetInventory,
                             ]
                         );
 
                         PriceInventoryLog::create([
                             'marketplace' => $marketplace,
-                            'item_identifier' => $variantForInventory->sku ?? (string)$variantForInventory->inventory_item_id,
+                            'item_identifier' => $variantForInventory->sku ?? (string) $variantForInventory->inventory_item_id,
                             'change_type' => 'inventory',
                             'from_value' => $originalInventory,
                             'to_value' => $targetInventory,
@@ -254,7 +256,7 @@ class UpdatePriceAndInventory extends Command
 
                         $variantForInventory->update([
                             'inventory_quantity' => $targetInventory,
-                            'inventory_requires_update' => 0
+                            'inventory_requires_update' => 0,
                         ]);
                         $skuValue = $variantForInventory->sku ?: '[EMPTY SKU]';
                         $this->info("Inventory updated for SKU {$skuValue}, variant id {$variantForInventory->variant_id}");
@@ -279,13 +281,13 @@ class UpdatePriceAndInventory extends Command
                     } catch (\Exception $e) {
                         PriceInventoryLog::create([
                             'marketplace' => $marketplace,
-                            'item_identifier' => $variantForInventory->sku ?? (string)$variantForInventory->inventory_item_id,
+                            'item_identifier' => $variantForInventory->sku ?? (string) $variantForInventory->inventory_item_id,
                             'change_type' => 'inventory',
                             'from_value' => $originalInventory,
                             'to_value' => $targetInventory,
                             'status' => 'failed',
                             'job_name' => $this->signature,
-                            'message' => "API Error: " . $e->getMessage(),
+                            'message' => 'API Error: '.$e->getMessage(),
                         ]);
                         $variantForInventory->update(['inventory_requires_update' => 2]);
                         $skuValue = $variantForInventory->sku ?: '[EMPTY SKU]';
@@ -300,12 +302,12 @@ class UpdatePriceAndInventory extends Command
                 $this->info("Remaining products for inventory update: {$inventoryUpdateCount}");
             }
         }
-        $this->info("Regular inventory updates completed.");
+        $this->info('Regular inventory updates completed.');
     }
 
     private function processFailedInventoryUpdates($location, $session, $marketplace)
     {
-        $this->info("Processing failed inventory updates...");
+        $this->info('Processing failed inventory updates...');
         $failedInventoryCount = ShopifyProductVariant::whereNotNull('inventory_item_id')->where('inventory_requires_update', 2)->count();
 
         if ($failedInventoryCount > 0) {
@@ -322,19 +324,20 @@ class UpdatePriceAndInventory extends Command
                 }
 
                 foreach ($failedVariants as $variantForInventory) {
-                    if (!$variantForInventory->retailEdgeProduct) {
+                    if (! $variantForInventory->retailEdgeProduct) {
                         $skuValue = $variantForInventory->sku ?: '[EMPTY SKU]';
                         Log::warning("Still missing RetailEdgeProduct for failed inventory update on SKU: {$skuValue} (Variant ID: {$variantForInventory->id})");
                         PriceInventoryLog::create([
                             'marketplace' => $marketplace,
-                            'item_identifier' => $skuValue ?? (string)$variantForInventory->inventory_item_id,
+                            'item_identifier' => $skuValue ?? (string) $variantForInventory->inventory_item_id,
                             'change_type' => 'inventory_retry',
                             'from_value' => $variantForInventory->inventory_quantity,
                             'to_value' => null,
                             'status' => 'failed',
                             'job_name' => $this->signature,
-                            'message' => "Retry skipped: Still missing RetailEdgeProduct.",
+                            'message' => 'Retry skipped: Still missing RetailEdgeProduct.',
                         ]);
+
                         continue;
                     }
                     $originalInventoryRetry = $variantForInventory->inventory_quantity;
@@ -346,12 +349,12 @@ class UpdatePriceAndInventory extends Command
                             [
                                 'location_id' => $location->location_id,
                                 'inventory_item_id' => $variantForInventory->inventory_item_id,
-                                'available' => $targetInventoryRetry
+                                'available' => $targetInventoryRetry,
                             ]
                         );
                         PriceInventoryLog::create([
                             'marketplace' => $marketplace,
-                            'item_identifier' => $variantForInventory->sku ?? (string)$variantForInventory->inventory_item_id,
+                            'item_identifier' => $variantForInventory->sku ?? (string) $variantForInventory->inventory_item_id,
                             'change_type' => 'inventory_retry',
                             'from_value' => $originalInventoryRetry,
                             'to_value' => $targetInventoryRetry,
@@ -362,7 +365,7 @@ class UpdatePriceAndInventory extends Command
 
                         $variantForInventory->update([
                             'inventory_quantity' => $targetInventoryRetry,
-                            'inventory_requires_update' => 0
+                            'inventory_requires_update' => 0,
                         ]);
                         $skuValue = $variantForInventory->sku ?: '[EMPTY SKU]';
                         $this->info("Retry successful: Inventory updated for SKU {$skuValue} (Variant ID: {$variantForInventory->variant_id})");
@@ -387,13 +390,13 @@ class UpdatePriceAndInventory extends Command
                     } catch (\Exception $e) {
                         PriceInventoryLog::create([
                             'marketplace' => $marketplace,
-                            'item_identifier' => $variantForInventory->sku ?? (string)$variantForInventory->inventory_item_id,
+                            'item_identifier' => $variantForInventory->sku ?? (string) $variantForInventory->inventory_item_id,
                             'change_type' => 'inventory_retry',
                             'from_value' => $originalInventoryRetry,
                             'to_value' => $targetInventoryRetry,
                             'status' => 'failed',
                             'job_name' => $this->signature,
-                            'message' => "API Error on retry: " . $e->getMessage(),
+                            'message' => 'API Error on retry: '.$e->getMessage(),
                         ]);
                         $skuValue = $variantForInventory->sku ?: '[EMPTY SKU]';
                         Log::error("Retry failed for inventory update on SKU {$skuValue} (Variant ID: {$variantForInventory->id}). Error: {$e->getMessage()}");
@@ -408,8 +411,8 @@ class UpdatePriceAndInventory extends Command
                 }
             }
         } else {
-            $this->info("No failed inventory updates to process.");
+            $this->info('No failed inventory updates to process.');
         }
-        $this->info("Failed inventory updates processing completed.");
+        $this->info('Failed inventory updates processing completed.');
     }
 }

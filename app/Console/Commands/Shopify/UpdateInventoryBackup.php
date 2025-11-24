@@ -2,27 +2,29 @@
 
 namespace App\Console\Commands\Shopify;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\SyncJobController;
 use App\Models\ShopifyLocation;
 use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyService;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 use Shopify\Clients\Graphql;
 
 class UpdateInventoryBackup extends Command
 {
     protected $signature = 'shopifyUpdateInventoryBackup';
+
     protected $description = 'Update Shopify inventory using GraphQL';
 
     private $client;
+
     private $shopifyService;
 
     public function __construct()
     {
         parent::__construct();
-        $this->shopifyService = new ShopifyService();
+        $this->shopifyService = new ShopifyService;
     }
 
     private function checkResponseForErrors($response)
@@ -37,7 +39,7 @@ class UpdateInventoryBackup extends Command
         // Check for user errors in the mutation response
         if (
             isset($responseBody['data']['inventorySetQuantities']['userErrors'])
-            && !empty($responseBody['data']['inventorySetQuantities']['userErrors'])
+            && ! empty($responseBody['data']['inventorySetQuantities']['userErrors'])
         ) {
             throw new \Exception(json_encode($responseBody['data']['inventorySetQuantities']['userErrors']));
         }
@@ -76,15 +78,15 @@ class UpdateInventoryBackup extends Command
                         'inventoryItemId' => "gid://shopify/InventoryItem/{$inventoryItemId}",
                         'locationId' => "gid://shopify/Location/{$locationId}",
                         'quantity' => $newQuantity,
-                        'compareQuantity' => $currentQuantity
-                    ]
-                ]
-            ]
+                        'compareQuantity' => $currentQuantity,
+                    ],
+                ],
+            ],
         ];
 
         $response = $this->client->query([
             'query' => $mutation,
-            'variables' => $variables
+            'variables' => $variables,
         ]);
 
         return $this->checkResponseForErrors($response);
@@ -110,11 +112,12 @@ class UpdateInventoryBackup extends Command
         $variables = [
             'input' => [
                 'id' => "gid://shopify/Product/{$productId}",
-                'status' => strtoupper($status)
-            ]
+                'status' => strtoupper($status),
+            ],
         ];
 
         $response = $this->client->query(['query' => $mutation, 'variables' => $variables]);
+
         return $this->checkResponseForErrors($response);
     }
 
@@ -125,7 +128,7 @@ class UpdateInventoryBackup extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
+        if (! $job->isRunning()) {
             try {
                 Log::info("$marketplace $jobType started!");
                 $job->update(['status' => 1]);
@@ -161,7 +164,7 @@ class UpdateInventoryBackup extends Command
 
                             $variant->update([
                                 'inventory_quantity' => $newQuantity,
-                                'inventory_requires_update' => 0
+                                'inventory_requires_update' => 0,
                             ]);
 
                             $this->info("Inventory updated for sku {$variant->sku}, variant id {$variant->variant_id}");
@@ -178,7 +181,7 @@ class UpdateInventoryBackup extends Command
                                     ShopifyProduct::where('id', $variant->product->id)
                                         ->update(['status' => $status]);
 
-                                    $msg = $variant->product->title . ' marked as ' . $status;
+                                    $msg = $variant->product->title.' marked as '.$status;
                                     $this->info($msg);
                                     Log::debug($msg);
                                 } catch (\Exception $e) {

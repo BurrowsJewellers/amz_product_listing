@@ -2,27 +2,27 @@
 
 namespace App\Console\Commands\Amazon;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
-use App\Http\Controllers\SyncJobController;
 use App\Http\Controllers\EWebController;
+use App\Http\Controllers\SyncJobController;
 use App\Models\Brand;
 use App\Models\Category;
 use App\Models\EWebShortCode;
 use App\Models\Marketplace;
-use App\Models\ProductFieldValue;
 use App\Models\Product;
+use App\Models\ProductFieldValue;
 use App\Models\ProductImage;
 use App\Services\RetailEdgeService;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class GetProductsFromEWeb extends Command
 {
-
     private array $brandsArray = [];
-    private ?Category $category = null;
-    private ?Marketplace $marketplace = null;
 
+    private ?Category $category = null;
+
+    private ?Marketplace $marketplace = null;
 
     /**
      * The name and signature of the console command.
@@ -85,13 +85,13 @@ class GetProductsFromEWeb extends Command
         $this->marketplace = Marketplace::where('name', 'Amazon')->firstOrFail();
         $this->category = Category::where([
             'name' => 'Jewelry',
-            'marketplace_id' => $this->marketplace->id
+            'marketplace_id' => $this->marketplace->id,
         ])->with('fields')->firstOrFail();
 
         Brand::all()->each(function ($brand) {
             $this->brandsArray[$brand->brand_id] = [
                 'id' => $brand->id,
-                'name' => $brand->name
+                'name' => $brand->name,
             ];
         });
     }
@@ -103,22 +103,24 @@ class GetProductsFromEWeb extends Command
             return null;
         }
 
-        $sku = $skuParts[1] . "-" . $skuParts[2];
+        $sku = $skuParts[1].'-'.$skuParts[2];
         $this->info("Processing SKU: $sku");
 
         if ($item->WebOptionBoolean7 !== true) {
             $webOptionBoolean7FalseSkus[] = $sku;
+
             return $sku;
         }
 
-        if (!$this->validateItem($item)) {
+        if (! $this->validateItem($item)) {
             return $sku;
         }
 
         $productType = $this->getProductType($item);
 
-        if (!$productType || !$productType->code) {
+        if (! $productType || ! $productType->code) {
             Log::info("Invalid product type or code for SKU: $sku");
+
             return $sku;
         }
 
@@ -135,12 +137,14 @@ class GetProductsFromEWeb extends Command
     {
         if (empty(trim($item->ID1))) {
             $this->info('ID1 field is empty.');
+
             return false;
         }
 
-        $eWebCodes = explode(" ", $item->ID1);
-        if (!isset($eWebCodes[1])) {
+        $eWebCodes = explode(' ', $item->ID1);
+        if (! isset($eWebCodes[1])) {
             $this->info('Short code for Amazon not found.');
+
             return false;
         }
 
@@ -149,22 +153,24 @@ class GetProductsFromEWeb extends Command
 
     private function getProductType($item): ?object
     {
-        $eWebCodes = explode(" ", $item->ID1);
+        $eWebCodes = explode(' ', $item->ID1);
         $eWebCode = $eWebCodes[1];
 
         $shortCode = EWebShortCode::where('code', $eWebCode)
             ->with('productType.fields')
             ->first();
 
-        if (!$shortCode) {
+        if (! $shortCode) {
             $msg1 = "Short code {$eWebCode} not found in EWebShortCode for {$item->SKU}";
             $this->info($msg1);
             Log::info($msg1);
+
             return null;
         }
 
         $productType = $shortCode->productType;
         $productType->code = $eWebCode;
+
         return $shortCode->productType;
     }
 
@@ -186,7 +192,7 @@ class GetProductsFromEWeb extends Command
             'retail_price' => number_format($item->RetailPrice, 2, '.', ''),
             'retail_price2' => number_format($item->RetailPrice2, 2, '.', ''),
             'real_design_number' => $item->RealDesignNum,
-            'e_web_code' => $productType->code
+            'e_web_code' => $productType->code,
         ];
 
         $this->addBarcodeData($productData, $item);
@@ -210,9 +216,9 @@ class GetProductsFromEWeb extends Command
 
     private function getDepartmentName(object $productType): string
     {
-        if (!$productType || !$productType->code || strlen($productType->code) < 2) {
+        if (! $productType || ! $productType->code || strlen($productType->code) < 2) {
             // return 'Womens';  // or whatever default makes sense
-            throw new \Exception("Invalid product type or code");
+            throw new \Exception('Invalid product type or code');
         }
 
         return $productType->code[1] == 'W' ? 'Womens' : 'Mens';
@@ -220,8 +226,9 @@ class GetProductsFromEWeb extends Command
 
     private function getCountryOfOrigin(string $brandId): string
     {
-        if (!isset($this->brandsArray[$brandId])) {
+        if (! isset($this->brandsArray[$brandId])) {
             Log::error("Brand id: $brandId not found in brandsArray.");
+
             return 'AU';
         }
 
@@ -270,6 +277,7 @@ class GetProductsFromEWeb extends Command
                 ];
             }
         }
+
         return $values;
     }
 
@@ -291,13 +299,14 @@ class GetProductsFromEWeb extends Command
                 ];
             }
         }
+
         return $values;
     }
 
     private function prepareProductImages($item): array
     {
         $images = [];
-        if (!isset($item->Images->ItemImage) || empty($item->Images->ItemImage)) {
+        if (! isset($item->Images->ItemImage) || empty($item->Images->ItemImage)) {
             return $images;
         }
 
@@ -359,7 +368,7 @@ class GetProductsFromEWeb extends Command
             Log::debug("{$product->sku} retail_price or retail_price2 changed.");
         }
 
-        if (!empty($updates)) {
+        if (! empty($updates)) {
             $product->update($updates);
         }
     }
@@ -388,7 +397,7 @@ class GetProductsFromEWeb extends Command
             ProductImage::updateOrCreate(
                 [
                     'product_id' => $product->id,
-                    'e_web_index' => $image['e_web_index']
+                    'e_web_index' => $image['e_web_index'],
                 ],
                 [
                     'width' => $image['width'],
@@ -409,7 +418,7 @@ class GetProductsFromEWeb extends Command
             ->where('quantity', '>', 0)
             ->update([
                 'quantity' => 0,
-                'inventory_feed_status' => 0
+                'inventory_feed_status' => 0,
             ]);
     }
 
@@ -437,7 +446,7 @@ class GetProductsFromEWeb extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
+        if (! $job->isRunning()) {
             Log::info("$marketplace $jobType started!");
             $job->update(['status' => 1]);
 
@@ -463,29 +472,32 @@ class GetProductsFromEWeb extends Command
                 foreach ($activeItems as $item) {
                     try {
                         $skuParts = explode('-', $item->SKU);
-                        if (!count($skuParts) === 3) {
+                        if (! count($skuParts) === 3) {
                             continue;
                         }
 
-                        $sku = $skuParts[1] . "-" . $skuParts[2];
+                        $sku = $skuParts[1].'-'.$skuParts[2];
 
-                        $this->info('Retail Edge SKU ' . $item->SKU);
-                        $this->info('Formatted SKU ' . $sku);
+                        $this->info('Retail Edge SKU '.$item->SKU);
+                        $this->info('Formatted SKU '.$sku);
 
                         if ($item->WebOptionBoolean7 !== true) {
                             $webOptionBoolean7FalseSkuArray[] = $sku;
+
                             continue;
                         }
 
                         if (trim($item->ID1) == '') {
                             $this->info('ID1 field is empty.');
+
                             continue;
                         }
 
-                        $eWebCodes = explode(" ", $item->ID1);
+                        $eWebCodes = explode(' ', $item->ID1);
 
-                        if (!isset($eWebCodes[1])) {
+                        if (! isset($eWebCodes[1])) {
                             $this->info('Short code for Amazon not found.');
+
                             continue;
                         }
 
@@ -493,8 +505,9 @@ class GetProductsFromEWeb extends Command
 
                         $shortCode = EWebShortCode::where('code', $eWebCode)->with('productType.fields')->first();
 
-                        if (!$shortCode) {
+                        if (! $shortCode) {
                             $this->info('Short code not found in EWebShortCode.');
+
                             continue;
                         }
 
@@ -625,7 +638,7 @@ class GetProductsFromEWeb extends Command
                         $productImages = [];
 
                         // Log::debug(print_r($item->Images, true));
-                        if (isset($item->Images) && isset($item->Images->ItemImage) && !empty($item->Images->ItemImage)) {
+                        if (isset($item->Images) && isset($item->Images->ItemImage) && ! empty($item->Images->ItemImage)) {
                             if (is_object($item->Images->ItemImage)) {
                                 $productImages[] = [
                                     'e_web_index' => $item->Images->ItemImage->Index,
@@ -666,12 +679,12 @@ class GetProductsFromEWeb extends Command
                                 Log::debug("$product->sku retail_price or retail_price2 changed.");
                             }
 
-                            if (!empty($newData)) {
+                            if (! empty($newData)) {
                                 $product->update($newData);
                                 $product = $product->refresh();
                             }
 
-                            if (!empty($merged)) {
+                            if (! empty($merged)) {
                                 foreach ($merged as $value) {
                                     ProductFieldValue::updateOrCreate(
                                         [
@@ -688,12 +701,12 @@ class GetProductsFromEWeb extends Command
                                 }
                             }
 
-                            if (!empty($productImages)) {
+                            if (! empty($productImages)) {
                                 foreach ($productImages as $productImage) {
                                     ProductImage::updateOrCreate(
                                         [
                                             'product_id' => $product->id,
-                                            'e_web_index' => $productImage['e_web_index']
+                                            'e_web_index' => $productImage['e_web_index'],
                                         ],
                                         [
                                             'width' => $productImage['width'],
@@ -710,17 +723,17 @@ class GetProductsFromEWeb extends Command
                             DB::rollBack();
                         }
                     } catch (\Exception $e) {
-                        Log::error("SKU : $sku Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
+                        Log::error("SKU : $sku Error : ".$e->getFile().' : '.$e->getMessage().' Line : '.$e->getLine());
                     }
                 }
 
-                if (!empty($webOptionBoolean7FalseSkuArray)) {
+                if (! empty($webOptionBoolean7FalseSkuArray)) {
                     foreach ($webOptionBoolean7FalseSkuArray as $sku) {
                         if ($product = Product::where('sku', $sku)->first()) {
                             if ($product->quantity > 0) {
                                 $product->update([
                                     'quantity' => 0,
-                                    'inventory_feed_status' => 0
+                                    'inventory_feed_status' => 0,
                                 ]);
                             }
                         }
@@ -730,7 +743,7 @@ class GetProductsFromEWeb extends Command
                 $job->update(['status' => 0, 'message' => null]);
             } catch (\Exception $e) {
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
-                Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
+                Log::error('Error : '.$e->getFile().' : '.$e->getMessage().' Line : '.$e->getLine());
             }
             Log::info("$marketplace $jobType finished!");
         } else {

@@ -3,28 +3,27 @@
 namespace App\Services;
 
 use App\Models\RetailEdgeProduct;
-use Illuminate\Support\Facades\DB;
-use Carbon\Carbon;
 use App\Models\ShopifyInventoryLevel;
 use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Shopify\Rest\Admin2025_04\Image;
 
 class ShopifyService extends ShopifyConnectionService
 {
-
     public function saveProductToDb($productData)
     {
         try {
             DB::beginTransaction();
-            Log::info("ShopifyService: Starting saveProductToDb transaction for product ID: " . ($productData['id'] ?? 'unknown'));
+            Log::info('ShopifyService: Starting saveProductToDb transaction for product ID: '.($productData['id'] ?? 'unknown'));
             foreach ($productData['variants'] as $variant) {
                 if ($shopifyProductVariant = ShopifyProductVariant::where('variant_id', $variant['id'])->first()) {
 
                     $shopifyProduct = ShopifyProduct::updateOrCreate(
                         [
-                            'product_id' => $productData['id']
+                            'product_id' => $productData['id'],
                         ],
                         [
                             'title' => $productData['title'],
@@ -63,7 +62,7 @@ class ShopifyService extends ShopifyConnectionService
                 } else {
                     $shopifyProduct = ShopifyProduct::updateOrCreate(
                         [
-                            'product_id' => $productData['id']
+                            'product_id' => $productData['id'],
                         ],
                         [
                             'title' => $productData['title'],
@@ -120,7 +119,7 @@ class ShopifyService extends ShopifyConnectionService
                             Log::warning("ShopifyService: Found product with different case - DB SKU: {$caseInsensitiveProduct->sku}, Shopify SKU: {$shopifyProductVariant->sku}");
                         }
                     }
-                    
+
                     $updatedCount = RetailEdgeProduct::where('sku', $shopifyProductVariant->sku)->update(['uploaded_to_shopify' => 1]);
                     if ($updatedCount > 0) {
                         Log::info("ShopifyService: Marked {$updatedCount} RetailEdgeProduct(s) as uploaded_to_shopify for SKU: {$shopifyProductVariant->sku}");
@@ -131,10 +130,10 @@ class ShopifyService extends ShopifyConnectionService
             }
 
             DB::commit();
-            Log::info("ShopifyService: Transaction committed successfully for saveProductToDb");
+            Log::info('ShopifyService: Transaction committed successfully for saveProductToDb');
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error("ShopifyService: Transaction rolled back in saveProductToDb: " . $e->getMessage());
+            Log::error('ShopifyService: Transaction rolled back in saveProductToDb: '.$e->getMessage());
             throw $e;
         }
     }
@@ -222,7 +221,7 @@ class ShopifyService extends ShopifyConnectionService
                     } else {
                         Log::warning("ShopifyService (NewVersion): No RetailEdgeProduct found for SKU: {$shopifyProductVariant->sku}");
                     }
-                    
+
                     $updatedCount = RetailEdgeProduct::where('sku', $shopifyProductVariant->sku)->update(['uploaded_to_shopify' => 1]);
                     if ($updatedCount > 0) {
                         Log::info("ShopifyService (NewVersion): Marked {$updatedCount} RetailEdgeProduct(s) as uploaded_to_shopify for SKU: {$shopifyProductVariant->sku}");
@@ -233,10 +232,10 @@ class ShopifyService extends ShopifyConnectionService
             }
 
             DB::commit();
-            Log::info("ShopifyService (NewVersion): Transaction committed successfully for saveProductToDbNewVersion");
+            Log::info('ShopifyService (NewVersion): Transaction committed successfully for saveProductToDbNewVersion');
         } catch (\Exception $e) {
             DB::rollBack();
-            Log::error("ShopifyService (NewVersion): Transaction rolled back in saveProductToDbNewVersion: " . $e->getMessage());
+            Log::error('ShopifyService (NewVersion): Transaction rolled back in saveProductToDbNewVersion: '.$e->getMessage());
             throw $e;
         }
     }
@@ -265,13 +264,13 @@ class ShopifyService extends ShopifyConnectionService
         $session = $this->getSession();
         $images = Image::all(
             $session,
-            ["product_id" => $productId]
+            ['product_id' => $productId]
         );
         foreach ($images as $image) {
             Image::delete(
                 $session,
                 $image->id,
-                ["product_id" => $productId],
+                ['product_id' => $productId],
             );
         }
 
@@ -288,13 +287,14 @@ class ShopifyService extends ShopifyConnectionService
                 $image->product_id = $variant->product_id;
                 $image->attachment = $imageContent;
                 $image->variant_ids = [
-                    $variant->variant_id
+                    $variant->variant_id,
                 ];
 
                 $image->save(
                     true,
                 );
                 $variant->update(['images_requires_update' => 0]);
+
                 return 'ok';
             } catch (\Exception $e) {
                 Log::debug("There was an error while uploading the images for {$variant->sku}. Error message : {$e->getMessage()}");

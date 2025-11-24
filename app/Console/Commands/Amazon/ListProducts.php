@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Log;
 class ListProducts extends Command
 {
     protected $signature = 'amazonListProducts';
+
     protected $description = 'List new products on Amazon Marketplace';
 
     /**
@@ -23,6 +24,7 @@ class ListProducts extends Command
 
         if ($job->isRunning()) {
             Log::info("$marketplace $jobType is already running.");
+
             return;
         }
 
@@ -30,7 +32,7 @@ class ListProducts extends Command
         $job->update(['status' => 1]);
 
         try {
-            (new CatalogService())->searchItem();
+            (new CatalogService)->searchItem();
             $job->update(['status' => 0]);
         } catch (\Exception $e) {
             $this->handleError($job, $e);
@@ -39,7 +41,6 @@ class ListProducts extends Command
         Log::info("$marketplace $jobType finished!");
     }
 
-
     private function handleError($job, \Exception $e)
     {
         $errorMessage = "Error in {$e->getFile()} : {$e->getMessage()} Line : {$e->getLine()}";
@@ -47,7 +48,7 @@ class ListProducts extends Command
         report($e);
         $job->update([
             'status' => 0,
-            'message' => $errorMessage
+            'message' => $errorMessage,
         ]);
     }
 }

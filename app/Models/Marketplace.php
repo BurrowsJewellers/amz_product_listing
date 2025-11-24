@@ -10,7 +10,6 @@ class Marketplace extends Model
     use HasFactory;
 
     protected $fillable = [
-        'name'
+        'name',
     ];
-
 }

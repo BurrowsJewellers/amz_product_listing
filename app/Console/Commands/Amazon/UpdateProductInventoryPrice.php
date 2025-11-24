@@ -37,7 +37,6 @@ class UpdateProductInventoryPrice extends Command
     /**
      * Create a new command instance.
      *
-     * @param AmazonSpApiService $amazonService
      * @return void
      */
     public function __construct(AmazonSpApiService $amazonService)
@@ -58,6 +57,7 @@ class UpdateProductInventoryPrice extends Command
 
         if ($job->isRunning()) {
             Log::info("$marketplace $jobType is already running.");
+
             return;
         }
 
@@ -88,13 +88,13 @@ class UpdateProductInventoryPrice extends Command
             Log::info("$marketplace $jobType finished!");
         } catch (\Exception $e) {
             $job->update(['status' => 0, 'message' => $e->getMessage()]);
-            Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
+            Log::error('Error : '.$e->getFile().' : '.$e->getMessage().' Line : '.$e->getLine());
         }
     }
 
     /**
      * Get count of products that need inventory or price updates
-     * 
+     *
      * @return int
      */
     private function getProductsToUpdateCount()
@@ -110,8 +110,8 @@ class UpdateProductInventoryPrice extends Command
 
     /**
      * Get products that need inventory or price updates
-     * 
-     * @param int $limit
+     *
+     * @param  int  $limit
      * @return \Illuminate\Database\Eloquent\Collection
      */
     private function getProductsToUpdate($limit)
@@ -128,23 +128,23 @@ class UpdateProductInventoryPrice extends Command
 
     /**
      * Process products using the Amazon SP-API Service
-     * 
-     * @param \Illuminate\Database\Eloquent\Collection $products
+     *
+     * @param  \Illuminate\Database\Eloquent\Collection  $products
      * @return void
      */
     private function processProducts($products)
     {
         foreach ($products as $product) {
             try {
-                $this->info('Updating SKU: ' . $product->sku);
-                Log::info('Updating SKU: ' . $product->sku);
+                $this->info('Updating SKU: '.$product->sku);
+                Log::info('Updating SKU: '.$product->sku);
 
                 $success = $this->amazonService->updateProduct($product);
 
                 if ($success) {
-                    $this->info('Successfully updated SKU: ' . $product->sku);
+                    $this->info('Successfully updated SKU: '.$product->sku);
                 } else {
-                    $this->error('Failed to update SKU: ' . $product->sku);
+                    $this->error('Failed to update SKU: '.$product->sku);
                 }
             } catch (\Exception $e) {
                 Log::error("Failed to update product {$product->sku}: {$e->getMessage()}");

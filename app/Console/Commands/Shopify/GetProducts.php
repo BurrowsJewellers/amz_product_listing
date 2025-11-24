@@ -3,17 +3,17 @@
 namespace App\Console\Commands\Shopify;
 
 use App\Http\Controllers\SyncJobController;
+use App\Models\RetailEdgeProduct;
 use App\Models\ShopifyInventoryLevel;
 use App\Models\ShopifyLocation;
 use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
-use App\Models\RetailEdgeProduct;
+use App\Models\SyncJob;
 use App\Services\ShopifyService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Shopify\Clients\Graphql;
-use App\Models\SyncJob;
 
 class GetProducts extends Command
 {
@@ -44,7 +44,7 @@ class GetProducts extends Command
         'created' => 0,
         'deleted' => 0,
         'errors' => 0,
-        'api_calls' => 0
+        'api_calls' => 0,
     ];
 
     /**
@@ -57,7 +57,7 @@ class GetProducts extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
+        if (! $job->isRunning()) {
             try {
                 // Check if GetProductsFromEWebMain is running and wait if needed
                 $maxWaitTime = 300; // 5 minutes max wait
@@ -78,7 +78,7 @@ class GetProducts extends Command
                     } else {
                         // GetProductsFromEWebMain is not running, proceed
                         if ($totalWaitTime > 0) {
-                            $this->info("✅ GetProductsFromEWebMain completed. Proceeding with Shopify sync.");
+                            $this->info('✅ GetProductsFromEWebMain completed. Proceeding with Shopify sync.');
                             Log::info("$marketplace $jobType proceeding after waiting {$totalWaitTime}s for GetProductsFromEWebMain");
                         }
                         break;
@@ -97,26 +97,26 @@ class GetProducts extends Command
                 $session = (new ShopifyService)->getSession();
                 $this->client = new Graphql($session->getShop(), $session->getAccessToken());
 
-                $this->info("🚀 Starting Shopify GraphQL sync...");
+                $this->info('🚀 Starting Shopify GraphQL sync...');
 
                 if ($this->option('dry-run')) {
-                    $this->warn("🔍 DRY RUN MODE - No changes will be made");
+                    $this->warn('🔍 DRY RUN MODE - No changes will be made');
                 }
 
                 // Step 1: Get Shopify locations
-                $this->info("📍 Syncing locations...");
+                $this->info('📍 Syncing locations...');
                 $this->getLocations();
 
                 // Step 2: Get all products from Shopify with smart sync
-                $this->info("📦 Syncing products with GraphQL...");
+                $this->info('📦 Syncing products with GraphQL...');
                 $shopifySkus = $this->getProductsWithGraphQL();
 
                 // Step 3: Identify and handle missing products
-                $this->info("🔍 Analyzing product differences...");
+                $this->info('🔍 Analyzing product differences...');
                 $this->handleProductDifferences($shopifySkus);
 
                 // Step 4: Get inventory levels
-                $this->info("📊 Syncing inventory levels...");
+                $this->info('📊 Syncing inventory levels...');
                 $this->getInventoryLevels();
 
                 // Display final statistics
@@ -128,12 +128,12 @@ class GetProducts extends Command
                 $this->stats['errors']++;
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
                 report($e);
-                $this->error("❌ Error: " . $e->getMessage());
-                Log::error("Shopify GetProducts failed: " . $e->getMessage(), ['exception' => $e]);
+                $this->error('❌ Error: '.$e->getMessage());
+                Log::error('Shopify GetProducts failed: '.$e->getMessage(), ['exception' => $e]);
             }
         } else {
             Log::info("$marketplace $jobType is already running.");
-            $this->warn("⚠️  Job is already running.");
+            $this->warn('⚠️  Job is already running.');
         }
     }
 
@@ -143,7 +143,7 @@ class GetProducts extends Command
     private function getLocations(): void
     {
         try {
-            $query = <<<GRAPHQL
+            $query = <<<'GRAPHQL'
             query getLocations {
               locations(first: 250) {
                 edges {
@@ -177,7 +177,7 @@ class GetProducts extends Command
                 foreach ($resultBody['data']['locations']['edges'] as $edge) {
                     $locationData = $edge['node'];
 
-                    if (!$this->option('dry-run')) {
+                    if (! $this->option('dry-run')) {
                         ShopifyLocation::updateOrCreate(
                             [
                                 'location_id' => str_replace('gid://shopify/Location/', '', $locationData['id']),
@@ -199,10 +199,10 @@ class GetProducts extends Command
                         );
                     }
                 }
-                $this->info("✅ Synced " . count($resultBody['data']['locations']['edges']) . " locations");
+                $this->info('✅ Synced '.count($resultBody['data']['locations']['edges']).' locations');
             }
         } catch (\Exception $e) {
-            $this->error("❌ Failed to sync locations: " . $e->getMessage());
+            $this->error('❌ Failed to sync locations: '.$e->getMessage());
             throw $e;
         }
     }
@@ -220,9 +220,9 @@ class GetProducts extends Command
         while ($hasNextPage) {
             try {
                 // Get all products (no status filter to match REST behavior)
-                $query = <<<GRAPHQL
-                query getProducts(\$first: Int!, \$after: String) {
-                  products(first: \$first, after: \$after) {
+                $query = <<<'GRAPHQL'
+                query getProducts($first: Int!, $after: String) {
+                  products(first: $first, after: $after) {
                     edges {
                       node {
                         id
@@ -266,7 +266,7 @@ class GetProducts extends Command
 
                 $variables = [
                     'first' => $chunkSize,
-                    'after' => $cursor
+                    'after' => $cursor,
                 ];
 
                 $response = $this->client->query(['query' => $query, 'variables' => $variables]);
@@ -275,16 +275,16 @@ class GetProducts extends Command
                 $resultBody = json_decode($response->getBody()->getContents(), true);
 
                 if (isset($resultBody['errors'])) {
-                    throw new \Exception('GraphQL errors: ' . json_encode($resultBody['errors']));
+                    throw new \Exception('GraphQL errors: '.json_encode($resultBody['errors']));
                 }
 
                 $products = $resultBody['data']['products']['edges'] ?? [];
 
-                if (!empty($products)) {
+                if (! empty($products)) {
                     $chunkSkus = $this->processProductChunk($products);
                     $allShopifySkus = array_merge($allShopifySkus, $chunkSkus);
 
-                    $this->info("📦 Processed " . count($products) . " products (Total SKUs: " . count($allShopifySkus) . ")");
+                    $this->info('📦 Processed '.count($products).' products (Total SKUs: '.count($allShopifySkus).')');
                 }
 
                 // Check pagination
@@ -292,18 +292,18 @@ class GetProducts extends Command
                 $hasNextPage = $pageInfo['hasNextPage'] ?? false;
                 $cursor = $pageInfo['endCursor'] ?? null;
 
-
                 // Rate limiting delay
                 if ($hasNextPage) {
                     usleep(2000000); // 2 second delay
                 }
             } catch (\Exception $e) {
-                $this->error("❌ Failed to fetch products: " . $e->getMessage());
+                $this->error('❌ Failed to fetch products: '.$e->getMessage());
                 throw $e;
             }
         }
 
-        $this->info("✅ Total products synced: " . $this->stats['synced']);
+        $this->info('✅ Total products synced: '.$this->stats['synced']);
+
         return array_unique($allShopifySkus);
     }
 
@@ -332,7 +332,7 @@ class GetProducts extends Command
                 $variants = $productNode['variants']['edges'] ?? [];
                 foreach ($variants as $variantEdge) {
                     $sku = $variantEdge['node']['sku'] ?? '';
-                    if (!empty($sku)) {
+                    if (! empty($sku)) {
                         $chunkSkus[] = $sku;
                     }
                 }
@@ -345,7 +345,7 @@ class GetProducts extends Command
 
                         // Collect SKUs
                         foreach ($productData['variants'] as $variant) {
-                            if (!empty($variant['sku'])) {
+                            if (! empty($variant['sku'])) {
                                 $chunkSkus[] = $variant['sku'];
                             }
                         }
@@ -353,8 +353,8 @@ class GetProducts extends Command
                         $this->stats['synced']++;
                     } catch (\Exception $e) {
                         $this->stats['errors']++;
-                        $this->error("❌ Failed to save product {$productNode['id']}: " . $e->getMessage());
-                        Log::error("Failed to save product: " . $e->getMessage(), ['product_id' => $productNode['id']]);
+                        $this->error("❌ Failed to save product {$productNode['id']}: ".$e->getMessage());
+                        Log::error('Failed to save product: '.$e->getMessage(), ['product_id' => $productNode['id']]);
                     }
                 });
             }
@@ -376,10 +376,10 @@ class GetProducts extends Command
 
         while ($hasNextPage) {
             try {
-                $query = <<<GRAPHQL
-                query getProductVariants(\$productId: ID!, \$first: Int!, \$after: String) {
-                  product(id: \$productId) {
-                    variants(first: \$first, after: \$after) {
+                $query = <<<'GRAPHQL'
+                query getProductVariants($productId: ID!, $first: Int!, $after: String) {
+                  product(id: $productId) {
+                    variants(first: $first, after: $after) {
                       edges {
                         node {
                           id
@@ -406,7 +406,7 @@ class GetProducts extends Command
                 $variables = [
                     'productId' => $productId,
                     'first' => 250,
-                    'after' => $cursor
+                    'after' => $cursor,
                 ];
 
                 $response = $this->client->query(['query' => $query, 'variables' => $variables]);
@@ -415,7 +415,7 @@ class GetProducts extends Command
                 $resultBody = json_decode($response->getBody()->getContents(), true);
 
                 if (isset($resultBody['errors'])) {
-                    throw new \Exception('GraphQL errors: ' . json_encode($resultBody['errors']));
+                    throw new \Exception('GraphQL errors: '.json_encode($resultBody['errors']));
                 }
 
                 $variants = $resultBody['data']['product']['variants']['edges'] ?? [];
@@ -431,12 +431,13 @@ class GetProducts extends Command
                     usleep(1000000); // 1 second delay for variant pagination
                 }
             } catch (\Exception $e) {
-                $this->error("❌ Failed to fetch variants for product $productId: " . $e->getMessage());
+                $this->error("❌ Failed to fetch variants for product $productId: ".$e->getMessage());
                 break;
             }
         }
 
-        $this->info("   ✅ Fetched " . count($allVariants) . " variants for product $productId");
+        $this->info('   ✅ Fetched '.count($allVariants)." variants for product $productId");
+
         return $allVariants;
     }
 
@@ -506,20 +507,20 @@ class GetProducts extends Command
         // Products to delete (in local DB but not in Shopify AND not in retail_edge)
         $skusToDelete = array_diff($localShopifySkus, array_merge($shopifySkus, $retailEdgeSkus));
 
-        $this->info("📊 Analysis Results:");
-        $this->info("   • Shopify SKUs: " . count($shopifySkus));
-        $this->info("   • Retail Edge SKUs: " . count($retailEdgeSkus));
-        $this->info("   • Local Shopify SKUs: " . count($localShopifySkus));
-        $this->info("   • SKUs to recreate: " . count($skusToRecreate));
-        $this->info("   • SKUs to delete: " . count($skusToDelete));
+        $this->info('📊 Analysis Results:');
+        $this->info('   • Shopify SKUs: '.count($shopifySkus));
+        $this->info('   • Retail Edge SKUs: '.count($retailEdgeSkus));
+        $this->info('   • Local Shopify SKUs: '.count($localShopifySkus));
+        $this->info('   • SKUs to recreate: '.count($skusToRecreate));
+        $this->info('   • SKUs to delete: '.count($skusToDelete));
 
         // Handle recreation
-        if (!empty($skusToRecreate)) {
+        if (! empty($skusToRecreate)) {
             $this->handleProductRecreation($skusToRecreate);
         }
 
         // Handle deletion
-        if (!empty($skusToDelete)) {
+        if (! empty($skusToDelete)) {
             $this->handleProductDeletion($skusToDelete);
         }
     }
@@ -529,10 +530,11 @@ class GetProducts extends Command
      */
     private function handleProductRecreation(array $skusToRecreate): void
     {
-        $this->info("🔄 Found " . count($skusToRecreate) . " products to recreate on Shopify");
+        $this->info('🔄 Found '.count($skusToRecreate).' products to recreate on Shopify');
 
         if ($this->option('dry-run')) {
-            $this->warn("🔍 DRY RUN: Would recreate products for SKUs: " . implode(', ', array_slice($skusToRecreate, 0, 10)) . (count($skusToRecreate) > 10 ? '...' : ''));
+            $this->warn('🔍 DRY RUN: Would recreate products for SKUs: '.implode(', ', array_slice($skusToRecreate, 0, 10)).(count($skusToRecreate) > 10 ? '...' : ''));
+
             return;
         }
 
@@ -547,11 +549,11 @@ class GetProducts extends Command
         $this->stats['created'] = count($skusToRecreate);
 
         // Call CreateProduct command
-        $this->info("🚀 Calling CreateProduct command to recreate missing products...");
+        $this->info('🚀 Calling CreateProduct command to recreate missing products...');
         $exitCode = $this->call('shopifyCreateProduct');
 
         if ($exitCode === 0) {
-            $this->info("✅ Product recreation completed successfully");
+            $this->info('✅ Product recreation completed successfully');
         } else {
             $this->error("❌ Product recreation failed with exit code: $exitCode");
         }
@@ -566,10 +568,11 @@ class GetProducts extends Command
             return;
         }
 
-        $this->info("🗑️  Found " . count($skusToDelete) . " products to delete from local database");
+        $this->info('🗑️  Found '.count($skusToDelete).' products to delete from local database');
 
         if ($this->option('dry-run')) {
-            $this->warn("🔍 DRY RUN: Would delete products for SKUs: " . implode(', ', array_slice($skusToDelete, 0, 10)) . (count($skusToDelete) > 10 ? '...' : ''));
+            $this->warn('🔍 DRY RUN: Would delete products for SKUs: '.implode(', ', array_slice($skusToDelete, 0, 10)).(count($skusToDelete) > 10 ? '...' : ''));
+
             return;
         }
 
@@ -577,7 +580,7 @@ class GetProducts extends Command
         $variantsToDelete = ShopifyProductVariant::whereIn('sku', $skusToDelete)->get();
         $productIdsToDelete = $variantsToDelete->pluck('shopify_product_id')->unique()->toArray();
 
-        if (!empty($productIdsToDelete)) {
+        if (! empty($productIdsToDelete)) {
             $this->deleteShopifyProductsFromDb($productIdsToDelete);
             $this->stats['deleted'] = count($productIdsToDelete);
         }
@@ -605,8 +608,8 @@ class GetProducts extends Command
                 $this->info("   • Deleted product: {$shopifyProduct->product_id}");
                 Log::info("Deleted Shopify product from local DB: {$shopifyProduct->product_id}");
             } catch (\Exception $e) {
-                $this->error("❌ Failed to delete product {$shopifyProduct->product_id}: " . $e->getMessage());
-                Log::error("Failed to delete Shopify product: " . $e->getMessage(), ['product_id' => $shopifyProduct->product_id]);
+                $this->error("❌ Failed to delete product {$shopifyProduct->product_id}: ".$e->getMessage());
+                Log::error('Failed to delete Shopify product: '.$e->getMessage(), ['product_id' => $shopifyProduct->product_id]);
             }
         }
     }
@@ -622,8 +625,9 @@ class GetProducts extends Command
             $restClient = new \Shopify\Clients\Rest($session->getShop(), $session->getAccessToken());
 
             $location = ShopifyLocation::first();
-            if (!$location) {
-                $this->warn("⚠️  No locations found, skipping inventory sync");
+            if (! $location) {
+                $this->warn('⚠️  No locations found, skipping inventory sync');
+
                 return;
             }
 
@@ -643,15 +647,15 @@ class GetProducts extends Command
 
                 $body = $response->getDecodedBody();
 
-                if (!empty($body) && isset($body['inventory_levels']) && count($body['inventory_levels']) > 0) {
+                if (! empty($body) && isset($body['inventory_levels']) && count($body['inventory_levels']) > 0) {
                     foreach ($body['inventory_levels'] as $inventoryLevelData) {
                         try {
-                            if (!$this->option('dry-run')) {
+                            if (! $this->option('dry-run')) {
                                 (new ShopifyService)->saveInventoryLevelToDb($inventoryLevelData);
                             }
                             $inventoryCount++;
                         } catch (\Exception $e) {
-                            $this->error("❌ Failed to save inventory level: " . $e->getMessage());
+                            $this->error('❌ Failed to save inventory level: '.$e->getMessage());
                         }
                     }
                 }
@@ -667,14 +671,14 @@ class GetProducts extends Command
                         $nextPage = false;
                     }
                 } catch (\Exception $e) {
-                    $this->warn("⚠️  Pagination info not available, ending inventory sync");
+                    $this->warn('⚠️  Pagination info not available, ending inventory sync');
                     $nextPage = false;
                 }
             }
 
             $this->info("✅ Synced $inventoryCount inventory levels");
         } catch (\Exception $e) {
-            $this->error("❌ Failed to sync inventory levels: " . $e->getMessage());
+            $this->error('❌ Failed to sync inventory levels: '.$e->getMessage());
             throw $e;
         }
     }
@@ -684,19 +688,19 @@ class GetProducts extends Command
      */
     private function displayStatistics(): void
     {
-        $this->info("");
-        $this->info("📊 Sync Statistics:");
-        $this->info("   • Products synced: " . $this->stats['synced']);
-        $this->info("   • Products created: " . $this->stats['created']);
-        $this->info("   • Products deleted: " . $this->stats['deleted']);
-        $this->info("   • API calls made: " . $this->stats['api_calls']);
-        $this->info("   • Errors encountered: " . $this->stats['errors']);
-        $this->info("");
+        $this->info('');
+        $this->info('📊 Sync Statistics:');
+        $this->info('   • Products synced: '.$this->stats['synced']);
+        $this->info('   • Products created: '.$this->stats['created']);
+        $this->info('   • Products deleted: '.$this->stats['deleted']);
+        $this->info('   • API calls made: '.$this->stats['api_calls']);
+        $this->info('   • Errors encountered: '.$this->stats['errors']);
+        $this->info('');
 
         if ($this->stats['errors'] > 0) {
             $this->warn("⚠️  Completed with {$this->stats['errors']} errors. Check logs for details.");
         } else {
-            $this->info("✅ Sync completed successfully!");
+            $this->info('✅ Sync completed successfully!');
         }
     }
 

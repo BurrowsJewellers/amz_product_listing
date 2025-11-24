@@ -2,15 +2,14 @@
 
 namespace App\Console\Commands;
 
-use App\Http\Controllers\ConfigController;
-use App\Http\Controllers\EWebController;
-use Illuminate\Console\Command;
 use App\Http\Controllers\AmzFeedController;
+use App\Http\Controllers\EWebController;
 use App\Models\Brand;
 use App\Models\RetailEdgeProduct;
 use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
 use App\Services\RetailEdgeService;
+use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
@@ -56,12 +55,12 @@ class TestEWeb extends Command
 
         foreach ($activeItems as $item) {
             try {
-                if (!preg_match('/^\d{3}-\d{3}-\d{5}$/', $item->SKU)) {
+                if (! preg_match('/^\d{3}-\d{3}-\d{5}$/', $item->SKU)) {
                     continue;
                 }
 
                 $skuArray = array_map('trim', explode('-', $item->SKU));
-                $sku = $skuArray[1] . "-" . $skuArray[2];
+                $sku = $skuArray[1].'-'.$skuArray[2];
 
                 $item->OldKey = trim($item->OldKey);
                 $item->ID3 = trim($item->ID3);
@@ -72,30 +71,29 @@ class TestEWeb extends Command
                 // $this->info('Retail Edge SKU ' . $item->SKU);
                 // $this->info('Formatted SKU ' . $sku);
 
-                if (!preg_match('/^vt.*[0-9]$/', $item->ID3)) {
+                if (! preg_match('/^vt.*[0-9]$/', $item->ID3)) {
                 }
-
 
                 $barcode = trim($item->Barcode);
 
                 $isParent = $item->WebOptionBoolean3;
 
                 $skuParts = explode('-', $item->SKU);
-                if (!count($skuParts) === 3) {
+                if (! count($skuParts) === 3) {
                     // continue;
                 }
 
-                $sku = $skuParts[1] . "-" . $skuParts[2];
+                $sku = $skuParts[1].'-'.$skuParts[2];
 
-                $this->info('Retail Edge SKU ' . $item->SKU);
+                $this->info('Retail Edge SKU '.$item->SKU);
                 // $this->info('Formatted SKU ' . $sku);
 
-                if (empty(trim($item->ID3)) && !$isParent) {
+                if (empty(trim($item->ID3)) && ! $isParent) {
                     // $this->info('ID3 field is empty.');
                     // continue;
                 }
 
-                $vts = explode("-", $item->ID3);
+                $vts = explode('-', $item->ID3);
 
                 if (empty($vts)) {
                     // continue;
@@ -238,7 +236,6 @@ class TestEWeb extends Command
                     if ($isValidParentChild) {
                     }
 
-
                     // dd($productData);
                     if ($isParent) {
                         $shopifyProduct = ShopifyProduct::create(
@@ -285,17 +282,14 @@ class TestEWeb extends Command
             }
         }
 
-
-
         exit;
-        $c = new AmzFeedController();
+        $c = new AmzFeedController;
 
         $c->updateMessage();
         exit;
 
-
         $eWeb = new EWebController;
-        $params = ["SKU" => "001-024-05122"];
+        $params = ['SKU' => '001-024-05122'];
         // $resp = $eWeb->call('GetItemImagesBySKU', $params);
         $resp = $eWeb->call('GetActiveItemBySKU', $params);
         // $params = ["SKU" => "001-022-04646"];

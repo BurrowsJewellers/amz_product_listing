@@ -2,13 +2,13 @@
 
 namespace App\Console\Commands\Amazon;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
 use App\Http\Controllers\AmzFeedController;
 use App\Http\Controllers\SyncJobController;
 use App\Models\AmzFeed;
 use App\Models\Product;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class GenerateAmzImagesXml extends Command
 {
@@ -36,7 +36,7 @@ class GenerateAmzImagesXml extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
+        if (! $job->isRunning()) {
             Log::info("$marketplace $jobType started!");
             $job->update(['status' => 1]);
 
@@ -66,7 +66,7 @@ class GenerateAmzImagesXml extends Command
 
                         $dom = new \DOMDocument('1.0', 'utf-8');
 
-                        $envelop = $dom->createElement("AmazonEnvelope");
+                        $envelop = $dom->createElement('AmazonEnvelope');
                         $envelop->setAttribute('xsi:noNamespaceSchemaLocation', 'amzn-envelope.xsd');
 
                         $header = $dom->createElement('Header');
@@ -95,7 +95,7 @@ class GenerateAmzImagesXml extends Command
                                         $imageType = 'Main';
                                         $mainImageUrl = $image->url;
                                     } else {
-                                        $imageType = 'PT' . $i;
+                                        $imageType = 'PT'.$i;
                                         $i++;
                                     }
                                     $productImage->appendChild($dom->createElement('SKU', $product->sku));
@@ -112,14 +112,14 @@ class GenerateAmzImagesXml extends Command
                                 /*
                                 if($mainImageUrl){
                                     $message = $envelop->appendChild($dom->createElement('Message'));
-            
+
                                     $message->appendChild($dom->createElement('MessageID', random_int(888888, 999999)));
                                     $message->appendChild($dom->createElement('OperationType', 'Update'));
                                     $productImage = $message->appendChild($dom->createElement('ProductImage'));
-            
+
                                     $productImage->appendChild($dom->createElement('SKU', $product->sku));
                                     $productImage->appendChild($dom->createElement('ImageType', 'Swatch'));
-            
+
                                     // $productImage->appendChild($dom->createElement('ImageLocation', $mainImageUrl));
                                     $productImage->ImageLocation = $mainImageUrl;
                                 }
@@ -128,13 +128,13 @@ class GenerateAmzImagesXml extends Command
                         }
 
                         $xmlRoot = $dom->appendChild($envelop);
-                        $xmlRoot->setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:xsi', "http://www.w3.org/2001/XMLSchema-instance");
+                        $xmlRoot->setAttributeNS('http://www.w3.org/2000/xmlns/', 'xmlns:xsi', 'http://www.w3.org/2001/XMLSchema-instance');
 
                         $dom->formatOutput = true;
                         $xml = $dom->saveXML();
 
-                        if (!empty($productIds)) {
-                            $feedController = new AmzFeedController();
+                        if (! empty($productIds)) {
+                            $feedController = new AmzFeedController;
                             $feedController->createAmzFeed($xml, 'POST_PRODUCT_IMAGE_DATA', $productIds);
                         }
                     }
@@ -147,7 +147,7 @@ class GenerateAmzImagesXml extends Command
                 $job->update(['status' => 0, 'message' => null]);
             } catch (\Exception $e) {
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
-                Log::error("Error : " . $e->getFile() . ' : ' . $e->getMessage() . ' Line : ' . $e->getLine());
+                Log::error('Error : '.$e->getFile().' : '.$e->getMessage().' Line : '.$e->getLine());
             }
 
             Log::info("$marketplace $jobType finished!");

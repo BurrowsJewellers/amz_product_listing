@@ -48,6 +48,7 @@ class ShopifyCreateMetafieldDefinitions extends Command
 
         if ($isdNames->isEmpty()) {
             $this->info('No ISD names found in retail_edge_product_isds table. Exiting.');
+
             return 0;
         }
 
@@ -59,7 +60,8 @@ class ShopifyCreateMetafieldDefinitions extends Command
 
         foreach ($isdNames as $isdName) {
             if (empty(trim($isdName))) {
-                $this->warn("Skipping empty ISD name.");
+                $this->warn('Skipping empty ISD name.');
+
                 continue;
             }
 
@@ -72,7 +74,7 @@ class ShopifyCreateMetafieldDefinitions extends Command
             $ownerTypes = ['PRODUCT', 'PRODUCTVARIANT'];
 
             foreach ($ownerTypes as $ownerType) {
-                $key = $baseKey . '_' . strtolower($ownerType === 'PRODUCT' ? 'product' : 'variant');
+                $key = $baseKey.'_'.strtolower($ownerType === 'PRODUCT' ? 'product' : 'variant');
 
                 $existingMetafield = ShopifyMetafield::where('name', $isdName)
                     ->where('owner_type', $ownerType)
@@ -80,12 +82,13 @@ class ShopifyCreateMetafieldDefinitions extends Command
 
                 if ($existingMetafield) {
                     $this->line("Metafield definition '{$isdName}' ({$ownerType}) already exists with GID: {$existingMetafield->gid}. Skipping creation.");
+
                     continue;
                 }
 
-                $mutation = <<<GRAPHQL
-                mutation CreateMetafieldDefinition(\$definition: MetafieldDefinitionInput!) {
-                  metafieldDefinitionCreate(definition: \$definition) {
+                $mutation = <<<'GRAPHQL'
+                mutation CreateMetafieldDefinition($definition: MetafieldDefinitionInput!) {
+                  metafieldDefinitionCreate(definition: $definition) {
                     createdDefinition {
                       id
                       name
@@ -113,7 +116,7 @@ class ShopifyCreateMetafieldDefinitions extends Command
                         'ownerType' => $ownerType,
                         'description' => "Metafield for {$isdName} ({$ownerType})", // Optional
                         // 'validations' => [], // Optional
-                    ]
+                    ],
                 ];
 
                 try {
@@ -127,13 +130,14 @@ class ShopifyCreateMetafieldDefinitions extends Command
                     $result = $resultBody['data']['metafieldDefinitionCreate'] ?? null;
                     $errors = $resultBody['errors'] ?? ($result['userErrors'] ?? []);
 
-                    if (!empty($errors)) {
+                    if (! empty($errors)) {
                         foreach ($errors as $error) {
                             $errorMessage = $error['message'] ?? 'Unknown error';
                             $errorField = isset($error['field']) ? implode(', ', $error['field']) : 'N/A';
                             $this->error("Shopify API Error for '{$isdName}' ({$ownerType}): {$errorMessage} (Field: {$errorField})");
-                            Log::error("Shopify API Error for metafield '{$isdName}' ({$ownerType}): " . json_encode($error));
+                            Log::error("Shopify API Error for metafield '{$isdName}' ({$ownerType}): ".json_encode($error));
                         }
+
                         continue;
                     }
 
@@ -149,12 +153,12 @@ class ShopifyCreateMetafieldDefinitions extends Command
                         ]);
                         $this->info("Successfully created and saved metafield definition '{$shopifyMetafield->name}' ({$ownerType}) with GID: {$shopifyMetafield->gid}");
                     } else {
-                        $this->error("Failed to create metafield definition for '{$isdName}' ({$ownerType}). Response: " . json_encode($resultBody));
-                        Log::error("Failed to create Shopify metafield '{$isdName}' ({$ownerType}). Response: " . json_encode($resultBody));
+                        $this->error("Failed to create metafield definition for '{$isdName}' ({$ownerType}). Response: ".json_encode($resultBody));
+                        Log::error("Failed to create Shopify metafield '{$isdName}' ({$ownerType}). Response: ".json_encode($resultBody));
                     }
                 } catch (\Exception $e) {
-                    $this->error("Exception while creating metafield '{$isdName}' ({$ownerType}): " . $e->getMessage());
-                    Log::error("Exception for Shopify metafield '{$isdName}' ({$ownerType}): " . $e->getMessage(), ['exception' => $e]);
+                    $this->error("Exception while creating metafield '{$isdName}' ({$ownerType}): ".$e->getMessage());
+                    Log::error("Exception for Shopify metafield '{$isdName}' ({$ownerType}): ".$e->getMessage(), ['exception' => $e]);
                 }
                 // Add a small delay to avoid hitting API rate limits too quickly
                 sleep(1);
@@ -162,6 +166,7 @@ class ShopifyCreateMetafieldDefinitions extends Command
         }
 
         $this->info('Shopify metafield definition creation process finished.');
+
         return 0;
     }
 }

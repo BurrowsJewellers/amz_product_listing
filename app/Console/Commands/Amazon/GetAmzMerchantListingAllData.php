@@ -2,12 +2,12 @@
 
 namespace App\Console\Commands\Amazon;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
-use App\Http\Controllers\SyncJobController;
 use App\Http\Controllers\AmzReportController;
+use App\Http\Controllers\SyncJobController;
 use App\Models\AmzMarketplace;
+use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 
 class GetAmzMerchantListingAllData extends Command
 {
@@ -28,7 +28,6 @@ class GetAmzMerchantListingAllData extends Command
     /**
      * Execute the console command.
      */
-
     public function handle()
     {
         $marketplace = 'Amazon';
@@ -37,7 +36,7 @@ class GetAmzMerchantListingAllData extends Command
         try {
             $job = SyncJobController::getJob($jobType, $marketplace);
 
-            if (!$job->isRunning()) {
+            if (! $job->isRunning()) {
                 Log::info("$marketplace $jobType started!");
                 $job->update(['status' => 1]);
 
@@ -50,7 +49,7 @@ class GetAmzMerchantListingAllData extends Command
                         $params['fromDate'] = now()->subDay()->startOfDay()->format('Y-m-d');
                         $params['toDate'] = now()->format('Y-m-d');
 
-                        $reportController = new AmzReportController();
+                        $reportController = new AmzReportController;
                         foreach ($marketplaces as $amzMarketplace) {
                             try {
                                 $reportController->requestReport($reportType, $amzMarketplace, $params);
@@ -77,7 +76,7 @@ class GetAmzMerchantListingAllData extends Command
                 $job->update(['status' => 0, 'message' => $e->getMessage()]);
             }
             report($e);
-            Log::error("$marketplace $jobType failed: " . $e->getMessage());
+            Log::error("$marketplace $jobType failed: ".$e->getMessage());
         }
 
         sleep(900);

@@ -19,6 +19,7 @@ class RetailEdgeService extends RetailEdgeConnectionService
     {
         if ($this->hasValidCache()) {
             echo "Retail edge file is already in latest version!\n";
+
             return $this->getCachedItems();
         }
 
@@ -29,20 +30,21 @@ class RetailEdgeService extends RetailEdgeConnectionService
 
     public function getActiveItemBySKU(string $sku)
     {
-        $skuParts = explode("-", $sku);
+        $skuParts = explode('-', $sku);
 
         if (count($skuParts) == 2) {
-            $sku = "001-" . $skuParts[0] . "-" . $skuParts[1];
+            $sku = '001-'.$skuParts[0].'-'.$skuParts[1];
         }
 
         $resp = $this->call('GetActiveItemBySKU', ['SKU' => $sku]);
+
         return $resp->GetActiveItemBySKUResult;
     }
 
     public function hasValidCache(): bool
     {
         // First check if the cache file exists
-        if (!Storage::exists(self::STORAGE_FILE)) {
+        if (! Storage::exists(self::STORAGE_FILE)) {
             return false;
         }
 
@@ -51,7 +53,7 @@ class RetailEdgeService extends RetailEdgeConnectionService
             ->latest('last_download')
             ->first();
 
-        if (!$lastDownload) {
+        if (! $lastDownload) {
             return false;
         }
 
@@ -65,6 +67,7 @@ class RetailEdgeService extends RetailEdgeConnectionService
     private function getCachedItems()
     {
         $cachedData = Storage::get(self::STORAGE_FILE);
+
         return json_decode($cachedData);
     }
 

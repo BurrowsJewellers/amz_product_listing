@@ -2,11 +2,11 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\EWebController;
 use App\Http\Controllers\SyncJobController;
 use App\Models\Brand;
+use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 class GetBrandsFromEWeb extends Command
 {
@@ -34,7 +34,7 @@ class GetBrandsFromEWeb extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
+        if (! $job->isRunning()) {
             Log::info("$marketplace $jobType started!");
             $job->update(['status' => 1]);
 
@@ -45,10 +45,10 @@ class GetBrandsFromEWeb extends Command
                 foreach ($resp->GetAllBrandsResult->Brand as $brand) {
                     Brand::updateOrCreate(
                         [
-                            'brand_id' => $brand->ID
+                            'brand_id' => $brand->ID,
                         ],
                         [
-                            'name' => $brand->Name
+                            'name' => $brand->Name,
                         ]
                     );
                     // Brand::firstOrCreate(['name' => $brand->Name, 'brand_id' => $brand->ID]);

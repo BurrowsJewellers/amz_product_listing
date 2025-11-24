@@ -14,7 +14,9 @@ class WebhookOrderCreated implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public string $topic;
+
     public string $shop;
+
     public array $requestBody;
 
     /**
@@ -33,8 +35,8 @@ class WebhookOrderCreated implements ShouldQueue
     public function handle(): void
     {
         Log::debug('Message logged from WebhookOrderCreated job');
-        Log::debug('topic : ' . $this->topic);
-        Log::debug('shop : ' . $this->shop);
-        Log::debug('requestBody : ' . print_r($this->requestBody, true));
+        Log::debug('topic : '.$this->topic);
+        Log::debug('shop : '.$this->shop);
+        Log::debug('requestBody : '.print_r($this->requestBody, true));
     }
 }

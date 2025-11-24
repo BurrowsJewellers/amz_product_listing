@@ -2,11 +2,10 @@
 
 namespace App\Console\Commands\Shopify;
 
+use App\Models\ShopifyProductVariant;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use App\Models\ShopifyProductVariant;
-use App\Models\RetailEdgeProduct;
 
 class VerifyAndSyncPrices extends Command
 {
@@ -39,7 +38,7 @@ class VerifyAndSyncPrices extends Command
         $this->info('========================================');
         $this->info('Price & Inventory Verification Tool');
         $this->info('========================================');
-        $this->info('Mode: ' . ($isDryRun ? 'DRY RUN (No changes will be made)' : ($isForce ? 'FORCE UPDATE' : 'NORMAL')));
+        $this->info('Mode: '.($isDryRun ? 'DRY RUN (No changes will be made)' : ($isForce ? 'FORCE UPDATE' : 'NORMAL')));
         $this->newLine();
 
         // Statistics
@@ -53,7 +52,7 @@ class VerifyAndSyncPrices extends Command
         ];
 
         // Find all mismatches using raw SQL for accuracy
-        $query = "
+        $query = '
             SELECT
                 spv.id,
                 spv.sku,
@@ -86,7 +85,7 @@ class VerifyAndSyncPrices extends Command
             JOIN retail_edge_products rep ON spv.sku = rep.sku
             WHERE spv.variant_id IS NOT NULL
             HAVING price_mismatch = 1 OR compare_mismatch = 1 OR inventory_mismatch = 1
-        ";
+        ';
 
         if ($limit > 0) {
             $query .= " LIMIT {$limit}";
@@ -98,10 +97,11 @@ class VerifyAndSyncPrices extends Command
         if (empty($mismatches)) {
             $this->info('✅ All prices and inventory are in sync!');
             $this->info("Total variants checked: {$stats['total_checked']}");
+
             return 0;
         }
 
-        $this->warn('Found ' . count($mismatches) . ' mismatches out of ' . $stats['total_checked'] . ' variants');
+        $this->warn('Found '.count($mismatches).' mismatches out of '.$stats['total_checked'].' variants');
         $this->newLine();
 
         // Create a table for display
@@ -151,7 +151,7 @@ class VerifyAndSyncPrices extends Command
             $updateIds[] = $item->id;
 
             // Log detailed information
-            if (!$isDryRun) {
+            if (! $isDryRun) {
                 Log::info("Price/Inventory Verification - SKU: {$item->sku}", [
                     'sku' => $item->sku,
                     'price_mismatch' => $item->price_mismatch,
@@ -168,13 +168,13 @@ class VerifyAndSyncPrices extends Command
         }
 
         // Display the mismatches table
-        if (count($tableData) <= 20 || $this->confirm('Display all ' . count($tableData) . ' mismatches?', false)) {
+        if (count($tableData) <= 20 || $this->confirm('Display all '.count($tableData).' mismatches?', false)) {
             $this->table(
                 ['SKU', 'Issues', 'Price Change', 'Compare Change', 'Inventory Change'],
                 array_slice($tableData, 0, 50)
             );
             if (count($tableData) > 50) {
-                $this->info('... and ' . (count($tableData) - 50) . ' more items');
+                $this->info('... and '.(count($tableData) - 50).' more items');
             }
         }
 
@@ -221,7 +221,7 @@ class VerifyAndSyncPrices extends Command
 
         // Update using raw SQL for better performance and accuracy
         // Only set flags - values will be updated after successful Shopify API sync
-        $updatedCount = DB::update("
+        $updatedCount = DB::update('
             UPDATE shopify_product_variants spv
             JOIN retail_edge_products rep ON spv.sku = rep.sku
             SET
@@ -237,8 +237,8 @@ class VerifyAndSyncPrices extends Command
                     ELSE spv.inventory_requires_update
                 END,
                 spv.updated_at = CURRENT_TIMESTAMP
-            WHERE spv.id IN (" . implode(',', $variantIds) . ")
-        ");
+            WHERE spv.id IN ('.implode(',', $variantIds).')
+        ');
 
         return $updatedCount;
     }
@@ -248,7 +248,7 @@ class VerifyAndSyncPrices extends Command
      */
     public function checkOrphanedSpecialPrices()
     {
-        $orphaned = DB::select("
+        $orphaned = DB::select('
             SELECT
                 spv.sku,
                 spv.price,
@@ -261,10 +261,10 @@ class VerifyAndSyncPrices extends Command
             WHERE spv.compare_at_price IS NOT NULL
                 AND spv.compare_at_price > 0
                 AND (rep.special_price_end IS NULL OR rep.special_price_end < NOW())
-        ");
+        ');
 
-        if (!empty($orphaned)) {
-            $this->warn('Found ' . count($orphaned) . ' products with compare_at_price but no active special price');
+        if (! empty($orphaned)) {
+            $this->warn('Found '.count($orphaned).' products with compare_at_price but no active special price');
             foreach ($orphaned as $item) {
                 $this->line("  SKU: {$item->sku} - Compare at: {$item->compare_at_price} (should be removed)");
             }

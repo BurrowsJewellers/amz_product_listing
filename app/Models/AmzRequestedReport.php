@@ -20,8 +20,8 @@ class AmzRequestedReport extends Model
         'api_response',
     ];
 
-    public function marketplace() {
+    public function marketplace()
+    {
         return $this->belongsTo(AmzMarketplace::class, 'amz_marketplace_id', 'id');
     }
-
 }

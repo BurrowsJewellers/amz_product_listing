@@ -2,9 +2,9 @@
 
 namespace App\Console\Commands;
 
+use App\Http\Controllers\SyncJobController;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
-use App\Http\Controllers\SyncJobController;
 
 class JobOrchestrator extends Command
 {
@@ -35,11 +35,11 @@ class JobOrchestrator extends Command
             'jobs' => [
                 'getProductsFromEWebMain',
                 'shopify:verify-sync-prices',
-                'shopifyUpdatePriceInventory'
+                'shopifyUpdatePriceInventory',
             ],
             'job_args' => [
-                'shopify:verify-sync-prices' => ['--force' => true]
-            ]
+                'shopify:verify-sync-prices' => ['--force' => true],
+            ],
         ],
         'amazon-sync' => [
             'description' => 'Amazon operations chain',
@@ -48,8 +48,8 @@ class JobOrchestrator extends Command
                 'generateAmzProductsJson',
                 'amazonUpdateInventoryPrice',
                 'getAmzMerchantListingAllData',
-                'processAmzMerchantListingAllData'
-            ]
+                'processAmzMerchantListingAllData',
+            ],
         ],
         'shopify-sync' => [
             'description' => 'Shopify operations chain',
@@ -58,9 +58,9 @@ class JobOrchestrator extends Command
                 'shopifyGetProducts',
                 'shopifyCreateProduct',
                 'shopifyUploadImages',
-                'shopifyArchiveProducts'
-            ]
-        ]
+                'shopifyArchiveProducts',
+            ],
+        ],
     ];
 
     /**
@@ -72,25 +72,27 @@ class JobOrchestrator extends Command
         $isDryRun = $this->option('dry-run');
         $isForce = $this->option('force');
 
-        if (!isset($this->chains[$chainName])) {
+        if (! isset($this->chains[$chainName])) {
             $this->error("Unknown chain: {$chainName}");
-            $this->info("Available chains: " . implode(', ', array_keys($this->chains)));
+            $this->info('Available chains: '.implode(', ', array_keys($this->chains)));
+
             return 1;
         }
 
         $chain = $this->chains[$chainName];
-        $this->info("========================================");
+        $this->info('========================================');
         $this->info("Job Orchestrator: {$chain['description']}");
-        $this->info("========================================");
+        $this->info('========================================');
 
         if ($isDryRun) {
-            $this->info("🔍 DRY RUN MODE - No jobs will be executed");
+            $this->info('🔍 DRY RUN MODE - No jobs will be executed');
             $this->showChainPlan($chain);
+
             return 0;
         }
 
         // Check if chain can be started
-        if (!$this->canStartChain($chain, $isForce)) {
+        if (! $this->canStartChain($chain, $isForce)) {
             return 1;
         }
 
@@ -107,17 +109,19 @@ class JobOrchestrator extends Command
 
         // Check if any jobs in the chain are paused
         if (SyncJobController::isChainPaused($chain['jobs'], $marketplace)) {
-            $this->error("❌ Cannot start chain: One or more jobs are paused");
+            $this->error('❌ Cannot start chain: One or more jobs are paused');
             $this->info("Use 'php artisan job:manage status' to see paused jobs");
             $this->info("Use 'php artisan job:manage resume <job-type>' to resume individual jobs");
+
             return false;
         }
 
         // Check if any jobs in the chain are already running
-        if (!$force && SyncJobController::isChainRunning($chain['jobs'], $marketplace)) {
-            $this->error("❌ Cannot start chain: One or more jobs are already running");
-            $this->info("Use --force to override this check (not recommended)");
+        if (! $force && SyncJobController::isChainRunning($chain['jobs'], $marketplace)) {
+            $this->error('❌ Cannot start chain: One or more jobs are already running');
+            $this->info('Use --force to override this check (not recommended)');
             $this->info("Use 'php artisan job:manage status' to see running jobs");
+
             return false;
         }
 
@@ -136,25 +140,27 @@ class JobOrchestrator extends Command
         Log::info("Starting job chain: {$chainName}", [
             'chain' => $chainName,
             'total_jobs' => $totalJobs,
-            'jobs' => $chain['jobs']
+            'jobs' => $chain['jobs'],
         ]);
 
         foreach ($chain['jobs'] as $jobCommand) {
             $currentJob++;
-            $this->info("");
+            $this->info('');
             $this->info("📋 Step {$currentJob}/{$totalJobs}: {$jobCommand}");
-            $this->info(str_repeat("─", 50));
+            $this->info(str_repeat('─', 50));
 
             // Check if this specific job can start
             $marketplace = $chain['marketplace'] ?? null;
-            if (!SyncJobController::canStart($jobCommand, $marketplace)) {
+            if (! SyncJobController::canStart($jobCommand, $marketplace)) {
                 if (SyncJobController::isPaused($jobCommand, $marketplace)) {
                     $this->error("❌ Job is paused: {$jobCommand}");
                     Log::error("Chain {$chainName} stopped: Job {$jobCommand} is paused");
+
                     return 1;
                 } else {
                     $this->error("❌ Job is already running: {$jobCommand}");
                     Log::error("Chain {$chainName} stopped: Job {$jobCommand} is already running");
+
                     return 1;
                 }
             }
@@ -168,25 +174,26 @@ class JobOrchestrator extends Command
             $jobDuration = microtime(true) - $jobStartTime;
 
             if ($exitCode === 0) {
-                $this->info("✅ Completed: {$jobCommand} (" . number_format($jobDuration, 2) . "s)");
+                $this->info("✅ Completed: {$jobCommand} (".number_format($jobDuration, 2).'s)');
             } else {
                 $this->error("❌ Failed: {$jobCommand} (exit code: {$exitCode})");
                 Log::error("Chain {$chainName} failed at job: {$jobCommand}", [
                     'exit_code' => $exitCode,
-                    'duration' => $jobDuration
+                    'duration' => $jobDuration,
                 ]);
+
                 return $exitCode;
             }
         }
 
         $totalDuration = microtime(true) - $startTime;
-        $this->info("");
-        $this->info("🎉 Chain completed successfully!");
-        $this->info("Total duration: " . number_format($totalDuration, 2) . "s");
+        $this->info('');
+        $this->info('🎉 Chain completed successfully!');
+        $this->info('Total duration: '.number_format($totalDuration, 2).'s');
 
         Log::info("Job chain completed successfully: {$chainName}", [
             'total_duration' => $totalDuration,
-            'jobs_executed' => $totalJobs
+            'jobs_executed' => $totalJobs,
         ]);
 
         return 0;
@@ -198,14 +205,14 @@ class JobOrchestrator extends Command
     private function showChainPlan(array $chain): void
     {
         $this->info("Chain: {$chain['description']}");
-        $this->info("Marketplace: " . ($chain['marketplace'] ?? 'N/A'));
+        $this->info('Marketplace: '.($chain['marketplace'] ?? 'N/A'));
         $this->newLine();
 
-        $this->info("Jobs to execute:");
+        $this->info('Jobs to execute:');
         foreach ($chain['jobs'] as $index => $jobCommand) {
             $step = $index + 1;
             $args = $chain['job_args'][$jobCommand] ?? [];
-            $argsStr = $args ? ' ' . $this->formatArgs($args) : '';
+            $argsStr = $args ? ' '.$this->formatArgs($args) : '';
 
             $marketplace = $chain['marketplace'] ?? null;
             $canStart = SyncJobController::canStart($jobCommand, $marketplace);
@@ -213,17 +220,17 @@ class JobOrchestrator extends Command
 
             $this->line("  {$step}. {$status} {$jobCommand}{$argsStr}");
 
-            if (!$canStart) {
+            if (! $canStart) {
                 if (SyncJobController::isPaused($jobCommand, $marketplace)) {
-                    $this->line("      ⚠️ Job is paused");
+                    $this->line('      ⚠️ Job is paused');
                 } else {
-                    $this->line("      ⚠️ Job is running");
+                    $this->line('      ⚠️ Job is running');
                 }
             }
         }
 
         $this->newLine();
-        $this->info("Use without --dry-run to execute the chain");
+        $this->info('Use without --dry-run to execute the chain');
     }
 
     /**
@@ -235,10 +242,11 @@ class JobOrchestrator extends Command
         foreach ($args as $key => $value) {
             if (is_bool($value) && $value) {
                 $formatted[] = $key;
-            } elseif (!is_bool($value)) {
+            } elseif (! is_bool($value)) {
                 $formatted[] = "{$key}={$value}";
             }
         }
+
         return implode(' ', $formatted);
     }
 }

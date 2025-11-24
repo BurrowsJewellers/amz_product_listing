@@ -2,17 +2,16 @@
 
 namespace App\Console\Commands\Shopify;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\SyncJobController;
-use Shopify\Clients\Rest;
 use App\Models\Brand;
 use App\Models\RetailEdgeProduct;
-use App\Models\RetailEdgeProductIsd;
 use App\Models\ShopifyMetafield;
-use App\Services\ShopifyService;
 use App\Services\MetafieldAssignmentService;
+use App\Services\ShopifyService;
+use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Shopify\Clients\Rest;
 
 class CreateProductBackup extends Command
 {
@@ -40,17 +39,17 @@ class CreateProductBackup extends Command
 
         $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if (!$job->isRunning()) {
+        if (! $job->isRunning()) {
             try {
                 Log::info("$marketplace $jobType started!");
                 $job->update(['status' => 1]);
                 $product_errors_occurred = false;
 
-                $pendingProducts = DB::select("SELECT rep.id, rep.sku
+                $pendingProducts = DB::select('SELECT rep.id, rep.sku
                     FROM retail_edge_products rep
                     LEFT JOIN shopify_product_variants spv ON rep.sku = spv.sku
                     WHERE spv.id IS NULL;
-                ");
+                ');
 
                 $pendingProductIds = [];
 
@@ -77,7 +76,7 @@ class CreateProductBackup extends Command
                 $count = $countQuery->count();
 
                 while ($count) {
-                    $this->info('Count: ' . $count);
+                    $this->info('Count: '.$count);
                     $product = RetailEdgeProduct::withWhereHas('children', function ($children) {
                         $children->where('uploaded_to_shopify', 0);
                     })->with(['brand'])->where('quantity', '>', 0)->first();
@@ -104,7 +103,7 @@ class CreateProductBackup extends Command
                                 $compareAtPrice = 0;
 
                                 // Find the lower price and higher compare_at_price
-                                if (!empty($prices)) {
+                                if (! empty($prices)) {
                                     $price = min($prices);
                                     $compareAtPrice = max($prices);
                                 }
@@ -114,7 +113,7 @@ class CreateProductBackup extends Command
                                 $variant['compare_at_price'] = ($price == $compareAtPrice) ? 0 : $compareAtPrice;
                                 $variant['inventory_management'] = 'shopify';
 
-                                $vts = array_filter(array_map('trim', array_map('strtolower', explode("-", $child->id3))));
+                                $vts = array_filter(array_map('trim', array_map('strtolower', explode('-', $child->id3))));
 
                                 foreach ($vts as $vt) {
                                     $vt = trim($vt);
@@ -155,10 +154,10 @@ class CreateProductBackup extends Command
                                             $variantTypeValue = $child->pendant_style;
                                         }
 
-                                        if (!isset($variantOptions[$variantType])) {
+                                        if (! isset($variantOptions[$variantType])) {
                                             $variantOptions[$variantType][] = $variantTypeValue;
                                         } else {
-                                            if (!in_array($variantTypeValue, $variantOptions[$variantType])) {
+                                            if (! in_array($variantTypeValue, $variantOptions[$variantType])) {
                                                 $variantOptions[$variantType][] = $variantTypeValue;
                                             }
                                         }
@@ -187,7 +186,7 @@ class CreateProductBackup extends Command
 
                         if ($product->brand?->name == 'Pandora') {
                             // $mktDescription .= "Brand: " . $product->brand?->name;
-                            $mktDescription .= " - Design number: " . $product->real_design_number;
+                            $mktDescription .= ' - Design number: '.$product->real_design_number;
                         }
 
                         $productData['product'] = [
@@ -207,10 +206,10 @@ class CreateProductBackup extends Command
                             $productData['product']['template_suffix'] = 'no-buy';
                         }
 
-                        $productData['product']['tags'] = implode(",", $productTags);
+                        $productData['product']['tags'] = implode(',', $productTags);
 
                         // Dynamic metafield assignment using MetafieldAssignmentService
-                        $metafieldService = new MetafieldAssignmentService();
+                        $metafieldService = new MetafieldAssignmentService;
                         $assignment = $metafieldService->determineMetafieldAssignment($product);
 
                         $this->line("Metafield assignment type: {$assignment['type']} for Product: {$product->sku}");
@@ -218,19 +217,19 @@ class CreateProductBackup extends Command
                         $metafields = [];
 
                         // Handle product-level metafields for REST API
-                        if (!empty($assignment['product_metafields'])) {
-                            $this->line("Adding " . count($assignment['product_metafields']) . " product-level metafields");
+                        if (! empty($assignment['product_metafields'])) {
+                            $this->line('Adding '.count($assignment['product_metafields']).' product-level metafields');
                             foreach ($assignment['product_metafields'] as $metafield) {
                                 $shopifyMetafieldDef = ShopifyMetafield::where('name', $metafield['isd_name'])
                                     ->where('owner_type', 'PRODUCT')
                                     ->first();
 
-                                if ($shopifyMetafieldDef && !empty($metafield['value'])) {
+                                if ($shopifyMetafieldDef && ! empty($metafield['value'])) {
                                     $metafields[] = [
                                         'key' => $shopifyMetafieldDef->key,
                                         'value' => $metafield['value'],
                                         'type' => $shopifyMetafieldDef->type,
-                                        'namespace' => $shopifyMetafieldDef->namespace
+                                        'namespace' => $shopifyMetafieldDef->namespace,
                                     ];
                                     $this->line("Added product metafield: {$metafield['isd_name']} = {$metafield['value']}");
                                 } else {
@@ -242,7 +241,7 @@ class CreateProductBackup extends Command
                         // Note: Variant-level metafields will be handled after product creation via GraphQL
                         // since REST API doesn't support variant metafields during product creation
 
-                        if (!empty($metafields)) {
+                        if (! empty($metafields)) {
                             $productData['product']['metafields'] = $metafields;
                         }
 
@@ -259,8 +258,8 @@ class CreateProductBackup extends Command
 
                             if (isset($body['product'])) {
                                 (new ShopifyService)->saveProductToDb($body['product']);
-                                $this->info($body['product']['title'] . ' - saved to database');
-                                Log::info('Shopify product ' . $product->sku . ' created successfully!');
+                                $this->info($body['product']['title'].' - saved to database');
+                                Log::info('Shopify product '.$product->sku.' created successfully!');
 
                                 foreach ($product->children as $child) {
                                     $child->update(['uploaded_to_shopify' => 1]);
@@ -270,14 +269,14 @@ class CreateProductBackup extends Command
                                     $child->update(['uploaded_to_shopify' => 2]);
                                 }
 
-                                $message = 'Shopify error while creating product. Sku :' . $product->sku . ', title: '  . $product->title;
+                                $message = 'Shopify error while creating product. Sku :'.$product->sku.', title: '.$product->title;
                                 Log::debug($message);
                                 Log::debug($data);
 
                                 $logMessage = '';
 
                                 if (isset($body['errors']['base'][0])) {
-                                    $logMessage = $message . " - " . $body['errors']['base'][0];
+                                    $logMessage = $message.' - '.$body['errors']['base'][0];
                                 }
 
                                 Log::debug($body);
@@ -286,14 +285,14 @@ class CreateProductBackup extends Command
                             }
                         } catch (\Exception $e) {
                             $product_errors_occurred = true;
-                            Log::error("Shopify API Exception for SKU " . ($product ? $product->sku : 'N/A') . ": " . $e->getMessage());
+                            Log::error('Shopify API Exception for SKU '.($product ? $product->sku : 'N/A').': '.$e->getMessage());
                             // Mark children as failed
                             if ($product && $product->children) {
                                 foreach ($product->children as $child_item) {
                                     try {
                                         $child_item->update(['uploaded_to_shopify' => 2]);
                                     } catch (\Exception $childUpdateException) {
-                                        Log::error("Failed to update child status for SKU " . ($child_item && isset($child_item->sku) ? $child_item->sku : 'N/A') . " after API error: " . $childUpdateException->getMessage());
+                                        Log::error('Failed to update child status for SKU '.($child_item && isset($child_item->sku) ? $child_item->sku : 'N/A').' after API error: '.$childUpdateException->getMessage());
                                     }
                                 }
                             }
@@ -339,13 +338,14 @@ class CreateProductBackup extends Command
             foreach ($types as $type => $value) {
                 $propValue = $product->{$type} ?? '';
                 if ($propValue !== '' && $propValue !== 'N/A') {
-                    foreach (explode(",", $propValue) as $tempTag) {
-                        $tags[] = $value . "_" . trim($tempTag);
+                    foreach (explode(',', $propValue) as $tempTag) {
+                        $tags[] = $value.'_'.trim($tempTag);
                     }
                 }
             }
         } catch (\Exception $e) {
             report($e);
+
             return [];
         }
 
