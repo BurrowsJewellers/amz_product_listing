@@ -8,6 +8,7 @@ use App\Models\ShopifyLocation;
 use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyGraphQLService;
+use App\Services\SyncFailureLogger;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Shopify\Rest\Admin2025_04\Product as ShopifyProductAPI;
@@ -30,10 +31,13 @@ class UpdatePriceInventoryBatch extends Command
 
     protected ShopifyGraphQLService $graphqlService;
 
-    public function __construct(ShopifyGraphQLService $graphqlService)
+    protected SyncFailureLogger $failureLogger;
+
+    public function __construct(ShopifyGraphQLService $graphqlService, SyncFailureLogger $failureLogger)
     {
         parent::__construct();
         $this->graphqlService = $graphqlService;
+        $this->failureLogger = $failureLogger;
     }
 
     /**
@@ -323,9 +327,34 @@ class UpdatePriceInventoryBatch extends Command
             $errorMessage .= 'Unknown error';
         }
 
-        foreach ($variantRecords as $variant) {
+        foreach ($variantRecords as $index => $variant) {
             $skuValue = $variant->sku ?: '[EMPTY SKU]';
+            $variantData = $variantsData[$index] ?? [];
 
+            // Determine operation type for detailed logging
+            $operationType = 'price_inventory';
+            if ($variant->price_requires_update == 1 && $variant->inventory_requires_update != 1) {
+                $operationType = 'price';
+            } elseif ($variant->inventory_requires_update == 1 && $variant->price_requires_update != 1) {
+                $operationType = 'inventory';
+            }
+
+            // Enhanced failure logging with full API details
+            $this->failureLogger->logFailure(
+                $variant,
+                $operationType,
+                $errorMessage,
+                $result,
+                [
+                    'job_name' => $this->signature,
+                    'api_request' => $variantData,
+                    'user_errors' => $result['user_errors'] ?? null,
+                    'graphql_errors' => $result['graphql_errors'] ?? null,
+                    'target_data' => $variantData,
+                ]
+            );
+
+            // Keep existing PriceInventoryLog for compatibility
             if ($variant->price_requires_update == 1) {
                 PriceInventoryLog::create([
                     'marketplace' => $marketplace,
@@ -466,7 +495,7 @@ class UpdatePriceInventoryBatch extends Command
             if ($result['success']) {
                 $this->handleSuccessfulRetry($variantRecords, $variantsData, $marketplace, $location);
             } else {
-                $this->handleFailedRetry($variantRecords, $result, $marketplace);
+                $this->handleFailedRetry($variantRecords, $variantsData, $result, $marketplace);
             }
 
             usleep(1000000); // 1 second delay for retries
@@ -486,6 +515,7 @@ class UpdatePriceInventoryBatch extends Command
             $updates = [];
 
             if (isset($variantData['price'])) {
+                // Legacy log entry
                 PriceInventoryLog::create([
                     'marketplace' => $marketplace,
                     'item_identifier' => $skuValue,
@@ -497,12 +527,18 @@ class UpdatePriceInventoryBatch extends Command
                     'message' => 'Retry successful: Price updated via GraphQL productSet. Variant ID: '.$variant->variant_id,
                 ]);
 
+                // Enhanced success logging
+                $this->failureLogger->logSuccess($variant, 'price', [
+                    'job_name' => $this->signature,
+                ]);
+
                 $updates['price'] = $variantData['price'];
                 $updates['compare_at_price'] = $variantData['compare_at_price'] ?? 0;
                 $updates['price_requires_update'] = 0;
             }
 
             if (isset($variantData['inventory_quantity'])) {
+                // Legacy log entry
                 PriceInventoryLog::create([
                     'marketplace' => $marketplace,
                     'item_identifier' => $skuValue,
@@ -512,6 +548,11 @@ class UpdatePriceInventoryBatch extends Command
                     'status' => 'success',
                     'job_name' => $this->signature,
                     'message' => 'Retry successful: Inventory updated via GraphQL productSet. Variant ID: '.$variant->variant_id,
+                ]);
+
+                // Enhanced success logging
+                $this->failureLogger->logSuccess($variant, 'inventory', [
+                    'job_name' => $this->signature,
                 ]);
 
                 $updates['inventory_quantity'] = $variantData['inventory_quantity'];
@@ -530,7 +571,7 @@ class UpdatePriceInventoryBatch extends Command
     /**
      * Handle failed retry
      */
-    private function handleFailedRetry($variantRecords, $result, $marketplace)
+    private function handleFailedRetry($variantRecords, $variantsData, $result, $marketplace)
     {
         $errorMessage = 'Retry failed - GraphQL Error: ';
         if (! empty($result['user_errors'])) {
@@ -539,10 +580,20 @@ class UpdatePriceInventoryBatch extends Command
             $errorMessage .= json_encode($result['graphql_errors']);
         }
 
-        foreach ($variantRecords as $variant) {
+        foreach ($variantRecords as $index => $variant) {
+            $variantData = $variantsData[$index];
             $skuValue = $variant->sku ?: '[EMPTY SKU]';
 
+            // Determine operation type for enhanced logging
+            $operationType = 'price_inventory';
+            if ($variant->price_requires_update == 2 && $variant->inventory_requires_update != 2) {
+                $operationType = 'price';
+            } elseif ($variant->inventory_requires_update == 2 && $variant->price_requires_update != 2) {
+                $operationType = 'inventory';
+            }
+
             if ($variant->price_requires_update == 2) {
+                // Legacy log entry
                 PriceInventoryLog::create([
                     'marketplace' => $marketplace,
                     'item_identifier' => $skuValue,
@@ -557,6 +608,7 @@ class UpdatePriceInventoryBatch extends Command
             }
 
             if ($variant->inventory_requires_update == 2) {
+                // Legacy log entry
                 PriceInventoryLog::create([
                     'marketplace' => $marketplace,
                     'item_identifier' => $skuValue,
@@ -570,6 +622,21 @@ class UpdatePriceInventoryBatch extends Command
                 // Update to 3 (repeated failure)
                 $variant->update(['inventory_requires_update' => 3]);
             }
+
+            // Enhanced failure logging with full API details
+            $this->failureLogger->logFailure(
+                $variant,
+                $operationType,
+                $errorMessage,
+                $result,
+                [
+                    'job_name' => $this->signature,
+                    'api_request' => $variantData,
+                    'user_errors' => $result['user_errors'] ?? null,
+                    'graphql_errors' => $result['graphql_errors'] ?? null,
+                    'target_data' => $variantData,
+                ]
+            );
 
             $this->error("✗ Retry failed for {$skuValue} (Variant ID: {$variant->id})");
         }
