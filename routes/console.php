@@ -25,6 +25,13 @@ use Illuminate\Support\Facades\Schedule;
 Schedule::command('telescope:prune --hours=3')->everyFourHours();
 
 // ========================================
+// SYNC MONITORING MAINTENANCE
+// ========================================
+Schedule::command('sync:cleanup-logs')
+    ->daily()
+    ->description('Clean up old sync failure logs and completed retry jobs');
+
+// ========================================
 // ORCHESTRATED JOB CHAINS
 // ========================================
 
