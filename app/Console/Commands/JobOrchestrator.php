@@ -35,7 +35,7 @@ class JobOrchestrator extends Command
             'jobs' => [
                 'getProductsFromEWebMain',
                 'shopify:verify-sync-prices',
-                'shopifyUpdatePriceInventory',
+                'shopify:update-price-inventory-batch', // Using new batch command for improved performance
             ],
             'job_args' => [
                 'shopify:verify-sync-prices' => ['--force' => true],
