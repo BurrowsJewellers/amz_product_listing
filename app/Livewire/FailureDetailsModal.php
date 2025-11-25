@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Models\SyncFailureLog;
+use Illuminate\Support\Facades\Log;
 use Livewire\Component;
 
 class FailureDetailsModal extends Component
@@ -29,11 +30,32 @@ class FailureDetailsModal extends Component
      */
     public function showFailureDetails($failureId)
     {
-        $this->failureId = $failureId;
-        $this->show = true;
-        $this->activeTab = 'overview';
-        $this->loadFailure();
-        $this->loadRetryHistory();
+        try {
+            // Validate failure ID
+            if (! is_numeric($failureId) || $failureId <= 0) {
+                Log::warning('Invalid failure ID for details modal', ['id' => $failureId]);
+
+                return;
+            }
+
+            $this->failureId = $failureId;
+            $this->show = true;
+            $this->activeTab = 'overview';
+            $this->loadFailure();
+            $this->loadRetryHistory();
+
+            // If failure not found, close modal
+            if (! $this->failure) {
+                Log::warning('Failure not found for details modal', ['id' => $failureId]);
+                $this->closeModal();
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to show failure details', [
+                'error' => $e->getMessage(),
+                'failure_id' => $failureId,
+            ]);
+            $this->closeModal();
+        }
     }
 
     /**
@@ -41,8 +63,17 @@ class FailureDetailsModal extends Component
      */
     public function loadFailure()
     {
-        if ($this->failureId) {
-            $this->failure = SyncFailureLog::with('variant.product')->find($this->failureId);
+        try {
+            if ($this->failureId) {
+                $this->failure = SyncFailureLog::with(['variant.product'])
+                    ->find($this->failureId);
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to load failure data', [
+                'error' => $e->getMessage(),
+                'failure_id' => $this->failureId,
+            ]);
+            $this->failure = null;
         }
     }
 
@@ -51,12 +82,20 @@ class FailureDetailsModal extends Component
      */
     public function loadRetryHistory()
     {
-        if ($this->failure && $this->failure->variant_id) {
-            $this->retryHistory = SyncFailureLog::where('variant_id', $this->failure->variant_id)
-                ->orderBy('created_at', 'desc')
-                ->limit(10)
-                ->get()
-                ->toArray();
+        try {
+            if ($this->failure && $this->failure->variant_id) {
+                $this->retryHistory = SyncFailureLog::where('variant_id', $this->failure->variant_id)
+                    ->orderBy('created_at', 'desc')
+                    ->limit(10) // Limit to prevent memory issues
+                    ->get()
+                    ->toArray();
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to load retry history', [
+                'error' => $e->getMessage(),
+                'variant_id' => $this->failure?->variant_id,
+            ]);
+            $this->retryHistory = [];
         }
     }
 
@@ -65,7 +104,22 @@ class FailureDetailsModal extends Component
      */
     public function setActiveTab($tab)
     {
-        $this->activeTab = $tab;
+        try {
+            // Validate allowed tabs to prevent tampering
+            $allowedTabs = ['overview', 'api_request', 'api_response', 'data_comparison', 'error_location', 'retry_history'];
+            if (! in_array($tab, $allowedTabs)) {
+                Log::warning('Invalid tab attempted', ['tab' => $tab]);
+
+                return;
+            }
+
+            $this->activeTab = $tab;
+        } catch (\Exception $e) {
+            Log::error('Failed to change tab', [
+                'error' => $e->getMessage(),
+                'tab' => $tab,
+            ]);
+        }
     }
 
     /**
@@ -85,10 +139,39 @@ class FailureDetailsModal extends Component
      */
     public function getFormattedJson($data)
     {
-        if (is_string($data)) {
-            $data = json_decode($data, true);
-        }
+        try {
+            if (empty($data)) {
+                return '{}';
+            }
 
-        return json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+            if (is_string($data)) {
+                $decoded = json_decode($data, true);
+                if (json_last_error() !== JSON_ERROR_NONE) {
+                    Log::warning('Invalid JSON in getFormattedJson', [
+                        'error' => json_last_error_msg(),
+                    ]);
+
+                    return $data; // Return original string if invalid JSON
+                }
+                $data = $decoded;
+            }
+
+            $formatted = json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+            if ($formatted === false) {
+                Log::error('Failed to encode JSON', [
+                    'error' => json_last_error_msg(),
+                ]);
+
+                return '{}';
+            }
+
+            return $formatted;
+        } catch (\Exception $e) {
+            Log::error('Exception in getFormattedJson', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return '{}';
+        }
     }
 }

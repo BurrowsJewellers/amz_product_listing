@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Models\SyncFailureLog;
+use Illuminate\Support\Facades\Log;
 use Livewire\Component;
 use Livewire\WithPagination;
 
@@ -25,13 +26,34 @@ class SyncFailuresTable extends Component
 
     protected $listeners = ['refreshFailures'];
 
+    /**
+     * Validation rules for filters
+     */
+    protected $rules = [
+        'filters.flag' => 'nullable|in:,1,2,3',
+        'filters.operation_type' => 'nullable|in:,price,inventory,price_inventory',
+        'filters.date_from' => 'nullable|date',
+        'filters.date_to' => 'nullable|date|after_or_equal:filters.date_from',
+    ];
+
     public function render()
     {
-        $failures = $this->getFailures();
+        try {
+            $failures = $this->getFailures();
 
-        return view('livewire.sync-failures-table', [
-            'failures' => $failures,
-        ]);
+            return view('livewire.sync-failures-table', [
+                'failures' => $failures,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to render sync failures table', [
+                'error' => $e->getMessage(),
+                'filters' => $this->filters,
+            ]);
+
+            return view('livewire.sync-failures-table', [
+                'failures' => collect(),
+            ]);
+        }
     }
 
     /**
@@ -69,11 +91,26 @@ class SyncFailuresTable extends Component
      */
     public function sortBy($field)
     {
-        if ($this->sortField === $field) {
-            $this->sortDirection = $this->sortDirection === 'asc' ? 'desc' : 'asc';
-        } else {
-            $this->sortField = $field;
-            $this->sortDirection = 'asc';
+        try {
+            // Validate allowed sort fields to prevent SQL injection
+            $allowedFields = ['id', 'created_at', 'flag_value', 'operation_type'];
+            if (! in_array($field, $allowedFields)) {
+                Log::warning('Invalid sort field attempted', ['field' => $field]);
+
+                return;
+            }
+
+            if ($this->sortField === $field) {
+                $this->sortDirection = $this->sortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                $this->sortField = $field;
+                $this->sortDirection = 'asc';
+            }
+        } catch (\Exception $e) {
+            Log::error('Failed to sort failures table', [
+                'error' => $e->getMessage(),
+                'field' => $field,
+            ]);
         }
     }
 
@@ -96,8 +133,30 @@ class SyncFailuresTable extends Component
      */
     public function showDetails($failureId)
     {
-        $this->selectedFailureId = $failureId;
-        $this->dispatch('showFailureDetails', failureId: $failureId);
+        try {
+            // Validate failure ID
+            if (! is_numeric($failureId) || $failureId <= 0) {
+                Log::warning('Invalid failure ID provided', ['id' => $failureId]);
+
+                return;
+            }
+
+            // Verify the failure exists
+            $failure = SyncFailureLog::find($failureId);
+            if (! $failure) {
+                Log::warning('Failure not found', ['id' => $failureId]);
+
+                return;
+            }
+
+            $this->selectedFailureId = $failureId;
+            $this->dispatch('showFailureDetails', failureId: $failureId);
+        } catch (\Exception $e) {
+            Log::error('Failed to show failure details', [
+                'error' => $e->getMessage(),
+                'failure_id' => $failureId,
+            ]);
+        }
     }
 
     /**
@@ -105,7 +164,13 @@ class SyncFailuresTable extends Component
      */
     public function refreshFailures()
     {
-        $this->resetPage();
+        try {
+            $this->resetPage();
+        } catch (\Exception $e) {
+            Log::error('Failed to refresh failures table', [
+                'error' => $e->getMessage(),
+            ]);
+        }
     }
 
     /**
@@ -113,8 +178,25 @@ class SyncFailuresTable extends Component
      */
     public function updated($propertyName)
     {
-        if (str_starts_with($propertyName, 'filters.')) {
-            $this->resetPage();
+        try {
+            if (str_starts_with($propertyName, 'filters.')) {
+                // Validate filters before applying
+                $this->validate();
+                $this->resetPage();
+            }
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            // Reset invalid filter
+            $filterKey = str_replace('filters.', '', $propertyName);
+            $this->filters[$filterKey] = '';
+            Log::warning('Invalid filter value', [
+                'property' => $propertyName,
+                'errors' => $e->errors(),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to update filters', [
+                'error' => $e->getMessage(),
+                'property' => $propertyName,
+            ]);
         }
     }
 }

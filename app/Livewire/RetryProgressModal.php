@@ -3,6 +3,7 @@
 namespace App\Livewire;
 
 use App\Models\SyncRetryJob;
+use Illuminate\Support\Facades\Log;
 use Livewire\Component;
 
 class RetryProgressModal extends Component
@@ -25,14 +26,29 @@ class RetryProgressModal extends Component
      */
     public function loadRetryJob()
     {
-        if ($this->retryJobId) {
-            $this->retryJob = SyncRetryJob::find($this->retryJobId);
+        try {
+            if ($this->retryJobId) {
+                $this->retryJob = SyncRetryJob::find($this->retryJobId);
 
-            // Auto-close modal when job completes
-            if ($this->retryJob && $this->retryJob->isCompleted()) {
-                $this->dispatch('retryJobCompleted');
-                $this->dispatch('refreshDashboard');
+                if (! $this->retryJob) {
+                    Log::warning('Retry job not found', ['job_id' => $this->retryJobId]);
+                    $this->closeModal();
+
+                    return;
+                }
+
+                // Auto-close modal when job completes
+                if ($this->retryJob->isCompleted()) {
+                    $this->dispatch('retryJobCompleted');
+                    $this->dispatch('refreshDashboard');
+                }
             }
+        } catch (\Exception $e) {
+            Log::error('Failed to load retry job', [
+                'error' => $e->getMessage(),
+                'job_id' => $this->retryJobId,
+            ]);
+            $this->retryJob = null;
         }
     }
 
@@ -41,9 +57,24 @@ class RetryProgressModal extends Component
      */
     public function retryJobStarted($jobId)
     {
-        $this->retryJobId = $jobId;
-        $this->show = true;
-        $this->loadRetryJob();
+        try {
+            // Validate job ID
+            if (! is_numeric($jobId) || $jobId <= 0) {
+                Log::warning('Invalid retry job ID', ['id' => $jobId]);
+
+                return;
+            }
+
+            $this->retryJobId = $jobId;
+            $this->show = true;
+            $this->loadRetryJob();
+        } catch (\Exception $e) {
+            Log::error('Failed to start retry job tracking', [
+                'error' => $e->getMessage(),
+                'job_id' => $jobId,
+            ]);
+            $this->closeModal();
+        }
     }
 
     /**
@@ -51,7 +82,15 @@ class RetryProgressModal extends Component
      */
     public function refreshProgress()
     {
-        $this->loadRetryJob();
+        try {
+            $this->loadRetryJob();
+        } catch (\Exception $e) {
+            Log::error('Failed to refresh retry progress', [
+                'error' => $e->getMessage(),
+                'job_id' => $this->retryJobId,
+            ]);
+            // Silently fail on refresh - don't close modal
+        }
     }
 
     /**
