@@ -60,5 +60,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/price-inventory-logs', [PriceInventoryLogController::class, 'index'])->name('price_inventory_logs.index');
 
     // Sync Monitoring Dashboard
-    Route::get('/sync-monitoring', [SyncMonitoringController::class, 'index'])->name('sync_monitoring.index');
+    Route::get('/sync-monitoring', [SyncMonitoringController::class, 'index'])
+        ->middleware('throttle:60,1') // 60 requests per minute
+        ->name('sync_monitoring.index');
 });
