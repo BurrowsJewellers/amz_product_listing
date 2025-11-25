@@ -13,7 +13,3 @@
     @livewire('failure-details-modal')
 </div>
 @endsection
-
-@push('scripts')
-@livewireScripts
-@endpush
