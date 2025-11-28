@@ -8,7 +8,8 @@ use Shopify\Clients\Graphql;
 class ShopifyGraphQLService extends ShopifyConnectionService
 {
     /**
-     * Update product variants with both price and inventory using productSet mutation
+     * Update product variants with both price and inventory using separate mutations
+     * Uses productVariantsBulkUpdate for prices and inventorySetQuantities for inventory
      *
      * @param  int  $productId  Shopify product ID (numeric)
      * @param  array  $variantsData  Array of variant data with price and inventory
@@ -24,56 +25,83 @@ class ShopifyGraphQLService extends ShopifyConnectionService
         $productGid = "gid://shopify/Product/{$productId}";
         $locationGid = "gid://shopify/Location/{$locationId}";
 
-        // Build variants input array
-        $variantsInput = [];
+        $allUserErrors = [];
+        $allGraphqlErrors = [];
+        $priceSuccess = true;
+        $inventorySuccess = true;
+
+        // Separate variants needing price updates vs inventory updates
+        $priceVariants = [];
+        $inventoryUpdates = [];
+
         foreach ($variantsData as $variantData) {
             $variantGid = "gid://shopify/ProductVariant/{$variantData['variant_id']}";
 
-            $variantInput = [
-                'id' => $variantGid,
-            ];
+            // Build price update input
+            if (isset($variantData['price']) || array_key_exists('compare_at_price', $variantData)) {
+                $priceInput = ['id' => $variantGid];
 
-            // Add price if provided
-            if (isset($variantData['price'])) {
-                $variantInput['price'] = (string) $variantData['price'];
+                if (isset($variantData['price'])) {
+                    $priceInput['price'] = (string) $variantData['price'];
+                }
+
+                if (array_key_exists('compare_at_price', $variantData)) {
+                    $priceInput['compareAtPrice'] = $variantData['compare_at_price'] !== null
+                        ? (string) $variantData['compare_at_price']
+                        : null;
+                }
+
+                $priceVariants[] = $priceInput;
             }
 
-            // Add compareAtPrice if provided (null to remove, value to set)
-            if (array_key_exists('compare_at_price', $variantData)) {
-                $variantInput['compareAtPrice'] = $variantData['compare_at_price'] !== null
-                    ? (string) $variantData['compare_at_price']
-                    : null;
-            }
-
-            // Add inventory quantities if provided
-            if (isset($variantData['inventory_quantity'])) {
-                $variantInput['inventoryQuantities'] = [
-                    [
-                        'locationId' => $locationGid,
-                        'name' => 'available',
-                        'quantity' => (int) $variantData['inventory_quantity'],
-                    ],
+            // Build inventory update input (requires inventory_item_id from variant data)
+            if (isset($variantData['inventory_quantity']) && isset($variantData['inventory_item_id'])) {
+                $inventoryUpdates[] = [
+                    'inventoryItemId' => "gid://shopify/InventoryItem/{$variantData['inventory_item_id']}",
+                    'locationId' => $locationGid,
+                    'quantity' => (int) $variantData['inventory_quantity'],
                 ];
             }
-
-            $variantsInput[] = $variantInput;
         }
 
-        // ProductSet GraphQL mutation
-        $productSetMutation = <<<'GRAPHQL'
-        mutation productSet($input: ProductSetInput!, $identifier: ProductSetIdentifiers) {
-          productSet(synchronous: true, input: $input, identifier: $identifier) {
-            product {
+        // Execute price updates using productVariantsBulkUpdate
+        if (! empty($priceVariants)) {
+            $priceResult = $this->updateVariantPrices($client, $productGid, $priceVariants, $productId);
+            $priceSuccess = $priceResult['success'];
+            $allUserErrors = array_merge($allUserErrors, $priceResult['user_errors']);
+            $allGraphqlErrors = array_merge($allGraphqlErrors, $priceResult['graphql_errors']);
+        }
+
+        // Execute inventory updates using inventorySetQuantities
+        if (! empty($inventoryUpdates)) {
+            $inventoryResult = $this->updateInventoryQuantities($client, $inventoryUpdates, $productId);
+            $inventorySuccess = $inventoryResult['success'];
+            $allUserErrors = array_merge($allUserErrors, $inventoryResult['user_errors']);
+            $allGraphqlErrors = array_merge($allGraphqlErrors, $inventoryResult['graphql_errors']);
+        }
+
+        $overallSuccess = $priceSuccess && $inventorySuccess;
+
+        return [
+            'success' => $overallSuccess,
+            'user_errors' => $allUserErrors,
+            'graphql_errors' => $allGraphqlErrors,
+            'data' => null,
+        ];
+    }
+
+    /**
+     * Update variant prices using productVariantsBulkUpdate mutation
+     */
+    private function updateVariantPrices(Graphql $client, string $productGid, array $variants, int $productId): array
+    {
+        $mutation = <<<'GRAPHQL'
+        mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+          productVariantsBulkUpdate(productId: $productId, variants: $variants) {
+            productVariants {
               id
-              variants(first: 250) {
-                nodes {
-                  id
-                  sku
-                  price
-                  compareAtPrice
-                  inventoryQuantity
-                }
-              }
+              price
+              compareAtPrice
             }
             userErrors {
               field
@@ -84,28 +112,23 @@ class ShopifyGraphQLService extends ShopifyConnectionService
         GRAPHQL;
 
         try {
-            Log::debug("ShopifyGraphQLService: Executing productSet mutation for product {$productId} with ".count($variantsInput).' variants');
+            Log::debug("ShopifyGraphQLService: Executing productVariantsBulkUpdate for product {$productId} with ".count($variants).' variants');
 
             $response = $client->query([
-                'query' => $productSetMutation,
+                'query' => $mutation,
                 'variables' => [
-                    'identifier' => [
-                        'id' => $productGid,
-                    ],
-                    'input' => [
-                        'variants' => $variantsInput,
-                    ],
+                    'productId' => $productGid,
+                    'variants' => $variants,
                 ],
             ]);
 
             $resultBody = json_decode($response->getBody()->getContents(), true);
 
-            // Check for errors
-            $userErrors = $resultBody['data']['productSet']['userErrors'] ?? [];
+            $userErrors = $resultBody['data']['productVariantsBulkUpdate']['userErrors'] ?? [];
             $graphqlErrors = $resultBody['errors'] ?? [];
 
             if (! empty($userErrors) || ! empty($graphqlErrors)) {
-                Log::error('ShopifyGraphQLService: productSet mutation returned errors', [
+                Log::error('ShopifyGraphQLService: productVariantsBulkUpdate returned errors', [
                     'product_id' => $productId,
                     'user_errors' => $userErrors,
                     'graphql_errors' => $graphqlErrors,
@@ -115,38 +138,245 @@ class ShopifyGraphQLService extends ShopifyConnectionService
                     'success' => false,
                     'user_errors' => $userErrors,
                     'graphql_errors' => $graphqlErrors,
-                    'data' => null,
                 ];
             }
 
-            $productData = $resultBody['data']['productSet']['product'] ?? null;
-
-            Log::debug('ShopifyGraphQLService: productSet mutation successful', [
+            Log::debug('ShopifyGraphQLService: productVariantsBulkUpdate successful', [
                 'product_id' => $productId,
-                'variants_updated' => count($variantsInput),
+                'variants_updated' => count($variants),
             ]);
 
             return [
                 'success' => true,
                 'user_errors' => [],
                 'graphql_errors' => [],
-                'data' => $productData,
             ];
         } catch (\Exception $e) {
-            Log::error('ShopifyGraphQLService: Exception during productSet mutation', [
+            Log::error('ShopifyGraphQLService: Exception during productVariantsBulkUpdate', [
                 'product_id' => $productId,
                 'exception' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
             ]);
 
             return [
                 'success' => false,
                 'user_errors' => [],
                 'graphql_errors' => [['message' => $e->getMessage()]],
-                'data' => null,
-                'exception' => $e,
             ];
         }
+    }
+
+    /**
+     * Update inventory quantities using inventorySetQuantities mutation (internal helper)
+     */
+    private function updateInventoryQuantities(Graphql $client, array $quantities, int $productId): array
+    {
+        $mutation = <<<'GRAPHQL'
+        mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
+          inventorySetQuantities(input: $input) {
+            inventoryAdjustmentGroup {
+              createdAt
+              reason
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+        GRAPHQL;
+
+        try {
+            Log::debug("ShopifyGraphQLService: Executing inventorySetQuantities for product {$productId} with ".count($quantities).' items');
+
+            $response = $client->query([
+                'query' => $mutation,
+                'variables' => [
+                    'input' => [
+                        'name' => 'available',
+                        'reason' => 'correction',
+                        'ignoreCompareQuantity' => true,
+                        'quantities' => $quantities,
+                    ],
+                ],
+            ]);
+
+            $resultBody = json_decode($response->getBody()->getContents(), true);
+
+            $userErrors = $resultBody['data']['inventorySetQuantities']['userErrors'] ?? [];
+            $graphqlErrors = $resultBody['errors'] ?? [];
+
+            if (! empty($userErrors) || ! empty($graphqlErrors)) {
+                Log::error('ShopifyGraphQLService: inventorySetQuantities returned errors', [
+                    'product_id' => $productId,
+                    'user_errors' => $userErrors,
+                    'graphql_errors' => $graphqlErrors,
+                ]);
+
+                return [
+                    'success' => false,
+                    'user_errors' => $userErrors,
+                    'graphql_errors' => $graphqlErrors,
+                ];
+            }
+
+            Log::debug('ShopifyGraphQLService: inventorySetQuantities successful', [
+                'product_id' => $productId,
+                'items_updated' => count($quantities),
+            ]);
+
+            return [
+                'success' => true,
+                'user_errors' => [],
+                'graphql_errors' => [],
+            ];
+        } catch (\Exception $e) {
+            Log::error('ShopifyGraphQLService: Exception during inventorySetQuantities', [
+                'product_id' => $productId,
+                'exception' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'user_errors' => [],
+                'graphql_errors' => [['message' => $e->getMessage()]],
+            ];
+        }
+    }
+
+    /**
+     * Bulk update inventory quantities across multiple products using inventorySetQuantities
+     * Processes up to 250 items per API call
+     *
+     * @param  array  $inventoryItems  Array of items with inventory_item_id and quantity
+     * @param  int  $locationId  Shopify location ID
+     * @return array Response with success status, processed count, and failed items
+     */
+    public function bulkUpdateInventory(array $inventoryItems, int $locationId): array
+    {
+        $session = $this->getSession();
+        $client = new Graphql($session->getShop(), $session->getAccessToken());
+        $locationGid = "gid://shopify/Location/{$locationId}";
+
+        $mutation = <<<'GRAPHQL'
+        mutation inventorySetQuantities($input: InventorySetQuantitiesInput!) {
+          inventorySetQuantities(input: $input) {
+            inventoryAdjustmentGroup {
+              createdAt
+              reason
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+        GRAPHQL;
+
+        // Build quantities array
+        $quantities = [];
+        foreach ($inventoryItems as $item) {
+            $quantities[] = [
+                'inventoryItemId' => "gid://shopify/InventoryItem/{$item['inventory_item_id']}",
+                'locationId' => $locationGid,
+                'quantity' => (int) $item['quantity'],
+            ];
+        }
+
+        try {
+            Log::debug('ShopifyGraphQLService: Executing bulk inventorySetQuantities with '.count($quantities).' items');
+
+            $response = $client->query([
+                'query' => $mutation,
+                'variables' => [
+                    'input' => [
+                        'name' => 'available',
+                        'reason' => 'correction',
+                        'ignoreCompareQuantity' => true,
+                        'quantities' => $quantities,
+                    ],
+                ],
+            ]);
+
+            $resultBody = json_decode($response->getBody()->getContents(), true);
+
+            $userErrors = $resultBody['data']['inventorySetQuantities']['userErrors'] ?? [];
+            $graphqlErrors = $resultBody['errors'] ?? [];
+
+            if (! empty($userErrors) || ! empty($graphqlErrors)) {
+                Log::error('ShopifyGraphQLService: bulk inventorySetQuantities returned errors', [
+                    'item_count' => count($quantities),
+                    'user_errors' => $userErrors,
+                    'graphql_errors' => $graphqlErrors,
+                ]);
+
+                return [
+                    'success' => false,
+                    'user_errors' => $userErrors,
+                    'graphql_errors' => $graphqlErrors,
+                    'processed_count' => 0,
+                    'failed_items' => $inventoryItems,
+                ];
+            }
+
+            Log::debug('ShopifyGraphQLService: bulk inventorySetQuantities successful', [
+                'items_updated' => count($quantities),
+            ]);
+
+            return [
+                'success' => true,
+                'user_errors' => [],
+                'graphql_errors' => [],
+                'processed_count' => count($quantities),
+                'failed_items' => [],
+            ];
+        } catch (\Exception $e) {
+            Log::error('ShopifyGraphQLService: Exception during bulk inventorySetQuantities', [
+                'item_count' => count($quantities),
+                'exception' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'user_errors' => [],
+                'graphql_errors' => [['message' => $e->getMessage()]],
+                'processed_count' => 0,
+                'failed_items' => $inventoryItems,
+            ];
+        }
+    }
+
+    /**
+     * Update variant prices for a single product using productVariantsBulkUpdate
+     *
+     * @param  int  $productId  Shopify product ID (numeric)
+     * @param  array  $variants  Array of variant data with id, price, compareAtPrice
+     * @return array Response with success status and errors
+     */
+    public function updateProductVariantPrices(int $productId, array $variants): array
+    {
+        $session = $this->getSession();
+        $client = new Graphql($session->getShop(), $session->getAccessToken());
+        $productGid = "gid://shopify/Product/{$productId}";
+
+        // Convert variant IDs to GIDs and format input
+        $variantsInput = [];
+        foreach ($variants as $variant) {
+            $input = ['id' => "gid://shopify/ProductVariant/{$variant['variant_id']}"];
+
+            if (isset($variant['price'])) {
+                $input['price'] = (string) $variant['price'];
+            }
+
+            if (array_key_exists('compare_at_price', $variant)) {
+                $input['compareAtPrice'] = $variant['compare_at_price'] !== null
+                    ? (string) $variant['compare_at_price']
+                    : null;
+            }
+
+            $variantsInput[] = $input;
+        }
+
+        return $this->updateVariantPrices($client, $productGid, $variantsInput, $productId);
     }
 
     /**

@@ -90,7 +90,9 @@ class UpdatePriceInventoryBatch extends Command
     }
 
     /**
-     * Process batch updates grouped by product
+     * Process batch updates using hybrid chunking approach:
+     * - Price updates: per product using productVariantsBulkUpdate
+     * - Inventory updates: batched across products using inventorySetQuantities (250 items per chunk)
      */
     private function processBatchUpdates($location, $marketplace)
     {
@@ -113,76 +115,312 @@ class UpdatePriceInventoryBatch extends Command
         $totalVariants = $variantsNeedingUpdate->count();
         $this->info("Found {$totalVariants} variants requiring price/inventory updates");
 
-        // Group variants by product_id for batch processing
-        $variantsByProduct = $variantsNeedingUpdate->groupBy('product_id');
-        $totalProducts = $variantsByProduct->count();
-        $processedProducts = 0;
+        // Separate price updates (grouped by product) and inventory updates (batched across products)
+        $priceUpdatesByProduct = [];
+        $inventoryUpdates = [];
+        $variantMap = []; // Map inventory_item_id to variant model for logging
 
-        $this->info("Grouped into {$totalProducts} products for batch processing");
-
-        foreach ($variantsByProduct as $productId => $variants) {
-            $processedProducts++;
-            $this->info("[{$processedProducts}/{$totalProducts}] Processing product ID: {$productId} with ".count($variants).' variant(s)');
-
-            // Prepare variant data for GraphQL mutation
-            $variantsData = [];
-            $variantRecords = []; // Store variant models for later updates
-
-            foreach ($variants as $variant) {
-                if (! $variant->retailEdgeProduct) {
-                    $this->handleMissingRetailEdgeProduct($variant, $marketplace);
-                    continue;
-                }
-
-                $variantData = [
-                    'variant_id' => $variant->variant_id,
-                ];
-
-                // Add price data if update needed
-                if ($variant->price_requires_update == 1) {
-                    $variantData['price'] = $variant->retailEdgeProduct->price;
-
-                    $compareAtPrice = $variant->retailEdgeProduct->compare_at_price;
-                    // Set to null if 0 or equals price
-                    if ($compareAtPrice == 0 || $compareAtPrice == $variantData['price']) {
-                        $variantData['compare_at_price'] = null;
-                    } else {
-                        $variantData['compare_at_price'] = $compareAtPrice;
-                    }
-                }
-
-                // Add inventory data if update needed
-                if ($variant->inventory_requires_update == 1) {
-                    $variantData['inventory_quantity'] = $variant->retailEdgeProduct->quantity;
-                }
-
-                $variantsData[] = $variantData;
-                $variantRecords[] = $variant;
-            }
-
-            if (empty($variantsData)) {
-                $this->warn("Skipping product {$productId}: No valid variants to update");
+        foreach ($variantsNeedingUpdate as $variant) {
+            if (! $variant->retailEdgeProduct) {
+                $this->handleMissingRetailEdgeProduct($variant, $marketplace);
                 continue;
             }
 
-            // Execute GraphQL mutation
-            $result = $this->graphqlService->updateProductPriceAndInventory(
-                $productId,
-                $variantsData,
-                $location->location_id
-            );
+            // Collect price updates grouped by product
+            if ($variant->price_requires_update == 1) {
+                $productId = $variant->product_id;
+                if (! isset($priceUpdatesByProduct[$productId])) {
+                    $priceUpdatesByProduct[$productId] = [
+                        'variants' => [],
+                        'records' => [],
+                    ];
+                }
 
-            if ($result['success']) {
-                $this->handleSuccessfulUpdate($variantRecords, $variantsData, $marketplace, $location);
-            } else {
-                $this->handleFailedUpdate($variantRecords, $result, $marketplace);
+                $compareAtPrice = $variant->retailEdgeProduct->compare_at_price;
+                $price = $variant->retailEdgeProduct->price;
+
+                $priceUpdatesByProduct[$productId]['variants'][] = [
+                    'variant_id' => $variant->variant_id,
+                    'price' => $price,
+                    'compare_at_price' => ($compareAtPrice == 0 || $compareAtPrice == $price) ? null : $compareAtPrice,
+                ];
+                $priceUpdatesByProduct[$productId]['records'][] = $variant;
             }
 
-            // Small delay to respect rate limits
-            usleep(500000); // 0.5 seconds between products
+            // Collect inventory updates for bulk processing across products
+            if ($variant->inventory_requires_update == 1 && $variant->inventory_item_id) {
+                $inventoryUpdates[] = [
+                    'inventory_item_id' => $variant->inventory_item_id,
+                    'quantity' => $variant->retailEdgeProduct->quantity,
+                    'variant' => $variant,
+                ];
+                $variantMap[$variant->inventory_item_id] = $variant;
+            }
         }
 
+        // Process price updates per product
+        $this->processPriceUpdates($priceUpdatesByProduct, $marketplace);
+
+        // Process inventory updates in chunks of 250 across all products
+        $this->processInventoryUpdates($inventoryUpdates, $location, $marketplace);
+
         $this->info('Batch updates completed.');
+    }
+
+    /**
+     * Process price updates grouped by product
+     */
+    private function processPriceUpdates(array $priceUpdatesByProduct, string $marketplace)
+    {
+        $totalProducts = count($priceUpdatesByProduct);
+        if ($totalProducts === 0) {
+            $this->info('No price updates to process.');
+
+            return;
+        }
+
+        $this->info("Processing price updates for {$totalProducts} product(s)...");
+        $processedProducts = 0;
+
+        foreach ($priceUpdatesByProduct as $productId => $data) {
+            $processedProducts++;
+            $variantCount = count($data['variants']);
+            $this->info("[{$processedProducts}/{$totalProducts}] Updating prices for product {$productId} ({$variantCount} variant(s))");
+
+            $result = $this->graphqlService->updateProductVariantPrices($productId, $data['variants']);
+
+            if ($result['success']) {
+                $this->handleSuccessfulPriceUpdate($data['records'], $data['variants'], $marketplace);
+            } else {
+                $this->handleFailedPriceUpdate($data['records'], $data['variants'], $result, $marketplace);
+            }
+
+            usleep(250000); // 0.25 seconds between products
+        }
+    }
+
+    /**
+     * Process inventory updates in chunks of 250 across all products
+     */
+    private function processInventoryUpdates(array $inventoryUpdates, $location, string $marketplace)
+    {
+        $totalItems = count($inventoryUpdates);
+        if ($totalItems === 0) {
+            $this->info('No inventory updates to process.');
+
+            return;
+        }
+
+        $chunkSize = 250;
+        $chunks = array_chunk($inventoryUpdates, $chunkSize);
+        $totalChunks = count($chunks);
+
+        $this->info("Processing {$totalItems} inventory update(s) in {$totalChunks} chunk(s) of up to {$chunkSize}...");
+
+        foreach ($chunks as $chunkIndex => $chunk) {
+            $chunkNumber = $chunkIndex + 1;
+            $this->info("[Chunk {$chunkNumber}/{$totalChunks}] Processing ".count($chunk).' inventory items...');
+
+            // Prepare items for bulk update
+            $items = array_map(function ($item) {
+                return [
+                    'inventory_item_id' => $item['inventory_item_id'],
+                    'quantity' => $item['quantity'],
+                ];
+            }, $chunk);
+
+            $result = $this->graphqlService->bulkUpdateInventory($items, $location->location_id);
+
+            if ($result['success']) {
+                $this->handleSuccessfulInventoryChunk($chunk, $marketplace);
+            } else {
+                $this->handleFailedInventoryChunk($chunk, $result, $marketplace);
+            }
+
+            usleep(500000); // 0.5 seconds between chunks
+        }
+    }
+
+    /**
+     * Handle successful price update for a product
+     */
+    private function handleSuccessfulPriceUpdate(array $variantRecords, array $variantsData, string $marketplace)
+    {
+        foreach ($variantRecords as $index => $variant) {
+            $variantData = $variantsData[$index];
+            $skuValue = $variant->sku ?: '[EMPTY SKU]';
+
+            $oldPrice = $variant->price;
+            $newPrice = $variantData['price'];
+
+            PriceInventoryLog::create([
+                'marketplace' => $marketplace,
+                'item_identifier' => $skuValue,
+                'change_type' => 'price',
+                'from_value' => $oldPrice,
+                'to_value' => $newPrice,
+                'status' => 'success',
+                'job_name' => $this->signature,
+                'message' => 'Price updated via GraphQL productVariantsBulkUpdate. Variant ID: '.$variant->variant_id,
+            ]);
+
+            $updates = [
+                'price' => $newPrice,
+                'price_requires_update' => 0,
+            ];
+
+            if (array_key_exists('compare_at_price', $variantData)) {
+                $oldCompareAtPrice = $variant->compare_at_price;
+                $newCompareAtPrice = $variantData['compare_at_price'];
+
+                PriceInventoryLog::create([
+                    'marketplace' => $marketplace,
+                    'item_identifier' => $skuValue,
+                    'change_type' => 'compare_at_price',
+                    'from_value' => $oldCompareAtPrice,
+                    'to_value' => $newCompareAtPrice,
+                    'status' => 'success',
+                    'job_name' => $this->signature,
+                    'message' => 'Compare_at_price updated via GraphQL productVariantsBulkUpdate. Variant ID: '.$variant->variant_id,
+                ]);
+
+                $updates['compare_at_price'] = $newCompareAtPrice ?? 0;
+            }
+
+            $variant->update($updates);
+            $this->info("✓ Price updated for {$skuValue}");
+        }
+    }
+
+    /**
+     * Handle failed price update for a product
+     */
+    private function handleFailedPriceUpdate(array $variantRecords, array $variantsData, array $result, string $marketplace)
+    {
+        $errorMessage = 'GraphQL Error: ';
+        if (! empty($result['user_errors'])) {
+            $errorMessage .= json_encode($result['user_errors']);
+        } elseif (! empty($result['graphql_errors'])) {
+            $errorMessage .= json_encode($result['graphql_errors']);
+        } else {
+            $errorMessage .= 'Unknown error';
+        }
+
+        foreach ($variantRecords as $index => $variant) {
+            $variantData = $variantsData[$index] ?? [];
+            $skuValue = $variant->sku ?: '[EMPTY SKU]';
+
+            $this->failureLogger->logFailure(
+                $variant,
+                'price',
+                $errorMessage,
+                $result,
+                [
+                    'job_name' => $this->signature,
+                    'api_request' => $variantData,
+                    'user_errors' => $result['user_errors'] ?? null,
+                    'graphql_errors' => $result['graphql_errors'] ?? null,
+                ]
+            );
+
+            PriceInventoryLog::create([
+                'marketplace' => $marketplace,
+                'item_identifier' => $skuValue,
+                'change_type' => 'price',
+                'from_value' => $variant->price,
+                'to_value' => $variant->retailEdgeProduct ? $variant->retailEdgeProduct->price : null,
+                'status' => 'failed',
+                'job_name' => $this->signature,
+                'message' => $errorMessage,
+            ]);
+
+            $variant->update(['price_requires_update' => 2]);
+            $this->error("✗ Price update failed for {$skuValue}");
+        }
+    }
+
+    /**
+     * Handle successful inventory chunk update
+     */
+    private function handleSuccessfulInventoryChunk(array $chunk, string $marketplace)
+    {
+        foreach ($chunk as $item) {
+            $variant = $item['variant'];
+            $skuValue = $variant->sku ?: '[EMPTY SKU]';
+            $oldInventory = $variant->inventory_quantity;
+            $newInventory = $item['quantity'];
+
+            PriceInventoryLog::create([
+                'marketplace' => $marketplace,
+                'item_identifier' => $skuValue,
+                'change_type' => 'inventory',
+                'from_value' => $oldInventory,
+                'to_value' => $newInventory,
+                'status' => 'success',
+                'job_name' => $this->signature,
+                'message' => 'Inventory updated via GraphQL inventorySetQuantities (bulk). Variant ID: '.$variant->variant_id,
+            ]);
+
+            $variant->update([
+                'inventory_quantity' => $newInventory,
+                'inventory_requires_update' => 0,
+            ]);
+
+            // Check if product needs to be reactivated
+            if ($newInventory > 0 && $variant->product && $variant->product->status == 'archived') {
+                $this->reactivateProduct($variant->product, $marketplace);
+            }
+
+            $this->info("✓ Inventory updated for {$skuValue}");
+        }
+    }
+
+    /**
+     * Handle failed inventory chunk update
+     */
+    private function handleFailedInventoryChunk(array $chunk, array $result, string $marketplace)
+    {
+        $errorMessage = 'GraphQL Error: ';
+        if (! empty($result['user_errors'])) {
+            $errorMessage .= json_encode($result['user_errors']);
+        } elseif (! empty($result['graphql_errors'])) {
+            $errorMessage .= json_encode($result['graphql_errors']);
+        } else {
+            $errorMessage .= 'Unknown error';
+        }
+
+        foreach ($chunk as $item) {
+            $variant = $item['variant'];
+            $skuValue = $variant->sku ?: '[EMPTY SKU]';
+
+            $this->failureLogger->logFailure(
+                $variant,
+                'inventory',
+                $errorMessage,
+                $result,
+                [
+                    'job_name' => $this->signature,
+                    'inventory_item_id' => $item['inventory_item_id'],
+                    'target_quantity' => $item['quantity'],
+                    'user_errors' => $result['user_errors'] ?? null,
+                    'graphql_errors' => $result['graphql_errors'] ?? null,
+                ]
+            );
+
+            PriceInventoryLog::create([
+                'marketplace' => $marketplace,
+                'item_identifier' => $skuValue,
+                'change_type' => 'inventory',
+                'from_value' => $variant->inventory_quantity,
+                'to_value' => $item['quantity'],
+                'status' => 'failed',
+                'job_name' => $this->signature,
+                'message' => $errorMessage,
+            ]);
+
+            $variant->update(['inventory_requires_update' => 2]);
+            $this->error("✗ Inventory update failed for {$skuValue}");
+        }
     }
 
     /**
@@ -228,174 +466,6 @@ class UpdatePriceInventoryBatch extends Command
     }
 
     /**
-     * Handle successful GraphQL update
-     */
-    private function handleSuccessfulUpdate($variantRecords, $variantsData, $marketplace, $location)
-    {
-        foreach ($variantRecords as $index => $variant) {
-            $variantData = $variantsData[$index];
-            $retailEdgeProduct = $variant->retailEdgeProduct;
-
-            if (! $retailEdgeProduct) {
-                continue;
-            }
-
-            $updates = [];
-            $skuValue = $variant->sku ?: '[EMPTY SKU]';
-
-            // Handle price update
-            if (isset($variantData['price'])) {
-                $oldPrice = $variant->price;
-                $newPrice = $variantData['price'];
-
-                PriceInventoryLog::create([
-                    'marketplace' => $marketplace,
-                    'item_identifier' => $skuValue,
-                    'change_type' => 'price',
-                    'from_value' => $oldPrice,
-                    'to_value' => $newPrice,
-                    'status' => 'success',
-                    'job_name' => $this->signature,
-                    'message' => 'Price updated via GraphQL productSet (batch). Variant ID: '.$variant->variant_id,
-                ]);
-
-                $updates['price'] = $newPrice;
-                $updates['price_requires_update'] = 0;
-
-                // Handle compare_at_price
-                if (array_key_exists('compare_at_price', $variantData)) {
-                    $oldCompareAtPrice = $variant->compare_at_price;
-                    $newCompareAtPrice = $variantData['compare_at_price'];
-
-                    PriceInventoryLog::create([
-                        'marketplace' => $marketplace,
-                        'item_identifier' => $skuValue,
-                        'change_type' => 'compare_at_price',
-                        'from_value' => $oldCompareAtPrice,
-                        'to_value' => $newCompareAtPrice,
-                        'status' => 'success',
-                        'job_name' => $this->signature,
-                        'message' => 'Compare_at_price updated via GraphQL productSet (batch). Variant ID: '.$variant->variant_id,
-                    ]);
-
-                    $updates['compare_at_price'] = $newCompareAtPrice ?? 0;
-                }
-            }
-
-            // Handle inventory update
-            if (isset($variantData['inventory_quantity'])) {
-                $oldInventory = $variant->inventory_quantity;
-                $newInventory = $variantData['inventory_quantity'];
-
-                PriceInventoryLog::create([
-                    'marketplace' => $marketplace,
-                    'item_identifier' => $skuValue,
-                    'change_type' => 'inventory',
-                    'from_value' => $oldInventory,
-                    'to_value' => $newInventory,
-                    'status' => 'success',
-                    'job_name' => $this->signature,
-                    'message' => 'Inventory updated via GraphQL productSet (batch). Variant ID: '.$variant->variant_id,
-                ]);
-
-                $updates['inventory_quantity'] = $newInventory;
-                $updates['inventory_requires_update'] = 0;
-
-                // Check if product needs to be reactivated
-                if ($newInventory > 0 && $variant->product && $variant->product->status == 'archived') {
-                    $this->reactivateProduct($variant->product, $marketplace);
-                }
-            }
-
-            // Update local database
-            $variant->update($updates);
-            $this->info("✓ Updated {$skuValue} (Variant ID: {$variant->variant_id})");
-        }
-    }
-
-    /**
-     * Handle failed GraphQL update
-     */
-    private function handleFailedUpdate($variantRecords, $result, $marketplace)
-    {
-        $errorMessage = 'GraphQL Error: ';
-        if (! empty($result['user_errors'])) {
-            $errorMessage .= json_encode($result['user_errors']);
-        } elseif (! empty($result['graphql_errors'])) {
-            $errorMessage .= json_encode($result['graphql_errors']);
-        } else {
-            $errorMessage .= 'Unknown error';
-        }
-
-        foreach ($variantRecords as $index => $variant) {
-            $skuValue = $variant->sku ?: '[EMPTY SKU]';
-            $variantData = $variantsData[$index] ?? [];
-
-            // Determine operation type for detailed logging
-            $operationType = 'price_inventory';
-            if ($variant->price_requires_update == 1 && $variant->inventory_requires_update != 1) {
-                $operationType = 'price';
-            } elseif ($variant->inventory_requires_update == 1 && $variant->price_requires_update != 1) {
-                $operationType = 'inventory';
-            }
-
-            // Enhanced failure logging with full API details
-            $this->failureLogger->logFailure(
-                $variant,
-                $operationType,
-                $errorMessage,
-                $result,
-                [
-                    'job_name' => $this->signature,
-                    'api_request' => $variantData,
-                    'user_errors' => $result['user_errors'] ?? null,
-                    'graphql_errors' => $result['graphql_errors'] ?? null,
-                    'target_data' => $variantData,
-                ]
-            );
-
-            // Keep existing PriceInventoryLog for compatibility
-            if ($variant->price_requires_update == 1) {
-                PriceInventoryLog::create([
-                    'marketplace' => $marketplace,
-                    'item_identifier' => $skuValue,
-                    'change_type' => 'price',
-                    'from_value' => $variant->price,
-                    'to_value' => $variant->retailEdgeProduct ? $variant->retailEdgeProduct->price : null,
-                    'status' => 'failed',
-                    'job_name' => $this->signature,
-                    'message' => $errorMessage,
-                ]);
-            }
-
-            if ($variant->inventory_requires_update == 1) {
-                PriceInventoryLog::create([
-                    'marketplace' => $marketplace,
-                    'item_identifier' => $skuValue,
-                    'change_type' => 'inventory',
-                    'from_value' => $variant->inventory_quantity,
-                    'to_value' => $variant->retailEdgeProduct ? $variant->retailEdgeProduct->quantity : null,
-                    'status' => 'failed',
-                    'job_name' => $this->signature,
-                    'message' => $errorMessage,
-                ]);
-            }
-
-            $variant->update([
-                'price_requires_update' => $variant->price_requires_update == 1 ? 2 : $variant->price_requires_update,
-                'inventory_requires_update' => $variant->inventory_requires_update == 1 ? 2 : $variant->inventory_requires_update,
-            ]);
-
-            $this->error("✗ Failed to update {$skuValue} (Variant ID: {$variant->id})");
-        }
-
-        Log::error('Batch update failed', [
-            'variant_count' => count($variantRecords),
-            'error' => $errorMessage,
-        ]);
-    }
-
-    /**
      * Reactivate archived product when inventory becomes available
      */
     private function reactivateProduct($product, $marketplace)
@@ -420,11 +490,11 @@ class UpdatePriceInventoryBatch extends Command
     }
 
     /**
-     * Process previously failed updates with retry logic
+     * Process previously failed updates with retry logic using hybrid chunking
      */
     private function processFailedUpdates($location, $marketplace)
     {
-        // Get failed variants
+        // Get failed variants (limit to 250 for inventory chunk size)
         $failedVariants = ShopifyProductVariant::with(['retailEdgeProduct', 'product'])
             ->whereNotNull('variant_id')
             ->whereNotNull('product_id')
@@ -432,7 +502,7 @@ class UpdatePriceInventoryBatch extends Command
                 $query->where('price_requires_update', 2)
                     ->orWhere('inventory_requires_update', 2);
             })
-            ->limit(50) // Process max 50 failed items per run
+            ->limit(250)
             ->get();
 
         if ($failedVariants->isEmpty()) {
@@ -444,201 +514,213 @@ class UpdatePriceInventoryBatch extends Command
         $failedCount = $failedVariants->count();
         $this->info("Retrying {$failedCount} previously failed update(s)...");
 
-        // Group by product for batch retry
-        $variantsByProduct = $failedVariants->groupBy('product_id');
+        // Separate price and inventory retries
+        $priceRetryByProduct = [];
+        $inventoryRetries = [];
 
-        foreach ($variantsByProduct as $productId => $variants) {
-            $this->info("Retrying product ID: {$productId} with ".count($variants).' variant(s)');
-
-            $variantsData = [];
-            $variantRecords = [];
-
-            foreach ($variants as $variant) {
-                if (! $variant->retailEdgeProduct) {
-                    $this->handleMissingRetailEdgeProduct($variant, $marketplace);
-                    continue;
-                }
-
-                $variantData = [
-                    'variant_id' => $variant->variant_id,
-                ];
-
-                // Add price data if update needed
-                if ($variant->price_requires_update == 2) {
-                    $variantData['price'] = $variant->retailEdgeProduct->price;
-                    $compareAtPrice = $variant->retailEdgeProduct->compare_at_price;
-                    $variantData['compare_at_price'] = ($compareAtPrice == 0 || $compareAtPrice == $variantData['price'])
-                        ? null
-                        : $compareAtPrice;
-                }
-
-                // Add inventory data if update needed
-                if ($variant->inventory_requires_update == 2) {
-                    $variantData['inventory_quantity'] = $variant->retailEdgeProduct->quantity;
-                }
-
-                $variantsData[] = $variantData;
-                $variantRecords[] = $variant;
-            }
-
-            if (empty($variantsData)) {
+        foreach ($failedVariants as $variant) {
+            if (! $variant->retailEdgeProduct) {
+                $this->handleMissingRetailEdgeProduct($variant, $marketplace);
                 continue;
             }
 
-            // Retry with GraphQL mutation
-            $result = $this->graphqlService->updateProductPriceAndInventory(
-                $productId,
-                $variantsData,
-                $location->location_id
-            );
+            // Collect price retries grouped by product
+            if ($variant->price_requires_update == 2) {
+                $productId = $variant->product_id;
+                if (! isset($priceRetryByProduct[$productId])) {
+                    $priceRetryByProduct[$productId] = [
+                        'variants' => [],
+                        'records' => [],
+                    ];
+                }
 
-            if ($result['success']) {
-                $this->handleSuccessfulRetry($variantRecords, $variantsData, $marketplace, $location);
-            } else {
-                $this->handleFailedRetry($variantRecords, $variantsData, $result, $marketplace);
+                $compareAtPrice = $variant->retailEdgeProduct->compare_at_price;
+                $price = $variant->retailEdgeProduct->price;
+
+                $priceRetryByProduct[$productId]['variants'][] = [
+                    'variant_id' => $variant->variant_id,
+                    'price' => $price,
+                    'compare_at_price' => ($compareAtPrice == 0 || $compareAtPrice == $price) ? null : $compareAtPrice,
+                ];
+                $priceRetryByProduct[$productId]['records'][] = $variant;
             }
 
-            usleep(1000000); // 1 second delay for retries
+            // Collect inventory retries for bulk processing
+            if ($variant->inventory_requires_update == 2 && $variant->inventory_item_id) {
+                $inventoryRetries[] = [
+                    'inventory_item_id' => $variant->inventory_item_id,
+                    'quantity' => $variant->retailEdgeProduct->quantity,
+                    'variant' => $variant,
+                ];
+            }
         }
+
+        // Process price retries per product
+        $this->processPriceRetries($priceRetryByProduct, $marketplace);
+
+        // Process inventory retries in bulk
+        $this->processInventoryRetries($inventoryRetries, $location, $marketplace);
 
         $this->info('Failed updates retry completed.');
     }
 
     /**
-     * Handle successful retry
+     * Process price retries grouped by product
      */
-    private function handleSuccessfulRetry($variantRecords, $variantsData, $marketplace, $location)
+    private function processPriceRetries(array $priceRetryByProduct, string $marketplace)
     {
-        foreach ($variantRecords as $index => $variant) {
-            $variantData = $variantsData[$index];
-            $skuValue = $variant->sku ?: '[EMPTY SKU]';
-            $updates = [];
+        $totalProducts = count($priceRetryByProduct);
+        if ($totalProducts === 0) {
+            return;
+        }
 
-            if (isset($variantData['price'])) {
-                // Legacy log entry
-                PriceInventoryLog::create([
-                    'marketplace' => $marketplace,
-                    'item_identifier' => $skuValue,
-                    'change_type' => 'price_retry',
-                    'from_value' => $variant->price,
-                    'to_value' => $variantData['price'],
-                    'status' => 'success',
-                    'job_name' => $this->signature,
-                    'message' => 'Retry successful: Price updated via GraphQL productSet. Variant ID: '.$variant->variant_id,
-                ]);
+        $this->info("Retrying price updates for {$totalProducts} product(s)...");
 
-                // Enhanced success logging
-                $this->failureLogger->logSuccess($variant, 'price', [
-                    'job_name' => $this->signature,
-                ]);
+        foreach ($priceRetryByProduct as $productId => $data) {
+            $result = $this->graphqlService->updateProductVariantPrices($productId, $data['variants']);
 
-                $updates['price'] = $variantData['price'];
-                $updates['compare_at_price'] = $variantData['compare_at_price'] ?? 0;
-                $updates['price_requires_update'] = 0;
-            }
+            if ($result['success']) {
+                foreach ($data['records'] as $index => $variant) {
+                    $variantData = $data['variants'][$index];
+                    $skuValue = $variant->sku ?: '[EMPTY SKU]';
 
-            if (isset($variantData['inventory_quantity'])) {
-                // Legacy log entry
-                PriceInventoryLog::create([
-                    'marketplace' => $marketplace,
-                    'item_identifier' => $skuValue,
-                    'change_type' => 'inventory_retry',
-                    'from_value' => $variant->inventory_quantity,
-                    'to_value' => $variantData['inventory_quantity'],
-                    'status' => 'success',
-                    'job_name' => $this->signature,
-                    'message' => 'Retry successful: Inventory updated via GraphQL productSet. Variant ID: '.$variant->variant_id,
-                ]);
+                    PriceInventoryLog::create([
+                        'marketplace' => $marketplace,
+                        'item_identifier' => $skuValue,
+                        'change_type' => 'price_retry',
+                        'from_value' => $variant->price,
+                        'to_value' => $variantData['price'],
+                        'status' => 'success',
+                        'job_name' => $this->signature,
+                        'message' => 'Retry successful: Price updated via GraphQL productVariantsBulkUpdate. Variant ID: '.$variant->variant_id,
+                    ]);
 
-                // Enhanced success logging
-                $this->failureLogger->logSuccess($variant, 'inventory', [
-                    'job_name' => $this->signature,
-                ]);
+                    $this->failureLogger->logSuccess($variant, 'price', ['job_name' => $this->signature]);
 
-                $updates['inventory_quantity'] = $variantData['inventory_quantity'];
-                $updates['inventory_requires_update'] = 0;
+                    $variant->update([
+                        'price' => $variantData['price'],
+                        'compare_at_price' => $variantData['compare_at_price'] ?? 0,
+                        'price_requires_update' => 0,
+                    ]);
 
-                if ($variantData['inventory_quantity'] > 0 && $variant->product && $variant->product->status == 'archived') {
-                    $this->reactivateProduct($variant->product, $marketplace);
+                    $this->info("✓ Price retry successful for {$skuValue}");
+                }
+            } else {
+                $errorMessage = $this->formatErrorMessage($result, 'Retry failed - ');
+
+                foreach ($data['records'] as $index => $variant) {
+                    $skuValue = $variant->sku ?: '[EMPTY SKU]';
+
+                    PriceInventoryLog::create([
+                        'marketplace' => $marketplace,
+                        'item_identifier' => $skuValue,
+                        'change_type' => 'price_retry',
+                        'from_value' => $variant->price,
+                        'to_value' => $variant->retailEdgeProduct ? $variant->retailEdgeProduct->price : null,
+                        'status' => 'failed',
+                        'job_name' => $this->signature,
+                        'message' => $errorMessage,
+                    ]);
+
+                    // Mark as status 3 (repeated failure)
+                    $variant->update(['price_requires_update' => 3]);
+                    $this->error("✗ Price retry failed for {$skuValue}");
                 }
             }
 
-            $variant->update($updates);
-            $this->info("✓ Retry successful for {$skuValue} (Variant ID: {$variant->variant_id})");
+            usleep(500000); // 0.5 second delay
         }
     }
 
     /**
-     * Handle failed retry
+     * Process inventory retries in bulk
      */
-    private function handleFailedRetry($variantRecords, $variantsData, $result, $marketplace)
+    private function processInventoryRetries(array $inventoryRetries, $location, string $marketplace)
     {
-        $errorMessage = 'Retry failed - GraphQL Error: ';
-        if (! empty($result['user_errors'])) {
-            $errorMessage .= json_encode($result['user_errors']);
-        } elseif (! empty($result['graphql_errors'])) {
-            $errorMessage .= json_encode($result['graphql_errors']);
+        $totalItems = count($inventoryRetries);
+        if ($totalItems === 0) {
+            return;
         }
 
-        foreach ($variantRecords as $index => $variant) {
-            $variantData = $variantsData[$index];
-            $skuValue = $variant->sku ?: '[EMPTY SKU]';
+        $this->info("Retrying {$totalItems} inventory update(s) in bulk...");
 
-            // Determine operation type for enhanced logging
-            $operationType = 'price_inventory';
-            if ($variant->price_requires_update == 2 && $variant->inventory_requires_update != 2) {
-                $operationType = 'price';
-            } elseif ($variant->inventory_requires_update == 2 && $variant->price_requires_update != 2) {
-                $operationType = 'inventory';
-            }
+        $items = array_map(function ($item) {
+            return [
+                'inventory_item_id' => $item['inventory_item_id'],
+                'quantity' => $item['quantity'],
+            ];
+        }, $inventoryRetries);
 
-            if ($variant->price_requires_update == 2) {
-                // Legacy log entry
-                PriceInventoryLog::create([
-                    'marketplace' => $marketplace,
-                    'item_identifier' => $skuValue,
-                    'change_type' => 'price_retry',
-                    'from_value' => $variant->price,
-                    'to_value' => $variant->retailEdgeProduct ? $variant->retailEdgeProduct->price : null,
-                    'status' => 'failed',
-                    'job_name' => $this->signature,
-                    'message' => $errorMessage,
-                ]);
-                // Keep at 2 for another retry attempt
-            }
+        $result = $this->graphqlService->bulkUpdateInventory($items, $location->location_id);
 
-            if ($variant->inventory_requires_update == 2) {
-                // Legacy log entry
+        if ($result['success']) {
+            foreach ($inventoryRetries as $item) {
+                $variant = $item['variant'];
+                $skuValue = $variant->sku ?: '[EMPTY SKU]';
+
                 PriceInventoryLog::create([
                     'marketplace' => $marketplace,
                     'item_identifier' => $skuValue,
                     'change_type' => 'inventory_retry',
                     'from_value' => $variant->inventory_quantity,
-                    'to_value' => $variant->retailEdgeProduct ? $variant->retailEdgeProduct->quantity : null,
+                    'to_value' => $item['quantity'],
+                    'status' => 'success',
+                    'job_name' => $this->signature,
+                    'message' => 'Retry successful: Inventory updated via GraphQL inventorySetQuantities (bulk). Variant ID: '.$variant->variant_id,
+                ]);
+
+                $this->failureLogger->logSuccess($variant, 'inventory', ['job_name' => $this->signature]);
+
+                $variant->update([
+                    'inventory_quantity' => $item['quantity'],
+                    'inventory_requires_update' => 0,
+                ]);
+
+                if ($item['quantity'] > 0 && $variant->product && $variant->product->status == 'archived') {
+                    $this->reactivateProduct($variant->product, $marketplace);
+                }
+
+                $this->info("✓ Inventory retry successful for {$skuValue}");
+            }
+        } else {
+            $errorMessage = $this->formatErrorMessage($result, 'Retry failed - ');
+
+            foreach ($inventoryRetries as $item) {
+                $variant = $item['variant'];
+                $skuValue = $variant->sku ?: '[EMPTY SKU]';
+
+                PriceInventoryLog::create([
+                    'marketplace' => $marketplace,
+                    'item_identifier' => $skuValue,
+                    'change_type' => 'inventory_retry',
+                    'from_value' => $variant->inventory_quantity,
+                    'to_value' => $item['quantity'],
                     'status' => 'failed',
                     'job_name' => $this->signature,
                     'message' => $errorMessage,
                 ]);
-                // Update to 3 (repeated failure)
+
+                // Mark as status 3 (repeated failure)
                 $variant->update(['inventory_requires_update' => 3]);
+                $this->error("✗ Inventory retry failed for {$skuValue}");
             }
-
-            // Enhanced failure logging with full API details
-            $this->failureLogger->logFailure(
-                $variant,
-                $operationType,
-                $errorMessage,
-                $result,
-                [
-                    'job_name' => $this->signature,
-                    'api_request' => $variantData,
-                    'user_errors' => $result['user_errors'] ?? null,
-                    'graphql_errors' => $result['graphql_errors'] ?? null,
-                    'target_data' => $variantData,
-                ]
-            );
-
-            $this->error("✗ Retry failed for {$skuValue} (Variant ID: {$variant->id})");
         }
+    }
+
+    /**
+     * Format error message from GraphQL result
+     */
+    private function formatErrorMessage(array $result, string $prefix = ''): string
+    {
+        $errorMessage = $prefix.'GraphQL Error: ';
+        if (! empty($result['user_errors'])) {
+            $errorMessage .= json_encode($result['user_errors']);
+        } elseif (! empty($result['graphql_errors'])) {
+            $errorMessage .= json_encode($result['graphql_errors']);
+        } else {
+            $errorMessage .= 'Unknown error';
+        }
+
+        return $errorMessage;
     }
 }
