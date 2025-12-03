@@ -310,6 +310,13 @@ class UpdatePriceInventoryBatch extends Command
             $variantData = $variantsData[$index] ?? [];
             $skuValue = $variant->sku ?: '[EMPTY SKU]';
 
+            // Check if this is a "product not exists" error - if so, clean up stale record
+            if ($this->isProductNotExistsError($errorMessage)) {
+                $this->cleanupStaleVariant($variant);
+
+                continue; // Skip further processing for this variant
+            }
+
             $this->failureLogger->logFailure(
                 $variant,
                 'price',
@@ -392,6 +399,13 @@ class UpdatePriceInventoryBatch extends Command
         foreach ($chunk as $item) {
             $variant = $item['variant'];
             $skuValue = $variant->sku ?: '[EMPTY SKU]';
+
+            // Check if this is a "product not exists" error - if so, clean up stale record
+            if ($this->isProductNotExistsError($errorMessage)) {
+                $this->cleanupStaleVariant($variant);
+
+                continue; // Skip further processing for this variant
+            }
 
             $this->failureLogger->logFailure(
                 $variant,
@@ -722,5 +736,39 @@ class UpdatePriceInventoryBatch extends Command
         }
 
         return $errorMessage;
+    }
+
+    /**
+     * Clean up stale variant record when Shopify returns "Product does not exist" or similar errors.
+     * This removes the local record and resets the RetailEdge uploaded flag so the product can be recreated.
+     */
+    private function cleanupStaleVariant($variant): void
+    {
+        $sku = $variant->sku;
+        $productId = $variant->shopify_product_id;
+
+        // Delete variant record
+        $variant->delete();
+
+        // Check if product has other variants, if not delete product too
+        $remainingVariants = ShopifyProductVariant::where('shopify_product_id', $productId)->count();
+        if ($remainingVariants === 0) {
+            ShopifyProduct::where('id', $productId)->delete();
+        }
+
+        // Reset RetailEdge uploaded flag so product can be recreated
+        \App\Models\RetailEdgeProduct::where('sku', $sku)->update(['uploaded_to_shopify' => 0]);
+
+        $this->info("🧹 Auto-cleaned stale variant: {$sku}");
+        Log::info("Auto-cleaned stale Shopify variant: {$sku}");
+    }
+
+    /**
+     * Check if error message indicates the product/variant no longer exists on Shopify
+     */
+    private function isProductNotExistsError(string $errorMessage): bool
+    {
+        return str_contains($errorMessage, 'Product does not exist')
+            || str_contains($errorMessage, 'inventory item could not be found');
     }
 }

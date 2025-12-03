@@ -504,6 +504,21 @@ class GetProducts extends Command
         // Products to recreate (in retail_edge but not in Shopify)
         $skusToRecreate = array_diff($retailEdgeSkus, $shopifySkus);
 
+        // Clean up stale Shopify records before recreation
+        // This handles the case where products were deleted from Shopify but local records remain
+        if (! empty($skusToRecreate) && ! $this->option('dry-run')) {
+            $staleVariants = ShopifyProductVariant::whereIn('sku', $skusToRecreate)->get();
+            if ($staleVariants->isNotEmpty()) {
+                $this->info('🧹 Cleaning up '.$staleVariants->count().' stale variant records before recreation...');
+                $staleProductIds = $staleVariants->pluck('shopify_product_id')->unique()->filter()->toArray();
+
+                if (! empty($staleProductIds)) {
+                    $this->deleteShopifyProductsFromDb($staleProductIds);
+                    $this->stats['deleted'] += count($staleProductIds);
+                }
+            }
+        }
+
         // Products to delete (in local DB but not in Shopify AND not in retail_edge)
         $skusToDelete = array_diff($localShopifySkus, array_merge($shopifySkus, $retailEdgeSkus));
 
