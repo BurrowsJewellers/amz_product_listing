@@ -2,7 +2,6 @@
 
 namespace App\Console\Commands\Jobs;
 
-use App\Http\Controllers\SyncJobController;
 use App\Models\SyncJob;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -36,8 +35,8 @@ class JobRecovery extends Command
 
         $this->info('Checking for stuck jobs...');
 
-        // Get all running jobs
-        $runningJobs = SyncJob::where('status', 1)->get();
+        // Get all running jobs (excluding paused jobs)
+        $runningJobs = SyncJob::where('status', 1)->where('is_paused', false)->get();
 
         if ($runningJobs->isEmpty()) {
             $this->info('No running jobs found.');
@@ -123,9 +122,9 @@ class JobRecovery extends Command
                     'process_id' => $job->process_id,
                 ]);
 
-                $this->info("    ✓ Recovered");
+                $this->info('    ✓ Recovered');
             } else {
-                $this->info("    Would recover (dry-run)");
+                $this->info('    Would recover (dry-run)');
             }
         }
 

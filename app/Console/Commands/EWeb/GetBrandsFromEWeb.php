@@ -27,42 +27,44 @@ class GetBrandsFromEWeb extends Command
     /**
      * Execute the console command.
      */
-    public function handle()
+    public function handle(): int
     {
         $marketplace = 'EWeb';
         $jobType = 'getBrandsFromEWeb';
 
-        $job = SyncJobController::getJob($jobType, $marketplace);
+        $job = SyncJobController::acquireLock($jobType, $marketplace);
 
-        if (! $job->isRunning()) {
-            Log::info("$marketplace $jobType started!");
-            $job->update(['status' => 1]);
+        if (! $job) {
+            $this->warn('Job is paused or already running.');
 
-            try {
-                $eWeb = new EWebController;
-                $resp = $eWeb->call('GetAllBrands');
-
-                foreach ($resp->GetAllBrandsResult->Brand as $brand) {
-                    Brand::updateOrCreate(
-                        [
-                            'brand_id' => $brand->ID,
-                        ],
-                        [
-                            'name' => $brand->Name,
-                        ]
-                    );
-                    // Brand::firstOrCreate(['name' => $brand->Name, 'brand_id' => $brand->ID]);
-                    $this->info($brand->Name);
-                }
-                $job->update(['status' => 0, 'message' => null]);
-            } catch (\Exception $e) {
-                report($e);
-                $job->update(['status' => 0, 'message' => $e->getMessage()]);
-            }
-
-            Log::info("$marketplace $jobType finished!");
-        } else {
-            Log::info("$marketplace $jobType is already running.");
+            return Command::SUCCESS;
         }
+
+        Log::info("$marketplace $jobType started!");
+
+        try {
+            $eWeb = new EWebController;
+            $resp = $eWeb->call('GetAllBrands');
+
+            foreach ($resp->GetAllBrandsResult->Brand as $brand) {
+                Brand::updateOrCreate(
+                    [
+                        'brand_id' => $brand->ID,
+                    ],
+                    [
+                        'name' => $brand->Name,
+                    ]
+                );
+                $this->info($brand->Name);
+            }
+            $job->finishJob();
+        } catch (\Exception $e) {
+            report($e);
+            $job->finishJob($e->getMessage());
+        }
+
+        Log::info("$marketplace $jobType finished!");
+
+        return Command::SUCCESS;
     }
 }
