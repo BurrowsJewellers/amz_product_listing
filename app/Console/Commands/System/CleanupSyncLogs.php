@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\System;
 
 use App\Models\SyncRetryJob;
 use App\Services\SyncFailureLogger;

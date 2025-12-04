@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Deprecated;
 
 use App\Services\ShopifyService;
 use Illuminate\Console\Command;

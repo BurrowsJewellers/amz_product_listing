@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Jobs;
 
 use App\Http\Controllers\SyncJobController;
 use Illuminate\Console\Command;
@@ -14,7 +14,7 @@ class JobOrchestrator extends Command
      * @var string
      */
     protected $signature = 'job:orchestrator
-                            {chain : Chain to execute (main-sync|amazon-sync|shopify-sync)}
+                            {chain : Chain to execute (main-sync|shopify-sync)}
                             {--dry-run : Show what would be executed without running}
                             {--force : Force execution even if jobs are running}';
 
@@ -35,20 +35,10 @@ class JobOrchestrator extends Command
             'jobs' => [
                 'getProductsFromEWebMain',
                 'shopify:verify-sync-prices',
-                'shopify:update-price-inventory-batch', // Using new batch command for improved performance
+                'shopify:update-price-inventory-batch',
             ],
             'job_args' => [
                 'shopify:verify-sync-prices' => ['--force' => true],
-            ],
-        ],
-        'amazon-sync' => [
-            'description' => 'Amazon operations chain',
-            'marketplace' => 'Amazon',
-            'jobs' => [
-                'generateAmzProductsJson',
-                'amazonUpdateInventoryPrice',
-                'getAmzMerchantListingAllData',
-                'processAmzMerchantListingAllData',
             ],
         ],
         'shopify-sync' => [
@@ -129,6 +119,13 @@ class JobOrchestrator extends Command
     }
 
     /**
+     * Chain dependencies - define which chains must complete before another can start
+     */
+    private $chainDependencies = [
+        'shopify-sync' => ['main-sync'], // shopify-sync waits for main-sync
+    ];
+
+    /**
      * Execute a job chain
      */
     private function executeChain(string $chainName, array $chain): int
@@ -136,6 +133,18 @@ class JobOrchestrator extends Command
         $startTime = microtime(true);
         $totalJobs = count($chain['jobs']);
         $currentJob = 0;
+
+        // Wait for dependent chains to complete
+        if (isset($this->chainDependencies[$chainName])) {
+            foreach ($this->chainDependencies[$chainName] as $dependentChain) {
+                if (! $this->waitForChainCompletion($dependentChain)) {
+                    $this->error("❌ Timed out waiting for {$dependentChain} to complete");
+                    Log::warning("Chain {$chainName} timed out waiting for {$dependentChain}");
+
+                    return 1;
+                }
+            }
+        }
 
         Log::info("Starting job chain: {$chainName}", [
             'chain' => $chainName,
@@ -248,5 +257,43 @@ class JobOrchestrator extends Command
         }
 
         return implode(' ', $formatted);
+    }
+
+    /**
+     * Wait for a chain to complete before proceeding
+     *
+     * @param  string  $chainName  The chain to wait for
+     * @param  int  $maxWaitSeconds  Maximum time to wait (default 5 minutes)
+     * @return bool True if chain completed, false if timeout
+     */
+    private function waitForChainCompletion(string $chainName, int $maxWaitSeconds = 300): bool
+    {
+        if (! isset($this->chains[$chainName])) {
+            return true; // Unknown chain, don't wait
+        }
+
+        $chain = $this->chains[$chainName];
+        $marketplace = $chain['marketplace'] ?? null;
+        $waitInterval = 10; // Check every 10 seconds
+        $totalWaitTime = 0;
+
+        while ($totalWaitTime < $maxWaitSeconds) {
+            if (! SyncJobController::isChainRunning($chain['jobs'], $marketplace)) {
+                if ($totalWaitTime > 0) {
+                    $this->info("✅ {$chainName} completed. Proceeding...");
+                    Log::info("Chain dependency satisfied: {$chainName} completed after {$totalWaitTime}s wait");
+                }
+
+                return true;
+            }
+
+            $this->info("⏳ Waiting for {$chainName} to complete... ({$totalWaitTime}s elapsed)");
+            Log::info("Waiting for chain {$chainName} to complete. Wait time: {$totalWaitTime}s");
+
+            sleep($waitInterval);
+            $totalWaitTime += $waitInterval;
+        }
+
+        return false;
     }
 }

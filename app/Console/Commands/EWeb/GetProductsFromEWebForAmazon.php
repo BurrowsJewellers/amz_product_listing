@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands\Amazon;
+namespace App\Console\Commands\EWeb;
 
 use App\Http\Controllers\EWebController;
 use App\Http\Controllers\SyncJobController;
@@ -16,7 +16,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
-class GetProductsFromEWeb extends Command
+class GetProductsFromEWebForAmazon extends Command
 {
     private array $brandsArray = [];
 

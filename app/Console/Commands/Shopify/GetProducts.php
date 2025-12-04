@@ -55,85 +55,93 @@ class GetProducts extends Command
         $marketplace = 'Shopify';
         $jobType = 'shopifyGetProducts';
 
-        $job = SyncJobController::getJob($jobType, $marketplace);
+        // Check if GetProductsFromEWebMain is running and wait if needed
+        $maxWaitTime = 300; // 5 minutes max wait
+        $waitInterval = 10; // Check every 10 seconds
+        $totalWaitTime = 0;
 
-        if (! $job->isRunning()) {
-            try {
-                // Check if GetProductsFromEWebMain is running and wait if needed
-                $maxWaitTime = 300; // 5 minutes max wait
-                $waitInterval = 10; // Check every 10 seconds
-                $totalWaitTime = 0;
+        while ($totalWaitTime < $maxWaitTime) {
+            $ewebJob = SyncJob::where('type', 'getProductsFromEWebMain')
+                ->where('marketplace', 'EWeb')
+                ->first();
 
-                while ($totalWaitTime < $maxWaitTime) {
-                    $ewebJob = SyncJob::where('type', 'getProductsFromEWebMain')
-                        ->where('marketplace', 'EWeb')
-                        ->first();
+            if ($ewebJob && $ewebJob->status == 1) {
+                $this->info("⏳ GetProductsFromEWebMain is running. Waiting... ({$totalWaitTime}s elapsed)");
+                Log::info("$marketplace $jobType waiting for GetProductsFromEWebMain to complete. Wait time: {$totalWaitTime}s");
 
-                    if ($ewebJob && $ewebJob->status == 1) {
-                        $this->info("⏳ GetProductsFromEWebMain is running. Waiting... ({$totalWaitTime}s elapsed)");
-                        Log::info("$marketplace $jobType waiting for GetProductsFromEWebMain to complete. Wait time: {$totalWaitTime}s");
-
-                        sleep($waitInterval);
-                        $totalWaitTime += $waitInterval;
-                    } else {
-                        // GetProductsFromEWebMain is not running, proceed
-                        if ($totalWaitTime > 0) {
-                            $this->info('✅ GetProductsFromEWebMain completed. Proceeding with Shopify sync.');
-                            Log::info("$marketplace $jobType proceeding after waiting {$totalWaitTime}s for GetProductsFromEWebMain");
-                        }
-                        break;
-                    }
+                sleep($waitInterval);
+                $totalWaitTime += $waitInterval;
+            } else {
+                // GetProductsFromEWebMain is not running, proceed
+                if ($totalWaitTime > 0) {
+                    $this->info('✅ GetProductsFromEWebMain completed. Proceeding with Shopify sync.');
+                    Log::info("$marketplace $jobType proceeding after waiting {$totalWaitTime}s for GetProductsFromEWebMain");
                 }
-
-                if ($totalWaitTime >= $maxWaitTime) {
-                    $this->warn("⚠️ Waited maximum time ({$maxWaitTime}s) for GetProductsFromEWebMain. Proceeding anyway.");
-                    Log::warning("$marketplace $jobType exceeded max wait time for GetProductsFromEWebMain. Proceeding.");
-                }
-
-                Log::info("$marketplace $jobType started!");
-                $job->update(['status' => 1]);
-
-                // Initialize GraphQL client
-                $session = (new ShopifyService)->getSession();
-                $this->client = new Graphql($session->getShop(), $session->getAccessToken());
-
-                $this->info('🚀 Starting Shopify GraphQL sync...');
-
-                if ($this->option('dry-run')) {
-                    $this->warn('🔍 DRY RUN MODE - No changes will be made');
-                }
-
-                // Step 1: Get Shopify locations
-                $this->info('📍 Syncing locations...');
-                $this->getLocations();
-
-                // Step 2: Get all products from Shopify with smart sync
-                $this->info('📦 Syncing products with GraphQL...');
-                $shopifySkus = $this->getProductsWithGraphQL();
-
-                // Step 3: Identify and handle missing products
-                $this->info('🔍 Analyzing product differences...');
-                $this->handleProductDifferences($shopifySkus);
-
-                // Step 4: Get inventory levels
-                $this->info('📊 Syncing inventory levels...');
-                $this->getInventoryLevels();
-
-                // Display final statistics
-                $this->displayStatistics();
-
-                $job->update(['status' => 0, 'message' => null]);
-                Log::info("$marketplace $jobType finished successfully!");
-            } catch (\Exception $e) {
-                $this->stats['errors']++;
-                $job->update(['status' => 0, 'message' => $e->getMessage()]);
-                report($e);
-                $this->error('❌ Error: '.$e->getMessage());
-                Log::error('Shopify GetProducts failed: '.$e->getMessage(), ['exception' => $e]);
+                break;
             }
-        } else {
-            Log::info("$marketplace $jobType is already running.");
-            $this->warn('⚠️  Job is already running.');
+        }
+
+        if ($totalWaitTime >= $maxWaitTime) {
+            $this->warn("⚠️ Waited maximum time ({$maxWaitTime}s) for GetProductsFromEWebMain. Proceeding anyway.");
+            Log::warning("$marketplace $jobType exceeded max wait time for GetProductsFromEWebMain. Proceeding.");
+        }
+
+        // Acquire lock using new locking system
+        $job = SyncJobController::acquireLock($jobType, $marketplace);
+        if (! $job) {
+            $this->warn('⚠️  Job is already running or paused.');
+            Log::info("$marketplace $jobType: Cannot acquire lock (running or paused)");
+
+            return Command::SUCCESS;
+        }
+
+        try {
+            Log::info("$marketplace $jobType started!");
+
+            // Initialize GraphQL client
+            $session = (new ShopifyService)->getSession();
+            $this->client = new Graphql($session->getShop(), $session->getAccessToken());
+
+            $this->info('🚀 Starting Shopify GraphQL sync...');
+
+            if ($this->option('dry-run')) {
+                $this->warn('🔍 DRY RUN MODE - No changes will be made');
+            }
+
+            // Step 1: Get Shopify locations
+            $this->info('📍 Syncing locations...');
+            $this->getLocations();
+            $job->updateHeartbeat();
+
+            // Step 2: Get all products from Shopify with smart sync
+            $this->info('📦 Syncing products with GraphQL...');
+            $shopifySkus = $this->getProductsWithGraphQL();
+            $job->updateHeartbeat();
+
+            // Step 3: Identify and handle missing products
+            $this->info('🔍 Analyzing product differences...');
+            $this->handleProductDifferences($shopifySkus);
+            $job->updateHeartbeat();
+
+            // Step 4: Get inventory levels
+            $this->info('📊 Syncing inventory levels...');
+            $this->getInventoryLevels();
+
+            // Display final statistics
+            $this->displayStatistics();
+
+            $job->finishJob();
+            Log::info("$marketplace $jobType finished successfully!");
+
+            return Command::SUCCESS;
+        } catch (\Throwable $e) {
+            $this->stats['errors']++;
+            $job->finishJob($e->getMessage());
+            report($e);
+            $this->error('❌ Error: '.$e->getMessage());
+            Log::error('Shopify GetProducts failed: '.$e->getMessage(), ['exception' => $e]);
+
+            return Command::FAILURE;
         }
     }
 

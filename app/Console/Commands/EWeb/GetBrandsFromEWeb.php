@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\EWeb;
 
 use App\Http\Controllers\EWebController;
 use App\Http\Controllers\SyncJobController;

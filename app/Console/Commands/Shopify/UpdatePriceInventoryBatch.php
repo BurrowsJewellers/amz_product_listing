@@ -48,11 +48,17 @@ class UpdatePriceInventoryBatch extends Command
         $marketplace = 'Shopify';
         $jobType = $this->signature;
 
-        $job = SyncJobController::getJob($jobType, $marketplace);
+        // Acquire lock using new locking system
+        $job = SyncJobController::acquireLock($jobType, $marketplace);
+        if (! $job) {
+            $this->warn('Job is already running or paused.');
+            Log::info("$marketplace $jobType: Cannot acquire lock (running or paused)");
+
+            return Command::SUCCESS;
+        }
 
         try {
             Log::info("$marketplace $jobType started!");
-            $job->update(['status' => 1]);
 
             $location = ShopifyLocation::first();
 
@@ -66,26 +72,31 @@ class UpdatePriceInventoryBatch extends Command
                     'job_name' => $this->signature,
                     'message' => 'No Shopify location found for inventory updates. Command halted.',
                 ]);
-                $job->update(['status' => 0, 'message' => 'No Shopify location found']);
+                $job->finishJob('No Shopify location found');
 
-                return;
+                return Command::FAILURE;
             }
 
             // Process batch updates
             $this->info('Starting Batch Price & Inventory Updates...');
             $this->processBatchUpdates($location, $marketplace);
+            $job->updateHeartbeat();
 
             // Process failed updates with retry logic
             $this->info('Processing Failed Updates...');
             $this->processFailedUpdates($location, $marketplace);
 
-            $job->update(['status' => 0, 'message' => null]);
+            $job->finishJob();
             Log::info("$marketplace $jobType finished successfully!");
-        } catch (\Exception $e) {
-            $job->update(['status' => 0, 'message' => $e->getMessage()]);
+
+            return Command::SUCCESS;
+        } catch (\Throwable $e) {
+            $job->finishJob($e->getMessage());
             report($e);
             Log::error("$marketplace $jobType failed. Error: {$e->getMessage()}");
             $this->error('Command failed: '.$e->getMessage());
+
+            return Command::FAILURE;
         }
     }
 
@@ -123,6 +134,7 @@ class UpdatePriceInventoryBatch extends Command
         foreach ($variantsNeedingUpdate as $variant) {
             if (! $variant->retailEdgeProduct) {
                 $this->handleMissingRetailEdgeProduct($variant, $marketplace);
+
                 continue;
             }
 
@@ -535,6 +547,7 @@ class UpdatePriceInventoryBatch extends Command
         foreach ($failedVariants as $variant) {
             if (! $variant->retailEdgeProduct) {
                 $this->handleMissingRetailEdgeProduct($variant, $marketplace);
+
                 continue;
             }
 
@@ -741,19 +754,20 @@ class UpdatePriceInventoryBatch extends Command
     /**
      * Clean up stale variant record when Shopify returns "Product does not exist" or similar errors.
      * This removes the local record and resets the RetailEdge uploaded flag so the product can be recreated.
+     * Uses forceDelete to permanently remove records and avoid duplicate key conflicts on sync.
      */
     private function cleanupStaleVariant($variant): void
     {
         $sku = $variant->sku;
         $productId = $variant->shopify_product_id;
 
-        // Delete variant record
-        $variant->delete();
+        // Force delete variant record (permanent deletion to avoid duplicate key issues)
+        $variant->forceDelete();
 
         // Check if product has other variants, if not delete product too
         $remainingVariants = ShopifyProductVariant::where('shopify_product_id', $productId)->count();
         if ($remainingVariants === 0) {
-            ShopifyProduct::where('id', $productId)->delete();
+            ShopifyProduct::where('id', $productId)->forceDelete();
         }
 
         // Reset RetailEdge uploaded flag so product can be recreated

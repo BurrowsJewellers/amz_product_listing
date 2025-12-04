@@ -40,159 +40,167 @@ class CreateProduct extends Command
         $marketplace = 'Shopify';
         $jobType = 'shopifyCreateProduct';
 
-        $job = SyncJobController::getJob($jobType, $marketplace);
+        // Acquire lock using new locking system
+        $job = SyncJobController::acquireLock($jobType, $marketplace);
+        if (! $job) {
+            $this->warn('Job is already running or paused.');
+            Log::info("$marketplace $jobType: Cannot acquire lock (running or paused)");
 
-        if (! $job->isRunning()) {
-            try {
-                Log::info("$marketplace $jobType started!");
-                $job->update(['status' => 1]);
-                $product_errors_occurred = false;
+            return Command::SUCCESS;
+        }
 
-                $pendingProducts = DB::select('SELECT rep.id, rep.sku
+        try {
+            Log::info("$marketplace $jobType started!");
+            $product_errors_occurred = false;
+
+            $pendingProducts = DB::select('SELECT rep.id, rep.sku
                     FROM retail_edge_products rep
                     LEFT JOIN shopify_product_variants spv ON rep.sku = spv.sku
                     WHERE spv.id IS NULL;
                 ');
 
-                $pendingProductIds = [];
+            $pendingProductIds = [];
 
-                foreach ($pendingProducts as $p) {
-                    $pendingProductIds[] = $p->id;
-                }
+            foreach ($pendingProducts as $p) {
+                $pendingProductIds[] = $p->id;
+            }
 
-                $session = (new ShopifyService)->getSession();
-                $variantTypes = ['vt1' => 'Size', 'vt2' => 'Color', 'vt3' => 'Material', 'vt4' => 'Style'];
+            $session = (new ShopifyService)->getSession();
+            $variantTypes = ['vt1' => 'Size', 'vt2' => 'Color', 'vt3' => 'Material', 'vt4' => 'Style'];
 
-                $brands = Brand::all();
+            $brands = Brand::all();
 
-                $brandsArray = [];
+            $brandsArray = [];
 
-                foreach ($brands as $brand) {
-                    $brandsArray[$brand->brand_id]['id'] = $brand->id;
-                    $brandsArray[$brand->brand_id]['name'] = $brand->name;
-                }
+            foreach ($brands as $brand) {
+                $brandsArray[$brand->brand_id]['id'] = $brand->id;
+                $brandsArray[$brand->brand_id]['name'] = $brand->name;
+            }
 
-                $countQuery = RetailEdgeProduct::whereIn('id', $pendingProductIds)->whereHas('children', function ($children) {
+            $countQuery = RetailEdgeProduct::whereIn('id', $pendingProductIds)->whereHas('children', function ($children) {
+                $children->where('uploaded_to_shopify', 0);
+            })->where('quantity', '>', 0);
+
+            $count = $countQuery->count();
+
+            // Initialize GraphQL client
+            $client = new Graphql($session->getShop(), $session->getAccessToken());
+
+            while ($count) {
+                $this->info('Count: '.$count);
+                $product = RetailEdgeProduct::withWhereHas('children', function ($children) {
                     $children->where('uploaded_to_shopify', 0);
-                })->where('quantity', '>', 0);
+                })->with(['brand'])->where('quantity', '>', 0)->first();
 
-                $count = $countQuery->count();
+                if ($product) {
+                    $this->info('======================================');
+                    $this->info("Processing Product: {$product->title} (SKU: {$product->sku})");
 
-                // Initialize GraphQL client
-                $client = new Graphql($session->getShop(), $session->getAccessToken());
+                    // Log product creation start
+                    PriceInventoryLog::create([
+                        'marketplace' => 'Shopify',
+                        'item_identifier' => $product->sku,
+                        'change_type' => 'product_create',
+                        'from_value' => null,
+                        'to_value' => 'initiating',
+                        'status' => 'processing',
+                        'message' => "Starting GraphQL product creation for: {$product->title}",
+                        'job_name' => 'shopifyCreateProduct',
+                    ]);
 
-                while ($count) {
-                    $this->info('Count: '.$count);
-                    $product = RetailEdgeProduct::withWhereHas('children', function ($children) {
-                        $children->where('uploaded_to_shopify', 0);
-                    })->with(['brand'])->where('quantity', '>', 0)->first();
+                    try {
+                        // Create product using GraphQL
+                        $createdProductData = $this->createProductWithGraphQL($product, $client);
 
-                    if ($product) {
-                        $this->info('======================================');
-                        $this->info("Processing Product: {$product->title} (SKU: {$product->sku})");
-
-                        // Log product creation start
-                        PriceInventoryLog::create([
-                            'marketplace' => 'Shopify',
-                            'item_identifier' => $product->sku,
-                            'change_type' => 'product_create',
-                            'from_value' => null,
-                            'to_value' => 'initiating',
-                            'status' => 'processing',
-                            'message' => "Starting GraphQL product creation for: {$product->title}",
-                            'job_name' => 'shopifyCreateProduct',
-                        ]);
-
-                        try {
-                            // Create product using GraphQL
-                            $createdProductData = $this->createProductWithGraphQL($product, $client);
-
-                            if ($createdProductData) {
-                                // Log product creation success
-                                PriceInventoryLog::create([
-                                    'marketplace' => 'Shopify',
-                                    'item_identifier' => $product->sku,
-                                    'change_type' => 'product_create',
-                                    'from_value' => null,
-                                    'to_value' => $createdProductData['id'],
-                                    'status' => 'success',
-                                    'message' => "Product created successfully with ID: {$createdProductData['id']}",
-                                    'job_name' => 'shopifyCreateProduct',
-                                ]);
-
-                                // Handle metafields after creation (same as UpdateProduct)
-                                $this->handleMetafieldsAfterCreation($product, $createdProductData, $client);
-
-                                // Save product to database
-                                $this->saveProductToDatabase($createdProductData, $product);
-
-                                // Mark children as uploaded
-                                foreach ($product->children as $child) {
-                                    $updated = $child->update(['uploaded_to_shopify' => 1]);
-                                    if ($updated) {
-                                        $this->line("Marked child SKU {$child->sku} as uploaded_to_shopify");
-                                    } else {
-                                        $this->warn("Failed to mark child SKU {$child->sku} as uploaded_to_shopify");
-                                    }
-                                }
-
-                                // Also mark the parent as uploaded
-                                $parentUpdated = $product->update(['uploaded_to_shopify' => 1]);
-                                if ($parentUpdated) {
-                                    $this->line("Marked parent SKU {$product->sku} as uploaded_to_shopify");
-                                } else {
-                                    $this->warn("Failed to mark parent SKU {$product->sku} as uploaded_to_shopify");
-                                }
-
-                                $this->info("Successfully created product: {$product->title}");
-                            } else {
-                                throw new \Exception('Product creation returned null data');
-                            }
-                        } catch (\Exception $e) {
-                            $product_errors_occurred = true;
-                            $errorMessage = $e->getMessage();
-
-                            // Log product creation failure
+                        if ($createdProductData) {
+                            // Log product creation success
                             PriceInventoryLog::create([
                                 'marketplace' => 'Shopify',
                                 'item_identifier' => $product->sku,
                                 'change_type' => 'product_create',
                                 'from_value' => null,
-                                'to_value' => 'failed',
-                                'status' => 'failed',
-                                'message' => "Product creation failed: {$errorMessage}",
+                                'to_value' => $createdProductData['id'],
+                                'status' => 'success',
+                                'message' => "Product created successfully with ID: {$createdProductData['id']}",
                                 'job_name' => 'shopifyCreateProduct',
                             ]);
 
-                            Log::error("Shopify GraphQL Exception for SKU {$product->sku}: {$errorMessage}");
-                            $this->error("Failed to create product {$product->sku}: {$errorMessage}");
+                            // Handle metafields after creation (same as UpdateProduct)
+                            $this->handleMetafieldsAfterCreation($product, $createdProductData, $client);
 
-                            // Mark children as failed
+                            // Save product to database
+                            $this->saveProductToDatabase($createdProductData, $product);
+
+                            // Mark children as uploaded
                             foreach ($product->children as $child) {
-                                $child->update(['uploaded_to_shopify' => 2]);
+                                $updated = $child->update(['uploaded_to_shopify' => 1]);
+                                if ($updated) {
+                                    $this->line("Marked child SKU {$child->sku} as uploaded_to_shopify");
+                                } else {
+                                    $this->warn("Failed to mark child SKU {$child->sku} as uploaded_to_shopify");
+                                }
                             }
-                        }
 
-                        usleep(1500000); // 1.5 second delay
+                            // Also mark the parent as uploaded
+                            $parentUpdated = $product->update(['uploaded_to_shopify' => 1]);
+                            if ($parentUpdated) {
+                                $this->line("Marked parent SKU {$product->sku} as uploaded_to_shopify");
+                            } else {
+                                $this->warn("Failed to mark parent SKU {$product->sku} as uploaded_to_shopify");
+                            }
+
+                            $this->info("Successfully created product: {$product->title}");
+                        } else {
+                            throw new \Exception('Product creation returned null data');
+                        }
+                    } catch (\Exception $e) {
+                        $product_errors_occurred = true;
+                        $errorMessage = $e->getMessage();
+
+                        // Log product creation failure
+                        PriceInventoryLog::create([
+                            'marketplace' => 'Shopify',
+                            'item_identifier' => $product->sku,
+                            'change_type' => 'product_create',
+                            'from_value' => null,
+                            'to_value' => 'failed',
+                            'status' => 'failed',
+                            'message' => "Product creation failed: {$errorMessage}",
+                            'job_name' => 'shopifyCreateProduct',
+                        ]);
+
+                        Log::error("Shopify GraphQL Exception for SKU {$product->sku}: {$errorMessage}");
+                        $this->error("Failed to create product {$product->sku}: {$errorMessage}");
+
+                        // Mark children as failed
+                        foreach ($product->children as $child) {
+                            $child->update(['uploaded_to_shopify' => 2]);
+                        }
                     }
 
-                    $count = $countQuery->count();
+                    usleep(1500000); // 1.5 second delay
+                    $job->updateHeartbeat(); // Update heartbeat after each product
                 }
 
-                if ($product_errors_occurred) {
-                    $job->update(['status' => 0, 'message' => 'Completed with one or more product creation errors.']);
-                } else {
-                    $job->update(['status' => 0, 'message' => null]);
-                }
-
-                Log::info("$marketplace $jobType finished!");
-            } catch (\Exception $e) {
-                $job->update(['status' => 0, 'message' => $e->getMessage()]);
-                report($e);
-                $this->error($e->getMessage());
+                $count = $countQuery->count();
             }
-        } else {
-            Log::info("$marketplace $jobType is already running.");
+
+            if ($product_errors_occurred) {
+                $job->finishJob('Completed with one or more product creation errors.');
+            } else {
+                $job->finishJob();
+            }
+
+            Log::info("$marketplace $jobType finished!");
+
+            return Command::SUCCESS;
+        } catch (\Throwable $e) {
+            $job->finishJob($e->getMessage());
+            report($e);
+            $this->error($e->getMessage());
+            Log::error("$marketplace $jobType failed: ".$e->getMessage());
+
+            return Command::FAILURE;
         }
     }
 

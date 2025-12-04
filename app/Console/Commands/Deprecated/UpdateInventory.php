@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands\Shopify;
+namespace App\Console\Commands\Deprecated;
 
 use App\Http\Controllers\SyncJobController;
 use App\Models\PriceInventoryLog;

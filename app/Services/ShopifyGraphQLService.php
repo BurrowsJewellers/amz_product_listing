@@ -415,4 +415,381 @@ class ShopifyGraphQLService extends ShopifyConnectionService
     {
         return "gid://shopify/Product/{$id}";
     }
+
+    /**
+     * Update product status using GraphQL productUpdate mutation
+     *
+     * @param  int  $productId  Shopify product ID (numeric)
+     * @param  string  $status  Status to set (ACTIVE, ARCHIVED, DRAFT)
+     * @return array Response with success status and errors
+     */
+    public function updateProductStatus(int $productId, string $status): array
+    {
+        $session = $this->getSession();
+        $client = new Graphql($session->getShop(), $session->getAccessToken());
+        $productGid = "gid://shopify/Product/{$productId}";
+
+        $mutation = <<<'GRAPHQL'
+        mutation productUpdate($input: ProductInput!) {
+          productUpdate(input: $input) {
+            product {
+              id
+              status
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+        GRAPHQL;
+
+        try {
+            Log::debug("ShopifyGraphQLService: Executing productUpdate for product {$productId} with status {$status}");
+
+            $response = $client->query([
+                'query' => $mutation,
+                'variables' => [
+                    'input' => [
+                        'id' => $productGid,
+                        'status' => strtoupper($status),
+                    ],
+                ],
+            ]);
+
+            $resultBody = json_decode($response->getBody()->getContents(), true);
+
+            $userErrors = $resultBody['data']['productUpdate']['userErrors'] ?? [];
+            $graphqlErrors = $resultBody['errors'] ?? [];
+
+            if (! empty($userErrors) || ! empty($graphqlErrors)) {
+                Log::error('ShopifyGraphQLService: productUpdate returned errors', [
+                    'product_id' => $productId,
+                    'status' => $status,
+                    'user_errors' => $userErrors,
+                    'graphql_errors' => $graphqlErrors,
+                ]);
+
+                return [
+                    'success' => false,
+                    'user_errors' => $userErrors,
+                    'graphql_errors' => $graphqlErrors,
+                ];
+            }
+
+            Log::debug('ShopifyGraphQLService: productUpdate successful', [
+                'product_id' => $productId,
+                'status' => $status,
+            ]);
+
+            return [
+                'success' => true,
+                'user_errors' => [],
+                'graphql_errors' => [],
+            ];
+        } catch (\Exception $e) {
+            Log::error('ShopifyGraphQLService: Exception during productUpdate', [
+                'product_id' => $productId,
+                'status' => $status,
+                'exception' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'user_errors' => [],
+                'graphql_errors' => [['message' => $e->getMessage()]],
+            ];
+        }
+    }
+
+    /**
+     * Bulk update product statuses using GraphQL
+     * Processes products one at a time but with minimal delay
+     *
+     * @param  array  $products  Array of products with product_id and desired status
+     * @param  string  $status  Status to set (ACTIVE, ARCHIVED, DRAFT)
+     * @return array Response with success count, failed items, and errors
+     */
+    public function bulkUpdateProductStatus(array $products, string $status): array
+    {
+        $successCount = 0;
+        $failedItems = [];
+        $allErrors = [];
+
+        foreach ($products as $product) {
+            $productId = $product['product_id'] ?? $product->product_id ?? null;
+
+            if (! $productId) {
+                $failedItems[] = $product;
+                $allErrors[] = ['message' => 'Missing product_id'];
+
+                continue;
+            }
+
+            $result = $this->updateProductStatus($productId, $status);
+
+            if ($result['success']) {
+                $successCount++;
+            } else {
+                $failedItems[] = $product;
+                $allErrors = array_merge($allErrors, $result['user_errors'], $result['graphql_errors']);
+            }
+
+            // Minimal delay to avoid rate limiting (100ms)
+            usleep(100000);
+        }
+
+        return [
+            'success' => $successCount > 0 && empty($failedItems),
+            'success_count' => $successCount,
+            'failed_count' => count($failedItems),
+            'failed_items' => $failedItems,
+            'errors' => $allErrors,
+        ];
+    }
+
+    /**
+     * Create product media from external URL using GraphQL productUpdate mutation
+     * Uses productUpdate with media parameter (productCreateMedia is deprecated)
+     *
+     * @param  int  $productId  Shopify product ID (numeric)
+     * @param  array  $imageUrls  Array of image URLs to upload
+     * @return array Response with success status, media IDs, and errors
+     */
+    public function createProductMedia(int $productId, array $imageUrls): array
+    {
+        $session = $this->getSession();
+        $client = new Graphql($session->getShop(), $session->getAccessToken());
+        $productGid = "gid://shopify/Product/{$productId}";
+
+        $mutation = <<<'GRAPHQL'
+        mutation productUpdateWithMedia($product: ProductUpdateInput!, $media: [CreateMediaInput!]) {
+          productUpdate(product: $product, media: $media) {
+            product {
+              id
+              media(first: 10) {
+                nodes {
+                  ... on MediaImage {
+                    id
+                    status
+                    image {
+                      url
+                    }
+                  }
+                }
+              }
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+        GRAPHQL;
+
+        // Build media input array
+        $mediaInput = [];
+        foreach ($imageUrls as $url) {
+            $mediaInput[] = [
+                'originalSource' => $url,
+                'mediaContentType' => 'IMAGE',
+            ];
+        }
+
+        try {
+            Log::debug("ShopifyGraphQLService: Executing productUpdate with media for product {$productId} with ".count($imageUrls).' images');
+
+            $response = $client->query([
+                'query' => $mutation,
+                'variables' => [
+                    'product' => [
+                        'id' => $productGid,
+                    ],
+                    'media' => $mediaInput,
+                ],
+            ]);
+
+            $resultBody = json_decode($response->getBody()->getContents(), true);
+
+            $userErrors = $resultBody['data']['productUpdate']['userErrors'] ?? [];
+            $graphqlErrors = $resultBody['errors'] ?? [];
+
+            if (! empty($userErrors) || ! empty($graphqlErrors)) {
+                Log::error('ShopifyGraphQLService: productUpdate with media returned errors', [
+                    'product_id' => $productId,
+                    'user_errors' => $userErrors,
+                    'graphql_errors' => $graphqlErrors,
+                ]);
+
+                return [
+                    'success' => false,
+                    'user_errors' => $userErrors,
+                    'graphql_errors' => $graphqlErrors,
+                    'media' => [],
+                ];
+            }
+
+            $media = $resultBody['data']['productUpdate']['product']['media']['nodes'] ?? [];
+
+            Log::debug('ShopifyGraphQLService: productUpdate with media successful', [
+                'product_id' => $productId,
+                'images_created' => count($mediaInput),
+            ]);
+
+            return [
+                'success' => true,
+                'user_errors' => [],
+                'graphql_errors' => [],
+                'media' => $media,
+            ];
+        } catch (\Exception $e) {
+            Log::error('ShopifyGraphQLService: Exception during productUpdate with media', [
+                'product_id' => $productId,
+                'exception' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'user_errors' => [],
+                'graphql_errors' => [['message' => $e->getMessage()]],
+                'media' => [],
+            ];
+        }
+    }
+
+    /**
+     * Assign media to a specific variant using GraphQL
+     * Uses productVariantUpdate mutation to set the image for a variant
+     *
+     * @param  int  $variantId  Shopify variant ID (numeric)
+     * @param  string  $mediaId  Shopify media GID
+     * @return array Response with success status and errors
+     */
+    public function assignMediaToVariant(int $variantId, string $mediaId): array
+    {
+        $session = $this->getSession();
+        $client = new Graphql($session->getShop(), $session->getAccessToken());
+        $variantGid = "gid://shopify/ProductVariant/{$variantId}";
+
+        $mutation = <<<'GRAPHQL'
+        mutation productVariantUpdate($input: ProductVariantInput!) {
+          productVariantUpdate(input: $input) {
+            productVariant {
+              id
+              image {
+                id
+              }
+            }
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+        GRAPHQL;
+
+        try {
+            Log::debug("ShopifyGraphQLService: Executing productVariantUpdate to assign media to variant {$variantId}");
+
+            $response = $client->query([
+                'query' => $mutation,
+                'variables' => [
+                    'input' => [
+                        'id' => $variantGid,
+                        'mediaId' => $mediaId,
+                    ],
+                ],
+            ]);
+
+            $resultBody = json_decode($response->getBody()->getContents(), true);
+
+            $userErrors = $resultBody['data']['productVariantUpdate']['userErrors'] ?? [];
+            $graphqlErrors = $resultBody['errors'] ?? [];
+
+            if (! empty($userErrors) || ! empty($graphqlErrors)) {
+                Log::error('ShopifyGraphQLService: productVariantUpdate returned errors', [
+                    'variant_id' => $variantId,
+                    'media_id' => $mediaId,
+                    'user_errors' => $userErrors,
+                    'graphql_errors' => $graphqlErrors,
+                ]);
+
+                return [
+                    'success' => false,
+                    'user_errors' => $userErrors,
+                    'graphql_errors' => $graphqlErrors,
+                ];
+            }
+
+            Log::debug('ShopifyGraphQLService: productVariantUpdate successful', [
+                'variant_id' => $variantId,
+                'media_id' => $mediaId,
+            ]);
+
+            return [
+                'success' => true,
+                'user_errors' => [],
+                'graphql_errors' => [],
+            ];
+        } catch (\Exception $e) {
+            Log::error('ShopifyGraphQLService: Exception during productVariantUpdate', [
+                'variant_id' => $variantId,
+                'exception' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'user_errors' => [],
+                'graphql_errors' => [['message' => $e->getMessage()]],
+            ];
+        }
+    }
+
+    /**
+     * Upload image to product and optionally assign to variant using GraphQL
+     * Combines productCreateMedia and productVariantUpdate in a workflow
+     *
+     * @param  int  $productId  Shopify product ID (numeric)
+     * @param  int|null  $variantId  Shopify variant ID (numeric) - optional
+     * @param  string  $imageUrl  URL of the image to upload
+     * @return array Response with success status, media info, and errors
+     */
+    public function uploadProductImage(int $productId, ?int $variantId, string $imageUrl): array
+    {
+        // First, create the media
+        $createResult = $this->createProductMedia($productId, [$imageUrl]);
+
+        if (! $createResult['success']) {
+            return $createResult;
+        }
+
+        $media = $createResult['media'] ?? [];
+        if (empty($media)) {
+            return [
+                'success' => false,
+                'user_errors' => [['message' => 'No media created']],
+                'graphql_errors' => [],
+            ];
+        }
+
+        // If variant is specified, assign the media to it
+        if ($variantId && ! empty($media[0]['id'])) {
+            $mediaId = $media[0]['id'];
+            $assignResult = $this->assignMediaToVariant($variantId, $mediaId);
+
+            return [
+                'success' => $assignResult['success'],
+                'user_errors' => $assignResult['user_errors'],
+                'graphql_errors' => $assignResult['graphql_errors'],
+                'media' => $media,
+            ];
+        }
+
+        return [
+            'success' => true,
+            'user_errors' => [],
+            'graphql_errors' => [],
+            'media' => $media,
+        ];
+    }
 }

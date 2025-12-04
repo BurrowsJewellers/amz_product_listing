@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands\Pandora;
+namespace App\Console\Commands\Deprecated;
 
 use App\Models\PandoraList;
 use DOMDocument;

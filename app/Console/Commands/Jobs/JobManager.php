@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands;
+namespace App\Console\Commands\Jobs;
 
 use App\Http\Controllers\SyncJobController;
 use Illuminate\Console\Command;

@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands\Shopify;
+namespace App\Console\Commands\Shopify\Webhooks;
 
 use App\Http\Controllers\SyncJobController;
 use App\Models\ShopifyWebhook;

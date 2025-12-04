@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands\Shopify;
+namespace App\Console\Commands\Deprecated;
 
 use App\Http\Controllers\SyncJobController;
 use App\Models\ShopifyLocation;
@@ -10,6 +10,9 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Shopify\Rest\Admin2025_04\InventoryLevel;
 
+/**
+ * @deprecated This command is redundant. UpdatePriceInventoryBatch::processFailedUpdates() handles retries.
+ */
 class RetryFailedInventoryUpdates extends Command
 {
     /**

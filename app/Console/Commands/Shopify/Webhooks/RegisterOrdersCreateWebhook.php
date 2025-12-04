@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands\Shopify;
+namespace App\Console\Commands\Shopify\Webhooks;
 
 use App\Models\ShopifyWebhook;
 use App\Services\ShopifyService;

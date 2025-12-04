@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Console\Commands\Amazon;
+namespace App\Console\Commands\Deprecated;
 
 use App\Http\Controllers\AmzFeedController;
 use App\Http\Controllers\SyncJobController;

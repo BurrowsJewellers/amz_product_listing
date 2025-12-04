@@ -198,4 +198,93 @@ class SyncJobController extends Controller
 
         return $query->exists();
     }
+
+    /**
+     * Attempt to acquire a lock for a job
+     * Returns the job if lock acquired, null if not
+     */
+    public static function acquireLock($type, $marketplace): ?SyncJob
+    {
+        $job = self::getJob($type, $marketplace);
+
+        // Check if job is paused
+        if ($job->is_paused) {
+            Log::info("Job {$type} ({$marketplace}) is paused, cannot acquire lock");
+
+            return null;
+        }
+
+        // Check if lock can be acquired
+        if (! $job->canAcquireLock()) {
+            Log::info("Job {$type} ({$marketplace}) is already running, cannot acquire lock");
+
+            return null;
+        }
+
+        // Acquire the lock
+        $job->startJob();
+        Log::info("Job {$type} ({$marketplace}) lock acquired, process ID: ".getmypid());
+
+        return $job;
+    }
+
+    /**
+     * Recover stuck jobs that have exceeded their timeout or have stale heartbeats
+     * Returns the number of jobs recovered
+     */
+    public static function recoverStuckJobs(): int
+    {
+        $recovered = 0;
+
+        // Find all running jobs
+        $runningJobs = SyncJob::where('status', 1)->get();
+
+        foreach ($runningJobs as $job) {
+            // Check if job is stuck
+            if (! $job->isStuck()) {
+                // Check if process is still running (only if we have a process_id)
+                if ($job->process_id && function_exists('posix_kill')) {
+                    if (@posix_kill((int) $job->process_id, 0)) {
+                        // Process is still running, skip
+                        continue;
+                    }
+                } else {
+                    // Can't verify process status, skip if not stuck by time
+                    continue;
+                }
+            }
+
+            // Job is stuck, recover it
+            $previousMessage = $job->message;
+            $job->finishJob('Auto-recovered: stuck job timeout at '.now().($previousMessage ? ". Previous: {$previousMessage}" : ''));
+
+            Log::warning("Auto-recovered stuck job: {$job->type} ({$job->marketplace})", [
+                'started_at' => $job->started_at,
+                'last_heartbeat' => $job->last_heartbeat,
+                'process_id' => $job->process_id,
+                'timeout_minutes' => $job->timeout_minutes,
+            ]);
+
+            $recovered++;
+        }
+
+        return $recovered;
+    }
+
+    /**
+     * Get all stuck jobs
+     */
+    public static function getStuckJobs(): array
+    {
+        $stuckJobs = [];
+        $runningJobs = SyncJob::where('status', 1)->get();
+
+        foreach ($runningJobs as $job) {
+            if ($job->isStuck()) {
+                $stuckJobs[] = $job;
+            }
+        }
+
+        return $stuckJobs;
+    }
 }
