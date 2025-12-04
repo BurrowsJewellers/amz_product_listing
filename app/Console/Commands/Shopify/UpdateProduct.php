@@ -35,18 +35,18 @@ class UpdateProduct extends Command
     {
         $marketplace = 'Shopify';
         $jobType = 'shopifyUpdateProduct';
-        $job = SyncJobController::getJob($jobType, $marketplace);
 
-        if ($job->isRunning()) {
-            Log::info("$marketplace $jobType is already running.");
-            $this->info("$marketplace $jobType is already running.");
+        // Acquire lock using locking system
+        $job = SyncJobController::acquireLock($jobType, $marketplace);
+        if (! $job) {
+            $this->warn('Job is already running or paused.');
+            Log::info("$marketplace $jobType: Cannot acquire lock (running or paused)");
 
-            return 1;
+            return Command::SUCCESS;
         }
 
         try {
             Log::info("$marketplace $jobType started!");
-            // $job->update(['status' => 1]); // Consider re-enabling if you manage job status this way
 
             // Fetch variants that need updating.
             // Assuming RetailEdgeProduct.update_date_time triggers an update.
@@ -81,10 +81,10 @@ class UpdateProduct extends Command
 
             if ($variantsToUpdate->isEmpty()) {
                 $this->info('No products require updating at this time.');
-                // $job->update(['status' => 0, 'message' => 'No products to update.']);
+                $job->finishJob('No products to update.');
                 Log::info("$marketplace $jobType finished: No products to update.");
 
-                return 0;
+                return Command::SUCCESS;
             }
 
             $this->info("Found {$variantsToUpdate->count()} Shopify product variants to potentially update.");
@@ -282,23 +282,24 @@ class UpdateProduct extends Command
                 } else {
                     $this->line("No metafields to set for SKU: {$variant->sku}");
                 }
-                // Removed sleep(180); as it's likely unintended
+                // Update heartbeat and delay
+                $job->updateHeartbeat();
                 usleep(1000000); // 1 second delay
             }
 
-            // $job->update(['status' => 0, 'message' => 'Completed successfully.']);
+            $job->finishJob();
             Log::info("$marketplace $jobType finished successfully!");
             $this->info("$marketplace $jobType finished successfully!");
-        } catch (\Exception $e) {
-            // $job->update(['status' => 0, 'message' => "Error: {$e->getMessage()}"]);
+
+            return Command::SUCCESS;
+        } catch (\Throwable $e) {
+            $job->finishJob($e->getMessage());
             Log::error("$marketplace $jobType failed: ".$e->getMessage(), ['exception' => $e]);
             $this->error('An overall error occurred: '.$e->getMessage());
             report($e);
 
-            return 1;
+            return Command::FAILURE;
         }
-
-        return 0;
     }
 
     private function buildProductDescription(RetailEdgeProduct $product): string

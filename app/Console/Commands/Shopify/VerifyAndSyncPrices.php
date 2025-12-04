@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\Shopify;
 
+use App\Http\Controllers\SyncJobController;
 use App\Models\ShopifyProductVariant;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -31,28 +32,43 @@ class VerifyAndSyncPrices extends Command
      */
     public function handle()
     {
-        $isDryRun = $this->option('dry-run');
-        $isForce = $this->option('force');
-        $limit = (int) $this->option('limit');
+        $marketplace = 'Shopify';
+        $jobType = 'shopify:verify-sync-prices';
 
-        $this->info('========================================');
-        $this->info('Price & Inventory Verification Tool');
-        $this->info('========================================');
-        $this->info('Mode: '.($isDryRun ? 'DRY RUN (No changes will be made)' : ($isForce ? 'FORCE UPDATE' : 'NORMAL')));
-        $this->newLine();
+        // Acquire lock using locking system
+        $job = SyncJobController::acquireLock($jobType, $marketplace);
+        if (! $job) {
+            $this->warn('Job is already running or paused.');
+            Log::info("$marketplace $jobType: Cannot acquire lock (running or paused)");
 
-        // Statistics
-        $stats = [
-            'price_mismatches' => 0,
-            'compare_price_mismatches' => 0,
-            'inventory_mismatches' => 0,
-            'special_price_removals' => 0,
-            'total_checked' => 0,
-            'total_flagged' => 0,
-        ];
+            return Command::SUCCESS;
+        }
 
-        // Find all mismatches using raw SQL for accuracy
-        $query = '
+        try {
+            Log::info("$marketplace $jobType started!");
+
+            $isDryRun = $this->option('dry-run');
+            $isForce = $this->option('force');
+            $limit = (int) $this->option('limit');
+
+            $this->info('========================================');
+            $this->info('Price & Inventory Verification Tool');
+            $this->info('========================================');
+            $this->info('Mode: '.($isDryRun ? 'DRY RUN (No changes will be made)' : ($isForce ? 'FORCE UPDATE' : 'NORMAL')));
+            $this->newLine();
+
+            // Statistics
+            $stats = [
+                'price_mismatches' => 0,
+                'compare_price_mismatches' => 0,
+                'inventory_mismatches' => 0,
+                'special_price_removals' => 0,
+                'total_checked' => 0,
+                'total_flagged' => 0,
+            ];
+
+            // Find all mismatches using raw SQL for accuracy
+            $query = '
             SELECT
                 spv.id,
                 spv.sku,
@@ -87,127 +103,144 @@ class VerifyAndSyncPrices extends Command
             HAVING price_mismatch = 1 OR compare_mismatch = 1 OR inventory_mismatch = 1
         ';
 
-        if ($limit > 0) {
-            $query .= " LIMIT {$limit}";
-        }
-
-        $mismatches = DB::select($query);
-        $stats['total_checked'] = ShopifyProductVariant::whereNotNull('variant_id')->count();
-
-        if (empty($mismatches)) {
-            $this->info('✅ All prices and inventory are in sync!');
-            $this->info("Total variants checked: {$stats['total_checked']}");
-
-            return 0;
-        }
-
-        $this->warn('Found '.count($mismatches).' mismatches out of '.$stats['total_checked'].' variants');
-        $this->newLine();
-
-        // Create a table for display
-        $tableData = [];
-        $updateIds = [];
-
-        foreach ($mismatches as $item) {
-            $priceChange = '';
-            $compareChange = '';
-            $inventoryChange = '';
-            $issues = [];
-
-            if ($item->price_mismatch) {
-                $stats['price_mismatches']++;
-                $priceChange = "{$item->shopify_price} → {$item->retail_price}";
-                $issues[] = 'Price';
+            // Use parameter binding to prevent SQL injection
+            $bindings = [];
+            if ($limit > 0) {
+                $query .= ' LIMIT ?';
+                $bindings[] = $limit;
             }
 
-            if ($item->compare_mismatch) {
-                $stats['compare_price_mismatches']++;
-                $shopifyCompare = $item->shopify_compare ?? 'NULL';
-                $retailCompare = $item->retail_compare ?? 'NULL';
-                $compareChange = "{$shopifyCompare} → {$retailCompare}";
-                $issues[] = 'Compare';
+            $mismatches = DB::select($query, $bindings);
+            $stats['total_checked'] = ShopifyProductVariant::whereNotNull('variant_id')->count();
 
-                // Check if this is a special price removal
-                if ($item->retail_compare == 0 && $item->shopify_compare > 0) {
-                    $stats['special_price_removals']++;
-                    $issues[] = 'SpecialRemoved';
+            if (empty($mismatches)) {
+                $this->info('✅ All prices and inventory are in sync!');
+                $this->info("Total variants checked: {$stats['total_checked']}");
+
+                $job->finishJob();
+                Log::info("$marketplace $jobType finished - all in sync!");
+
+                return Command::SUCCESS;
+            }
+
+            $this->warn('Found '.count($mismatches).' mismatches out of '.$stats['total_checked'].' variants');
+            $this->newLine();
+
+            // Create a table for display
+            $tableData = [];
+            $updateIds = [];
+
+            foreach ($mismatches as $item) {
+                $priceChange = '';
+                $compareChange = '';
+                $inventoryChange = '';
+                $issues = [];
+
+                if ($item->price_mismatch) {
+                    $stats['price_mismatches']++;
+                    $priceChange = "{$item->shopify_price} → {$item->retail_price}";
+                    $issues[] = 'Price';
+                }
+
+                if ($item->compare_mismatch) {
+                    $stats['compare_price_mismatches']++;
+                    $shopifyCompare = $item->shopify_compare ?? 'NULL';
+                    $retailCompare = $item->retail_compare ?? 'NULL';
+                    $compareChange = "{$shopifyCompare} → {$retailCompare}";
+                    $issues[] = 'Compare';
+
+                    // Check if this is a special price removal
+                    if ($item->retail_compare == 0 && $item->shopify_compare > 0) {
+                        $stats['special_price_removals']++;
+                        $issues[] = 'SpecialRemoved';
+                    }
+                }
+
+                if ($item->inventory_mismatch) {
+                    $stats['inventory_mismatches']++;
+                    $inventoryChange = "{$item->shopify_inventory} → {$item->retail_inventory}";
+                    $issues[] = 'Inventory';
+                }
+
+                $tableData[] = [
+                    'SKU' => $item->sku,
+                    'Issues' => implode(', ', $issues),
+                    'Price' => $priceChange ?: '-',
+                    'Compare' => $compareChange ?: '-',
+                    'Inventory' => $inventoryChange ?: '-',
+                ];
+
+                $updateIds[] = $item->id;
+
+                // Log detailed information
+                if (! $isDryRun) {
+                    Log::info("Price/Inventory Verification - SKU: {$item->sku}", [
+                        'sku' => $item->sku,
+                        'price_mismatch' => $item->price_mismatch,
+                        'compare_mismatch' => $item->compare_mismatch,
+                        'inventory_mismatch' => $item->inventory_mismatch,
+                        'shopify_price' => $item->shopify_price,
+                        'retail_price' => $item->retail_price,
+                        'shopify_compare' => $item->shopify_compare,
+                        'retail_compare' => $item->retail_compare,
+                        'shopify_inventory' => $item->shopify_inventory,
+                        'retail_inventory' => $item->retail_inventory,
+                    ]);
                 }
             }
 
-            if ($item->inventory_mismatch) {
-                $stats['inventory_mismatches']++;
-                $inventoryChange = "{$item->shopify_inventory} → {$item->retail_inventory}";
-                $issues[] = 'Inventory';
+            // Display the mismatches table
+            if (count($tableData) <= 20 || $this->confirm('Display all '.count($tableData).' mismatches?', false)) {
+                $this->table(
+                    ['SKU', 'Issues', 'Price Change', 'Compare Change', 'Inventory Change'],
+                    array_slice($tableData, 0, 50)
+                );
+                if (count($tableData) > 50) {
+                    $this->info('... and '.(count($tableData) - 50).' more items');
+                }
             }
 
-            $tableData[] = [
-                'SKU' => $item->sku,
-                'Issues' => implode(', ', $issues),
-                'Price' => $priceChange ?: '-',
-                'Compare' => $compareChange ?: '-',
-                'Inventory' => $inventoryChange ?: '-',
-            ];
+            // Display summary statistics
+            $this->newLine();
+            $this->info('Summary:');
+            $this->info("  Price mismatches: {$stats['price_mismatches']}");
+            $this->info("  Compare-at price mismatches: {$stats['compare_price_mismatches']}");
+            $this->info("    (Special price removals: {$stats['special_price_removals']})");
+            $this->info("  Inventory mismatches: {$stats['inventory_mismatches']}");
+            $this->newLine();
 
-            $updateIds[] = $item->id;
-
-            // Log detailed information
-            if (! $isDryRun) {
-                Log::info("Price/Inventory Verification - SKU: {$item->sku}", [
-                    'sku' => $item->sku,
-                    'price_mismatch' => $item->price_mismatch,
-                    'compare_mismatch' => $item->compare_mismatch,
-                    'inventory_mismatch' => $item->inventory_mismatch,
-                    'shopify_price' => $item->shopify_price,
-                    'retail_price' => $item->retail_price,
-                    'shopify_compare' => $item->shopify_compare,
-                    'retail_compare' => $item->retail_compare,
-                    'shopify_inventory' => $item->shopify_inventory,
-                    'retail_inventory' => $item->retail_inventory,
-                ]);
-            }
-        }
-
-        // Display the mismatches table
-        if (count($tableData) <= 20 || $this->confirm('Display all '.count($tableData).' mismatches?', false)) {
-            $this->table(
-                ['SKU', 'Issues', 'Price Change', 'Compare Change', 'Inventory Change'],
-                array_slice($tableData, 0, 50)
-            );
-            if (count($tableData) > 50) {
-                $this->info('... and '.(count($tableData) - 50).' more items');
-            }
-        }
-
-        // Display summary statistics
-        $this->newLine();
-        $this->info('Summary:');
-        $this->info("  Price mismatches: {$stats['price_mismatches']}");
-        $this->info("  Compare-at price mismatches: {$stats['compare_price_mismatches']}");
-        $this->info("    (Special price removals: {$stats['special_price_removals']})");
-        $this->info("  Inventory mismatches: {$stats['inventory_mismatches']}");
-        $this->newLine();
-
-        // Handle updates
-        if ($isDryRun) {
-            $this->info('🔍 DRY RUN MODE - No changes made');
-            $this->info('Run without --dry-run to apply these changes');
-        } else {
-            if ($isForce || $this->confirm('Do you want to flag these items for update?', true)) {
-                $stats['total_flagged'] = $this->flagForUpdate($updateIds);
-                $this->info("✅ Flagged {$stats['total_flagged']} variants for update");
-                $this->newLine();
-                $this->info('Next steps:');
-                $this->info('1. Run: php artisan shopifyUpdatePriceInventory');
-                $this->info('   This will push the corrected prices to Shopify');
+            // Handle updates
+            if ($isDryRun) {
+                $this->info('🔍 DRY RUN MODE - No changes made');
+                $this->info('Run without --dry-run to apply these changes');
             } else {
-                $this->info('No changes made.');
+                if ($isForce || $this->confirm('Do you want to flag these items for update?', true)) {
+                    $stats['total_flagged'] = $this->flagForUpdate($updateIds);
+                    $this->info("✅ Flagged {$stats['total_flagged']} variants for update");
+                    $this->newLine();
+                    $this->info('Next steps:');
+                    $this->info('1. Run: php artisan shopifyUpdatePriceInventory');
+                    $this->info('   This will push the corrected prices to Shopify');
+                } else {
+                    $this->info('No changes made.');
+                }
             }
+
+            // Log the verification run
+            Log::info('Price/Inventory Verification Completed', $stats);
+
+            $job->finishJob();
+            Log::info("$marketplace $jobType finished!");
+
+            return Command::SUCCESS;
+        } catch (\Throwable $e) {
+            $job->finishJob($e->getMessage());
+            report($e);
+            $this->error($e->getMessage());
+            Log::error("$marketplace $jobType failed: ".$e->getMessage());
+
+            return Command::FAILURE;
         }
-
-        // Log the verification run
-        Log::info('Price/Inventory Verification Completed', $stats);
-
-        return 0;
     }
 
     /**
@@ -219,9 +252,15 @@ class VerifyAndSyncPrices extends Command
             return 0;
         }
 
-        // Update using raw SQL for better performance and accuracy
+        // Validate and cast all IDs to integers for safety
+        $variantIds = array_map('intval', $variantIds);
+
+        // Create placeholders for parameter binding
+        $placeholders = implode(',', array_fill(0, count($variantIds), '?'));
+
+        // Update using raw SQL with parameter binding for safety
         // Only set flags - values will be updated after successful Shopify API sync
-        $updatedCount = DB::update('
+        $updatedCount = DB::update("
             UPDATE shopify_product_variants spv
             JOIN retail_edge_products rep ON spv.sku = rep.sku
             SET
@@ -237,8 +276,8 @@ class VerifyAndSyncPrices extends Command
                     ELSE spv.inventory_requires_update
                 END,
                 spv.updated_at = CURRENT_TIMESTAMP
-            WHERE spv.id IN ('.implode(',', $variantIds).')
-        ');
+            WHERE spv.id IN ({$placeholders})
+        ", $variantIds);
 
         return $updatedCount;
     }

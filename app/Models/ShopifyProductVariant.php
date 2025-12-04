@@ -57,4 +57,44 @@ class ShopifyProductVariant extends Model
     {
         return $this->belongsTo(RetailEdgeProduct::class, 'sku', 'sku');
     }
+
+    /**
+     * Get the metafields for this variant
+     */
+    public function metafields()
+    {
+        return $this->hasMany(ShopifyProductVariantMetafield::class, 'sku', 'sku');
+    }
+
+    /**
+     * Get the inventory level for this variant
+     */
+    public function inventoryLevel()
+    {
+        return $this->hasOne(ShopifyInventoryLevel::class, 'inventory_item_id', 'inventory_item_id');
+    }
+
+    /**
+     * Scope for variants that need price updates
+     */
+    public function scopeNeedsPriceUpdate($query)
+    {
+        return $query->where('price_requires_update', 1);
+    }
+
+    /**
+     * Scope for variants that need inventory updates
+     */
+    public function scopeNeedsInventoryUpdate($query)
+    {
+        return $query->where('inventory_requires_update', 1);
+    }
+
+    /**
+     * Scope for variants that need image updates
+     */
+    public function scopeNeedsImageUpdate($query)
+    {
+        return $query->where('images_requires_update', 1);
+    }
 }

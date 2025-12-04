@@ -26,4 +26,12 @@ class ShopifyProduct extends Model
     {
         return $this->hasMany(ShopifyProductVariant::class);
     }
+
+    /**
+     * Get the metafields for this product
+     */
+    public function metafields()
+    {
+        return $this->hasMany(ShopifyProductMetafield::class, 'product_sku', 'sku');
+    }
 }

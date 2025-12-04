@@ -33,25 +33,31 @@ class CountImages extends Command
         $marketplace = 'Shopify';
         $jobType = 'shopifyCountImages';
 
-        $job = SyncJobController::getJob($jobType, $marketplace);
+        // Acquire lock using locking system
+        $job = SyncJobController::acquireLock($jobType, $marketplace);
+        if (! $job) {
+            $this->warn('Job is already running or paused.');
+            Log::info("$marketplace $jobType: Cannot acquire lock (running or paused)");
 
-        if (! $job->isRunning()) {
-            try {
-                Log::info("$marketplace $jobType started!");
-                $job->update(['status' => 1]);
+            return Command::SUCCESS;
+        }
 
-                $this->getImagesCount();
+        try {
+            Log::info("$marketplace $jobType started!");
 
-                $job->update(['status' => 0, 'message' => null]);
+            $this->getImagesCount();
 
-                Log::info("$marketplace $jobType finished!");
-            } catch (\Exception $e) {
-                $job->update(['status' => 0, 'message' => $e->getMessage()]);
-                report($e);
-                $this->error($e->getMessage());
-            }
-        } else {
-            Log::info("$marketplace $jobType is already running.");
+            $job->finishJob();
+            Log::info("$marketplace $jobType finished!");
+
+            return Command::SUCCESS;
+        } catch (\Throwable $e) {
+            $job->finishJob($e->getMessage());
+            report($e);
+            $this->error($e->getMessage());
+            Log::error("$marketplace $jobType failed: ".$e->getMessage());
+
+            return Command::FAILURE;
         }
     }
 
