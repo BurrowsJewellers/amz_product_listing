@@ -45,6 +45,8 @@ class GetProducts extends Command
         'deleted' => 0,
         'errors' => 0,
         'api_calls' => 0,
+        'with_images' => 0,
+        'without_images' => 0,
     ];
 
     /**
@@ -242,6 +244,9 @@ class GetProducts extends Command
                         tags
                         createdAt
                         updatedAt
+                        mediaCount {
+                          count
+                        }
                         variants(first: 250) {
                           edges {
                             node {
@@ -335,6 +340,11 @@ class GetProducts extends Command
                 $productNode['variants']['edges'] = $allVariants;
             }
 
+            // Extract media count
+            $mediaCount = $productNode['mediaCount']['count'] ?? 0;
+            $productTitle = $productNode['title'] ?? 'Unknown';
+            $productTitle = strlen($productTitle) > 40 ? substr($productTitle, 0, 37).'...' : $productTitle;
+
             if ($this->option('dry-run')) {
                 // In dry-run mode, just collect SKUs
                 $variants = $productNode['variants']['edges'] ?? [];
@@ -344,12 +354,30 @@ class GetProducts extends Command
                         $chunkSkus[] = $sku;
                     }
                 }
+                $imageStatus = $mediaCount > 0 ? "{$mediaCount} images" : '0 images (needs upload)';
+                $this->line("   {$productTitle} - {$imageStatus}");
             } else {
                 // Process products in a database transaction
-                DB::transaction(function () use ($productNode, &$chunkSkus) {
+                DB::transaction(function () use ($productNode, &$chunkSkus, $mediaCount, $productTitle) {
                     try {
                         $productData = $this->convertGraphQLToRestFormat($productNode);
                         (new ShopifyService)->saveProductToDb($productData);
+
+                        // Update images_requires_update flag based on media count
+                        $imageFlag = $mediaCount === 0 ? 1 : 0;
+                        ShopifyProductVariant::where('product_id', $productData['id'])
+                            ->update(['images_requires_update' => $imageFlag]);
+
+                        // Track image statistics
+                        if ($mediaCount > 0) {
+                            $this->stats['with_images']++;
+                            $imageStatus = "{$mediaCount} images";
+                        } else {
+                            $this->stats['without_images']++;
+                            $imageStatus = '0 images (flagged)';
+                        }
+
+                        $this->line("   {$productTitle} - {$imageStatus}");
 
                         // Collect SKUs
                         foreach ($productData['variants'] as $variant) {
@@ -718,6 +746,10 @@ class GetProducts extends Command
         $this->info('   • Products deleted: '.$this->stats['deleted']);
         $this->info('   • API calls made: '.$this->stats['api_calls']);
         $this->info('   • Errors encountered: '.$this->stats['errors']);
+        $this->info('');
+        $this->info('🖼️  Image Statistics:');
+        $this->info('   • Products with images: '.$this->stats['with_images']);
+        $this->info('   • Products without images: '.$this->stats['without_images'].' (flagged for upload)');
         $this->info('');
 
         if ($this->stats['errors'] > 0) {

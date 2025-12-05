@@ -79,13 +79,27 @@ class UploadImages extends Command
     private function processImageUploads(string $marketplace): void
     {
         // Get initial count once - avoid N+1 queries by decrementing instead of re-querying
-        $remainingCount = ShopifyProductVariant::where('images_requires_update', 1)->count();
-        $this->info("Found {$remainingCount} variant(s) requiring image uploads");
+        $totalCount = ShopifyProductVariant::where('images_requires_update', 1)->count();
+        $remainingCount = $totalCount;
+
+        $this->newLine();
+        $this->info('========================================');
+        $this->info('  Shopify Image Upload Process Started');
+        $this->info('========================================');
+        $this->info("Total variants requiring image uploads: {$totalCount}");
+        $this->newLine();
+
+        if ($totalCount === 0) {
+            $this->info('No variants require image uploads. Exiting.');
+
+            return;
+        }
 
         $successCount = 0;
         $failedCount = 0;
         $skippedCount = 0;
         $cleanedCount = 0;
+        $processedCount = 0;
 
         while ($remainingCount > 0) {
             try {
@@ -98,11 +112,21 @@ class UploadImages extends Command
                     break;
                 }
 
+                $processedCount++;
                 $sku = $variant->sku ?: '[EMPTY SKU]';
-                $this->info("Processing images for {$sku}");
+                $productTitle = $variant->product?->title ?? '[Unknown Product]';
+                $productTitle = strlen($productTitle) > 50 ? substr($productTitle, 0, 47).'...' : $productTitle;
+
+                $this->newLine();
+                $this->line('----------------------------------------');
+                $this->info("[{$processedCount}/{$totalCount}] Processing: {$sku}");
+                $this->line("  Product: {$productTitle}");
+                $this->line('  Product ID: '.($variant->product_id ?: 'N/A'));
+                $this->line('  Variant ID: '.($variant->variant_id ?: 'N/A'));
 
                 // Validate variant has required IDs
                 if (empty($variant->product_id)) {
+                    $this->error('  ✗ No product_id - marking as failed');
                     Log::warning("shopifyUploadImages: Variant {$sku} has no product_id - marking as failed");
                     $variant->update(['images_requires_update' => 2]);
                     $failedCount++;
@@ -115,7 +139,7 @@ class UploadImages extends Command
                 if (! $variant->images || $variant->images->isEmpty()) {
                     $variant->update(['images_requires_update' => 2]);
                     Log::debug("No images found in RetailEdge for {$sku}");
-                    $this->warn("No images available for {$sku} - marked for review");
+                    $this->warn('  ⚠ No images available in RetailEdge - marked for review');
                     $skippedCount++;
                     $remainingCount--;
 
@@ -125,6 +149,8 @@ class UploadImages extends Command
                     continue;
                 }
 
+                $this->line("  Images in database: {$variant->images->count()}");
+
                 // Collect and validate image URLs
                 $imageUrls = $variant->images->pluck('url')->filter(function ($url) {
                     return ! empty($url) && filter_var($url, FILTER_VALIDATE_URL);
@@ -133,7 +159,7 @@ class UploadImages extends Command
                 if (empty($imageUrls)) {
                     $variant->update(['images_requires_update' => 2]);
                     Log::warning("shopifyUploadImages: No valid image URLs for {$sku}");
-                    $this->warn("No valid image URLs for {$sku} - marked for review");
+                    $this->warn('  ⚠ No valid image URLs found - marked for review');
                     $skippedCount++;
                     $remainingCount--;
 
@@ -141,23 +167,43 @@ class UploadImages extends Command
                 }
 
                 $imageCount = count($imageUrls);
-                $this->info("Uploading {$imageCount} image(s) for {$sku}");
+                $this->info("  Uploading {$imageCount} image(s) to Shopify...");
+
+                // Display image URLs being uploaded
+                foreach ($imageUrls as $index => $url) {
+                    $urlDisplay = strlen($url) > 60 ? '...'.substr($url, -57) : $url;
+                    $this->line('    ['.($index + 1)."] {$urlDisplay}");
+                }
 
                 // Upload all images at once using GraphQL batch
                 $result = $this->graphqlService->createProductMedia($variant->product_id, $imageUrls);
 
                 if ($result['success'] && ! empty($result['media'])) {
+                    $uploadedMediaCount = count($result['media']);
+                    $this->info("  ✓ Uploaded {$uploadedMediaCount} media file(s)");
+
+                    // Display uploaded media IDs
+                    foreach ($result['media'] as $index => $media) {
+                        $mediaId = $media['id'] ?? 'N/A';
+                        $mediaStatus = $media['status'] ?? 'unknown';
+                        $this->line('    Media '.($index + 1).": {$mediaId} (status: {$mediaStatus})");
+                    }
+
                     // Assign first image to variant if we have media
                     $firstMediaId = $result['media'][0]['id'] ?? null;
                     if ($firstMediaId && $variant->variant_id) {
+                        $this->line('  Assigning media to variant...');
                         $assignResult = $this->graphqlService->assignMediaToVariant($variant->variant_id, $firstMediaId);
-                        if (! $assignResult['success']) {
-                            $this->warn("Images uploaded but could not assign to variant {$sku}: ".$this->formatGraphQLErrorMessage($assignResult));
+                        if ($assignResult['success']) {
+                            $this->info('  ✓ Media assigned to variant successfully');
+                        } else {
+                            $this->warn('  ⚠ Could not assign media to variant: '.$this->formatGraphQLErrorMessage($assignResult));
                         }
+                    } elseif (! $variant->variant_id) {
+                        $this->line('  (Skipping variant assignment - no variant_id)');
                     }
 
                     $variant->update(['images_requires_update' => 0]);
-                    $this->info("Uploaded {$imageCount} image(s) for {$sku}");
                     Log::info("shopifyUploadImages: Uploaded {$imageCount} image(s) for SKU {$sku}");
                     $successCount++;
                 } else {
@@ -165,6 +211,7 @@ class UploadImages extends Command
 
                     // Check if product no longer exists on Shopify - clean up stale record
                     if ($this->isResourceNotExistsError($errorMessage)) {
+                        $this->warn('  ⚠ Product no longer exists on Shopify - cleaning up stale record');
                         $this->cleanupStaleVariant($variant, 'shopifyUploadImages');
                         $cleanedCount++;
                         $remainingCount--;
@@ -173,7 +220,7 @@ class UploadImages extends Command
                     }
 
                     $variant->update(['images_requires_update' => 2]);
-                    $this->error("Failed to upload images for {$sku}: {$errorMessage}");
+                    $this->error("  ✗ Upload failed: {$errorMessage}");
                     Log::error("shopifyUploadImages: Failed for SKU {$sku}: {$errorMessage}");
                     $failedCount++;
                 }
@@ -181,9 +228,8 @@ class UploadImages extends Command
                 $remainingCount--;
             } catch (\Throwable $e) {
                 $variantSku = isset($variant) ? ($variant->sku ?: '[EMPTY SKU]') : 'unknown';
-                $msg = "Exception uploading images for {$variantSku}: {$e->getMessage()}";
-                $this->error($msg);
-                Log::error($msg);
+                $this->error("  ✗ Exception: {$e->getMessage()}");
+                Log::error("Exception uploading images for {$variantSku}: {$e->getMessage()}");
                 report($e);
 
                 // Mark variant as failed if we have one
@@ -198,14 +244,28 @@ class UploadImages extends Command
             // Delay between variants to avoid rate limiting (500ms)
             usleep(500000);
 
-            $this->info("Remaining: {$remainingCount}");
+            // Progress summary
+            $percentComplete = $totalCount > 0 ? round(($processedCount / $totalCount) * 100) : 0;
+            $this->line("  Progress: {$processedCount}/{$totalCount} ({$percentComplete}%) | Remaining: {$remainingCount}");
         }
 
-        $summary = "Image upload complete: {$successCount} succeeded, {$failedCount} failed, {$skippedCount} skipped (no images)";
-        if ($cleanedCount > 0) {
-            $summary .= ", {$cleanedCount} stale records cleaned";
-        }
-        $this->info($summary);
+        // Final summary
+        $this->newLine();
+        $this->info('========================================');
+        $this->info('         Upload Process Complete');
+        $this->info('========================================');
+        $this->table(
+            ['Status', 'Count'],
+            [
+                ['✓ Succeeded', $successCount],
+                ['✗ Failed', $failedCount],
+                ['⚠ Skipped (no images)', $skippedCount],
+                ['🧹 Stale records cleaned', $cleanedCount],
+                ['Total Processed', $processedCount],
+            ]
+        );
+        $this->newLine();
+
         Log::info("$marketplace shopifyUploadImages: {$successCount} succeeded, {$failedCount} failed, {$skippedCount} skipped, {$cleanedCount} cleaned");
     }
 }
