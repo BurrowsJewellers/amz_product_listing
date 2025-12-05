@@ -200,7 +200,8 @@ class UploadImages extends Command
                             $mediaIds
                         );
                         if ($assignResult['success']) {
-                            $this->info("  ✓ {$mediaCount} media file(s) assigned to variant successfully");
+                            $assigned = $assignResult['assigned_count'] ?? $mediaCount;
+                            $this->info("  ✓ {$assigned}/{$mediaCount} media file(s) assigned to variant");
                         } else {
                             $this->warn('  ⚠ Could not assign media to variant: '.$this->formatGraphQLErrorMessage($assignResult));
                         }

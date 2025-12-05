@@ -660,11 +660,12 @@ class ShopifyGraphQLService extends ShopifyConnectionService
     /**
      * Assign media to a specific variant using GraphQL
      * Uses productVariantAppendMedia mutation to attach images to a variant
+     * Note: Shopify only allows ONE media per variant per API call, so we make separate calls
      *
      * @param  int  $productId  Shopify product ID (numeric)
      * @param  int  $variantId  Shopify variant ID (numeric)
      * @param  array  $mediaIds  Array of Shopify media GIDs
-     * @return array Response with success status and errors
+     * @return array Response with success status, counts, and errors
      */
     public function assignMediaToVariant(int $productId, int $variantId, array $mediaIds): array
     {
@@ -679,16 +680,6 @@ class ShopifyGraphQLService extends ShopifyConnectionService
             product {
               id
             }
-            productVariants {
-              id
-              media(first: 10) {
-                edges {
-                  node {
-                    id
-                  }
-                }
-              }
-            }
             userErrors {
               code
               field
@@ -698,72 +689,76 @@ class ShopifyGraphQLService extends ShopifyConnectionService
         }
         GRAPHQL;
 
-        try {
-            $mediaCount = count($mediaIds);
-            Log::debug("ShopifyGraphQLService: Executing productVariantAppendMedia to assign {$mediaCount} media to variant {$variantId}");
+        $mediaCount = count($mediaIds);
+        $successCount = 0;
+        $allUserErrors = [];
+        $allGraphqlErrors = [];
 
-            // Build variantMedia array - one entry per media ID (Shopify only allows one mediaId per entry)
-            $variantMedia = [];
-            foreach ($mediaIds as $mediaId) {
-                $variantMedia[] = [
-                    'variantId' => $variantGid,
-                    'mediaIds' => [$mediaId],
-                ];
-            }
+        Log::debug("ShopifyGraphQLService: Assigning {$mediaCount} media to variant {$variantId}");
 
-            $response = $client->query([
-                'query' => $mutation,
-                'variables' => [
-                    'productId' => $productGid,
-                    'variantMedia' => $variantMedia,
-                ],
-            ]);
-
-            $resultBody = json_decode($response->getBody()->getContents(), true);
-
-            $userErrors = $resultBody['data']['productVariantAppendMedia']['userErrors'] ?? [];
-            $graphqlErrors = $resultBody['errors'] ?? [];
-
-            if (! empty($userErrors) || ! empty($graphqlErrors)) {
-                Log::error('ShopifyGraphQLService: productVariantAppendMedia returned errors', [
-                    'product_id' => $productId,
-                    'variant_id' => $variantId,
-                    'media_ids' => $mediaIds,
-                    'user_errors' => $userErrors,
-                    'graphql_errors' => $graphqlErrors,
+        // Shopify only allows ONE media per variant per API call, so loop through each
+        foreach ($mediaIds as $index => $mediaId) {
+            try {
+                $response = $client->query([
+                    'query' => $mutation,
+                    'variables' => [
+                        'productId' => $productGid,
+                        'variantMedia' => [
+                            [
+                                'variantId' => $variantGid,
+                                'mediaIds' => [$mediaId],
+                            ],
+                        ],
+                    ],
                 ]);
 
-                return [
-                    'success' => false,
-                    'user_errors' => $userErrors,
-                    'graphql_errors' => $graphqlErrors,
-                ];
+                $resultBody = json_decode($response->getBody()->getContents(), true);
+
+                $userErrors = $resultBody['data']['productVariantAppendMedia']['userErrors'] ?? [];
+                $graphqlErrors = $resultBody['errors'] ?? [];
+
+                if (! empty($userErrors) || ! empty($graphqlErrors)) {
+                    Log::warning('ShopifyGraphQLService: productVariantAppendMedia error for media', [
+                        'variant_id' => $variantId,
+                        'media_id' => $mediaId,
+                        'media_index' => $index + 1,
+                        'user_errors' => $userErrors,
+                        'graphql_errors' => $graphqlErrors,
+                    ]);
+                    $allUserErrors = array_merge($allUserErrors, $userErrors);
+                    $allGraphqlErrors = array_merge($allGraphqlErrors, $graphqlErrors);
+                } else {
+                    $successCount++;
+                }
+            } catch (\Exception $e) {
+                Log::error('ShopifyGraphQLService: Exception during productVariantAppendMedia', [
+                    'variant_id' => $variantId,
+                    'media_id' => $mediaId,
+                    'exception' => $e->getMessage(),
+                ]);
+                $allGraphqlErrors[] = ['message' => $e->getMessage()];
             }
-
-            Log::debug('ShopifyGraphQLService: productVariantAppendMedia successful', [
-                'product_id' => $productId,
-                'variant_id' => $variantId,
-                'media_count' => $mediaCount,
-            ]);
-
-            return [
-                'success' => true,
-                'user_errors' => [],
-                'graphql_errors' => [],
-            ];
-        } catch (\Exception $e) {
-            Log::error('ShopifyGraphQLService: Exception during productVariantAppendMedia', [
-                'product_id' => $productId,
-                'variant_id' => $variantId,
-                'exception' => $e->getMessage(),
-            ]);
-
-            return [
-                'success' => false,
-                'user_errors' => [],
-                'graphql_errors' => [['message' => $e->getMessage()]],
-            ];
         }
+
+        // Consider success if at least one media was assigned
+        $success = $successCount > 0;
+
+        if ($success) {
+            Log::debug('ShopifyGraphQLService: productVariantAppendMedia completed', [
+                'product_id' => $productId,
+                'variant_id' => $variantId,
+                'total_media' => $mediaCount,
+                'assigned' => $successCount,
+            ]);
+        }
+
+        return [
+            'success' => $success,
+            'assigned_count' => $successCount,
+            'total_count' => $mediaCount,
+            'user_errors' => $allUserErrors,
+            'graphql_errors' => $allGraphqlErrors,
+        ];
     }
 
     /**
