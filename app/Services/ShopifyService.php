@@ -32,6 +32,7 @@ class ShopifyService extends ShopifyConnectionService
                             'handle' => $productData['handle'],
                             'tags' => is_array($productData['tags']) ? implode(',', $productData['tags']) : ($productData['tags'] ?? ''),
                             'status' => $productData['status'],
+                            'media_count' => $productData['media_count'] ?? 0,
                             'deleted_at' => null, // Restore if it was soft-deleted
                         ]
                     );
@@ -72,6 +73,7 @@ class ShopifyService extends ShopifyConnectionService
                             'handle' => $productData['handle'],
                             'tags' => is_array($productData['tags']) ? implode(',', $productData['tags']) : ($productData['tags'] ?? ''),
                             'status' => $productData['status'],
+                            'media_count' => $productData['media_count'] ?? 0,
                             'deleted_at' => null, // Restore if it was soft-deleted
                         ]
                     );

@@ -520,6 +520,7 @@ class GetProducts extends Command
             'vendor' => $graphqlProduct['vendor'] ?? null,
             'product_type' => $graphqlProduct['productType'] ?? null,
             'tags' => is_array($graphqlProduct['tags']) ? implode(',', $graphqlProduct['tags']) : ($graphqlProduct['tags'] ?? ''),
+            'media_count' => $graphqlProduct['mediaCount']['count'] ?? 0,
             'variants' => $variants,
         ];
     }

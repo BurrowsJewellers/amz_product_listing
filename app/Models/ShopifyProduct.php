@@ -19,6 +19,7 @@ class ShopifyProduct extends Model
         'handle',
         'tags',
         'status',
+        'media_count',
         'requires_update',
     ];
 
