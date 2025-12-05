@@ -189,13 +189,18 @@ class UploadImages extends Command
                         $this->line('    Media '.($index + 1).": {$mediaId} (status: {$mediaStatus})");
                     }
 
-                    // Assign first image to variant if we have media
-                    $firstMediaId = $result['media'][0]['id'] ?? null;
-                    if ($firstMediaId && $variant->variant_id) {
-                        $this->line('  Assigning media to variant...');
-                        $assignResult = $this->graphqlService->assignMediaToVariant($variant->variant_id, $firstMediaId);
+                    // Assign all images to variant if we have media
+                    $mediaIds = array_filter(array_column($result['media'], 'id'));
+                    if (! empty($mediaIds) && $variant->variant_id) {
+                        $mediaCount = count($mediaIds);
+                        $this->line("  Assigning {$mediaCount} media file(s) to variant...");
+                        $assignResult = $this->graphqlService->assignMediaToVariant(
+                            $variant->product_id,
+                            $variant->variant_id,
+                            $mediaIds
+                        );
                         if ($assignResult['success']) {
-                            $this->info('  ✓ Media assigned to variant successfully');
+                            $this->info("  ✓ {$mediaCount} media file(s) assigned to variant successfully");
                         } else {
                             $this->warn('  ⚠ Could not assign media to variant: '.$this->formatGraphQLErrorMessage($assignResult));
                         }

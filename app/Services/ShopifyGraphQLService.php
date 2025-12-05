@@ -659,28 +659,38 @@ class ShopifyGraphQLService extends ShopifyConnectionService
 
     /**
      * Assign media to a specific variant using GraphQL
-     * Uses productVariantUpdate mutation to set the image for a variant
+     * Uses productVariantAppendMedia mutation to attach images to a variant
      *
+     * @param  int  $productId  Shopify product ID (numeric)
      * @param  int  $variantId  Shopify variant ID (numeric)
-     * @param  string  $mediaId  Shopify media GID
+     * @param  array  $mediaIds  Array of Shopify media GIDs
      * @return array Response with success status and errors
      */
-    public function assignMediaToVariant(int $variantId, string $mediaId): array
+    public function assignMediaToVariant(int $productId, int $variantId, array $mediaIds): array
     {
         $session = $this->getSession();
         $client = new Graphql($session->getShop(), $session->getAccessToken());
+        $productGid = "gid://shopify/Product/{$productId}";
         $variantGid = "gid://shopify/ProductVariant/{$variantId}";
 
         $mutation = <<<'GRAPHQL'
-        mutation productVariantUpdate($input: ProductVariantInput!) {
-          productVariantUpdate(input: $input) {
-            productVariant {
+        mutation productVariantAppendMedia($productId: ID!, $variantMedia: [ProductVariantAppendMediaInput!]!) {
+          productVariantAppendMedia(productId: $productId, variantMedia: $variantMedia) {
+            product {
               id
-              image {
-                id
+            }
+            productVariants {
+              id
+              media(first: 10) {
+                edges {
+                  node {
+                    id
+                  }
+                }
               }
             }
             userErrors {
+              code
               field
               message
             }
@@ -689,27 +699,32 @@ class ShopifyGraphQLService extends ShopifyConnectionService
         GRAPHQL;
 
         try {
-            Log::debug("ShopifyGraphQLService: Executing productVariantUpdate to assign media to variant {$variantId}");
+            $mediaCount = count($mediaIds);
+            Log::debug("ShopifyGraphQLService: Executing productVariantAppendMedia to assign {$mediaCount} media to variant {$variantId}");
 
             $response = $client->query([
                 'query' => $mutation,
                 'variables' => [
-                    'input' => [
-                        'id' => $variantGid,
-                        'mediaId' => $mediaId,
+                    'productId' => $productGid,
+                    'variantMedia' => [
+                        [
+                            'variantId' => $variantGid,
+                            'mediaIds' => $mediaIds,
+                        ],
                     ],
                 ],
             ]);
 
             $resultBody = json_decode($response->getBody()->getContents(), true);
 
-            $userErrors = $resultBody['data']['productVariantUpdate']['userErrors'] ?? [];
+            $userErrors = $resultBody['data']['productVariantAppendMedia']['userErrors'] ?? [];
             $graphqlErrors = $resultBody['errors'] ?? [];
 
             if (! empty($userErrors) || ! empty($graphqlErrors)) {
-                Log::error('ShopifyGraphQLService: productVariantUpdate returned errors', [
+                Log::error('ShopifyGraphQLService: productVariantAppendMedia returned errors', [
+                    'product_id' => $productId,
                     'variant_id' => $variantId,
-                    'media_id' => $mediaId,
+                    'media_ids' => $mediaIds,
                     'user_errors' => $userErrors,
                     'graphql_errors' => $graphqlErrors,
                 ]);
@@ -721,9 +736,10 @@ class ShopifyGraphQLService extends ShopifyConnectionService
                 ];
             }
 
-            Log::debug('ShopifyGraphQLService: productVariantUpdate successful', [
+            Log::debug('ShopifyGraphQLService: productVariantAppendMedia successful', [
+                'product_id' => $productId,
                 'variant_id' => $variantId,
-                'media_id' => $mediaId,
+                'media_count' => $mediaCount,
             ]);
 
             return [
@@ -732,7 +748,8 @@ class ShopifyGraphQLService extends ShopifyConnectionService
                 'graphql_errors' => [],
             ];
         } catch (\Exception $e) {
-            Log::error('ShopifyGraphQLService: Exception during productVariantUpdate', [
+            Log::error('ShopifyGraphQLService: Exception during productVariantAppendMedia', [
+                'product_id' => $productId,
                 'variant_id' => $variantId,
                 'exception' => $e->getMessage(),
             ]);
