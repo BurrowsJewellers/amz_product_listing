@@ -702,16 +702,20 @@ class ShopifyGraphQLService extends ShopifyConnectionService
             $mediaCount = count($mediaIds);
             Log::debug("ShopifyGraphQLService: Executing productVariantAppendMedia to assign {$mediaCount} media to variant {$variantId}");
 
+            // Build variantMedia array - one entry per media ID (Shopify only allows one mediaId per entry)
+            $variantMedia = [];
+            foreach ($mediaIds as $mediaId) {
+                $variantMedia[] = [
+                    'variantId' => $variantGid,
+                    'mediaIds' => [$mediaId],
+                ];
+            }
+
             $response = $client->query([
                 'query' => $mutation,
                 'variables' => [
                     'productId' => $productGid,
-                    'variantMedia' => [
-                        [
-                            'variantId' => $variantGid,
-                            'mediaIds' => $mediaIds,
-                        ],
-                    ],
+                    'variantMedia' => $variantMedia,
                 ],
             ]);
 
