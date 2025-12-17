@@ -11,7 +11,7 @@ use App\Services\ShopifyGraphQLService;
 use App\Services\SyncFailureLogger;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
-use Shopify\Rest\Admin2025_04\Product as ShopifyProductAPI;
+use Shopify\Rest\Admin2025_07\Product as ShopifyProductAPI;
 
 class UpdatePriceInventoryBatch extends Command
 {
@@ -94,7 +94,7 @@ class UpdatePriceInventoryBatch extends Command
             $job->finishJob($e->getMessage());
             report($e);
             Log::error("$marketplace $jobType failed. Error: {$e->getMessage()}");
-            $this->error('Command failed: '.$e->getMessage());
+            $this->error('Command failed: ' . $e->getMessage());
 
             return Command::FAILURE;
         }
@@ -231,7 +231,7 @@ class UpdatePriceInventoryBatch extends Command
 
         foreach ($chunks as $chunkIndex => $chunk) {
             $chunkNumber = $chunkIndex + 1;
-            $this->info("[Chunk {$chunkNumber}/{$totalChunks}] Processing ".count($chunk).' inventory items...');
+            $this->info("[Chunk {$chunkNumber}/{$totalChunks}] Processing " . count($chunk) . ' inventory items...');
 
             // Prepare items for bulk update
             $items = array_map(function ($item) {
@@ -273,7 +273,7 @@ class UpdatePriceInventoryBatch extends Command
                 'to_value' => $newPrice,
                 'status' => 'success',
                 'job_name' => $this->signature,
-                'message' => 'Price updated via GraphQL productVariantsBulkUpdate. Variant ID: '.$variant->variant_id,
+                'message' => 'Price updated via GraphQL productVariantsBulkUpdate. Variant ID: ' . $variant->variant_id,
             ]);
 
             $updates = [
@@ -293,7 +293,7 @@ class UpdatePriceInventoryBatch extends Command
                     'to_value' => $newCompareAtPrice,
                     'status' => 'success',
                     'job_name' => $this->signature,
-                    'message' => 'Compare_at_price updated via GraphQL productVariantsBulkUpdate. Variant ID: '.$variant->variant_id,
+                    'message' => 'Compare_at_price updated via GraphQL productVariantsBulkUpdate. Variant ID: ' . $variant->variant_id,
                 ]);
 
                 $updates['compare_at_price'] = $newCompareAtPrice ?? 0;
@@ -377,7 +377,7 @@ class UpdatePriceInventoryBatch extends Command
                 'to_value' => $newInventory,
                 'status' => 'success',
                 'job_name' => $this->signature,
-                'message' => 'Inventory updated via GraphQL inventorySetQuantities (bulk). Variant ID: '.$variant->variant_id,
+                'message' => 'Inventory updated via GraphQL inventorySetQuantities (bulk). Variant ID: ' . $variant->variant_id,
             ]);
 
             $variant->update([
@@ -619,7 +619,7 @@ class UpdatePriceInventoryBatch extends Command
                         'to_value' => $variantData['price'],
                         'status' => 'success',
                         'job_name' => $this->signature,
-                        'message' => 'Retry successful: Price updated via GraphQL productVariantsBulkUpdate. Variant ID: '.$variant->variant_id,
+                        'message' => 'Retry successful: Price updated via GraphQL productVariantsBulkUpdate. Variant ID: ' . $variant->variant_id,
                     ]);
 
                     $this->failureLogger->logSuccess($variant, 'price', ['job_name' => $this->signature]);
@@ -693,7 +693,7 @@ class UpdatePriceInventoryBatch extends Command
                     'to_value' => $item['quantity'],
                     'status' => 'success',
                     'job_name' => $this->signature,
-                    'message' => 'Retry successful: Inventory updated via GraphQL inventorySetQuantities (bulk). Variant ID: '.$variant->variant_id,
+                    'message' => 'Retry successful: Inventory updated via GraphQL inventorySetQuantities (bulk). Variant ID: ' . $variant->variant_id,
                 ]);
 
                 $this->failureLogger->logSuccess($variant, 'inventory', ['job_name' => $this->signature]);
@@ -739,7 +739,7 @@ class UpdatePriceInventoryBatch extends Command
      */
     private function formatErrorMessage(array $result, string $prefix = ''): string
     {
-        $errorMessage = $prefix.'GraphQL Error: ';
+        $errorMessage = $prefix . 'GraphQL Error: ';
         if (! empty($result['user_errors'])) {
             $errorMessage .= json_encode($result['user_errors']);
         } elseif (! empty($result['graphql_errors'])) {
