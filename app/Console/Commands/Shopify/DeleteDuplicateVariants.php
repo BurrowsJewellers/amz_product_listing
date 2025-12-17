@@ -190,7 +190,7 @@ class DeleteDuplicateVariants extends Command
             }
 
             // Delete from Shopify first
-            $shopifyResult = $this->deleteVariantFromShopify($variant->variant_id);
+            $shopifyResult = $this->deleteVariantFromShopify($variant->product_id, $variant->variant_id);
 
             if ($shopifyResult['success']) {
                 $this->stats['deleted_shopify']++;
@@ -235,14 +235,13 @@ class DeleteDuplicateVariants extends Command
     }
 
     /**
-     * Delete a variant from Shopify using GraphQL
+     * Delete a variant from Shopify using GraphQL (productVariantsBulkDelete)
      */
-    private function deleteVariantFromShopify(int $variantId): array
+    private function deleteVariantFromShopify(int $productId, int $variantId): array
     {
         $mutation = <<<'GRAPHQL'
-        mutation productVariantDelete($id: ID!) {
-          productVariantDelete(id: $id) {
-            deletedProductVariantId
+        mutation productVariantsBulkDelete($productId: ID!, $variantsIds: [ID!]!) {
+          productVariantsBulkDelete(productId: $productId, variantsIds: $variantsIds) {
             product {
               id
               title
@@ -255,17 +254,21 @@ class DeleteDuplicateVariants extends Command
         }
         GRAPHQL;
 
+        $productGid = "gid://shopify/Product/{$productId}";
         $variantGid = "gid://shopify/ProductVariant/{$variantId}";
 
         try {
             $response = $this->client->query([
                 'query' => $mutation,
-                'variables' => ['id' => $variantGid],
+                'variables' => [
+                    'productId' => $productGid,
+                    'variantsIds' => [$variantGid],
+                ],
             ]);
 
             $resultBody = json_decode($response->getBody()->getContents(), true);
 
-            $userErrors = $resultBody['data']['productVariantDelete']['userErrors'] ?? [];
+            $userErrors = $resultBody['data']['productVariantsBulkDelete']['userErrors'] ?? [];
             $graphqlErrors = $resultBody['errors'] ?? [];
 
             if (! empty($userErrors) || ! empty($graphqlErrors)) {
@@ -278,12 +281,12 @@ class DeleteDuplicateVariants extends Command
 
             return [
                 'success' => true,
-                'deleted_id' => $resultBody['data']['productVariantDelete']['deletedProductVariantId'] ?? null,
                 'user_errors' => [],
                 'graphql_errors' => [],
             ];
         } catch (\Exception $e) {
             Log::error('DeleteDuplicateVariants: Exception during variant deletion', [
+                'product_id' => $productId,
                 'variant_id' => $variantId,
                 'exception' => $e->getMessage(),
             ]);
