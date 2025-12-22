@@ -45,10 +45,14 @@ class JobOrchestrator extends Command
             'description' => 'Shopify operations chain',
             'marketplace' => 'Shopify',
             'jobs' => [
-                'shopifyGetProducts',
-                'shopifyCreateProduct',
-                'shopifyUploadImages',
-                'shopifyArchiveProducts',
+                'shopifyGetProducts',                      // 1. Sync existing Shopify products to local DB
+                'shopify:delete-duplicate-variants',       // 2. Clean up duplicate child products
+                'shopifyCreateProduct',                    // 3. Create new products (parents with children as variants)
+                'shopifyUploadImages',                     // 4. Upload product images
+                'shopifyArchiveProducts',                  // 5. Archive discontinued products
+            ],
+            'job_args' => [
+                'shopify:delete-duplicate-variants' => ['--force' => true],
             ],
         ],
     ];
