@@ -53,11 +53,14 @@ class CreateProduct extends Command
             Log::info("$marketplace $jobType started!");
             $product_errors_occurred = false;
 
-            $pendingProducts = DB::select('SELECT rep.id, rep.sku
+            // Only fetch parent/standalone products (old_key = sku or empty)
+            // Child products should be added as variants on their parent, not as separate products
+            $pendingProducts = DB::select("SELECT rep.id, rep.sku
                     FROM retail_edge_products rep
                     LEFT JOIN shopify_product_variants spv ON rep.sku = spv.sku
-                    WHERE spv.id IS NULL;
-                ');
+                    WHERE spv.id IS NULL
+                    AND (rep.old_key = rep.sku OR rep.old_key = '')
+                ");
 
             $pendingProductIds = [];
 
@@ -88,11 +91,23 @@ class CreateProduct extends Command
 
             while ($count) {
                 $this->info('Count: '.$count);
-                $product = RetailEdgeProduct::withWhereHas('children', function ($children) {
-                    $children->where('uploaded_to_shopify', 0);
-                })->with(['brand'])->where('quantity', '>', 0)->first();
+                $product = RetailEdgeProduct::whereIn('id', $pendingProductIds)
+                    ->withWhereHas('children', function ($children) {
+                        $children->where('uploaded_to_shopify', 0);
+                    })->with(['brand'])->where('quantity', '>', 0)->first();
 
                 if ($product) {
+                    // Defensive check: skip if this is somehow a child product
+                    if ($product->old_key !== $product->sku && $product->old_key !== '') {
+                        Log::warning('CreateProduct: Skipping child product that slipped through', [
+                            'sku' => $product->sku,
+                            'old_key' => $product->old_key,
+                        ]);
+                        $product->update(['uploaded_to_shopify' => 1]); // Mark to prevent reprocessing
+                        $count = $countQuery->count();
+
+                        continue;
+                    }
                     $this->info('======================================');
                     $this->info("Processing Product: {$product->title} (SKU: {$product->sku})");
 

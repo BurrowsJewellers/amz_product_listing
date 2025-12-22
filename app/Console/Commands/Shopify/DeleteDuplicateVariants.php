@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands\Shopify;
 
+use App\Models\RetailEdgeProduct;
 use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyConnectionService;
 use App\Traits\ShopifyCleanupTrait;
@@ -43,9 +44,11 @@ class DeleteDuplicateVariants extends Command
      */
     private array $stats = [
         'duplicates_found' => 0,
-        'deleted_shopify' => 0,
+        'skipped_standalone' => 0,
+        'kept_on_correct_product' => 0,
+        'products_deleted' => 0,
+        'variants_deleted' => 0,
         'deleted_database' => 0,
-        'skipped' => 0,
         'errors' => 0,
     ];
 
@@ -91,12 +94,13 @@ class DeleteDuplicateVariants extends Command
             return Command::SUCCESS;
         }
 
-        $this->stats['duplicates_found'] = array_sum(array_map(fn ($d) => $d->count - 1, $duplicateSkus));
-        $this->info('Found '.count($duplicateSkus)." SKUs with duplicates ({$this->stats['duplicates_found']} variants to delete)");
+        $this->stats['duplicates_found'] = count($duplicateSkus);
+        $totalDuplicateVariants = array_sum(array_map(fn ($d) => $d->count - 1, $duplicateSkus));
+        $this->info("Found {$this->stats['duplicates_found']} SKUs with duplicates ({$totalDuplicateVariants} extra variants)");
 
         // Confirmation prompt (unless dry-run or --force)
         if (! $isDryRun && ! $this->option('force')) {
-            if (! $this->confirm("This will delete {$this->stats['duplicates_found']} duplicate variants from Shopify and the database. Continue?")) {
+            if (! $this->confirm("This will process {$this->stats['duplicates_found']} duplicate SKUs and delete incorrect products/variants from Shopify. Continue?")) {
                 $this->info('Operation cancelled.');
 
                 return Command::SUCCESS;
@@ -111,13 +115,8 @@ class DeleteDuplicateVariants extends Command
         $progressBar->start();
 
         foreach ($duplicateSkus as $duplicate) {
-            $this->processDuplicateSku($duplicate->sku, $duplicate->newest_variant_id, $isDryRun);
+            $this->processDuplicateSku($duplicate->sku, $isDryRun);
             $progressBar->advance();
-
-            // Rate limiting delay (100ms between operations)
-            if (! $isDryRun) {
-                usleep(100000);
-            }
         }
 
         $progressBar->finish();
@@ -159,78 +158,174 @@ class DeleteDuplicateVariants extends Command
     }
 
     /**
-     * Process a single SKU with duplicates
+     * Check if a SKU is a child product (old_key != sku)
+     *
+     * @return array{is_child: bool, parent_sku: string|null, retail_edge: RetailEdgeProduct|null}
      */
-    private function processDuplicateSku(string $sku, int $newestVariantId, bool $isDryRun): void
+    private function isChildProduct(string $sku): array
     {
+        $retailEdge = RetailEdgeProduct::where('sku', $sku)->first();
+
+        if (! $retailEdge) {
+            return ['is_child' => false, 'parent_sku' => null, 'retail_edge' => null];
+        }
+
+        // Empty old_key means standalone product
+        if (empty($retailEdge->old_key)) {
+            return ['is_child' => false, 'parent_sku' => null, 'retail_edge' => $retailEdge];
+        }
+
+        // If old_key = sku, it's a parent/standalone
+        $isChild = $retailEdge->old_key !== $retailEdge->sku;
+
+        return [
+            'is_child' => $isChild,
+            'parent_sku' => $isChild ? $retailEdge->old_key : null,
+            'retail_edge' => $retailEdge,
+        ];
+    }
+
+    /**
+     * Find the correct Shopify product ID for a child SKU based on its parent
+     */
+    private function getCorrectProductId(string $parentSku): ?int
+    {
+        $parentVariant = ShopifyProductVariant::where('sku', $parentSku)->first();
+
+        if (! $parentVariant) {
+            Log::warning('DeleteDuplicateVariants: Parent SKU not found in Shopify', [
+                'parent_sku' => $parentSku,
+            ]);
+
+            return null;
+        }
+
+        return $parentVariant->product_id;
+    }
+
+    /**
+     * Process a single SKU with duplicates
+     * For child SKUs: keeps variants on correct parent product, deletes others
+     * For parent/standalone SKUs: skips (valid single-variant products)
+     */
+    private function processDuplicateSku(string $sku, bool $isDryRun): void
+    {
+        $this->newLine();
+        $this->line("  Processing SKU: {$sku}");
+
+        // Check if this is a child product
+        $childCheck = $this->isChildProduct($sku);
+
+        if (! $childCheck['is_child']) {
+            $this->info('    SKIP: Not a child product (standalone/parent with old_key = sku or empty)');
+            $this->stats['skipped_standalone']++;
+
+            return;
+        }
+
+        $parentSku = $childCheck['parent_sku'];
+        $this->line("    Parent SKU: {$parentSku}");
+
+        // Find the correct product based on parent
+        $correctProductId = $this->getCorrectProductId($parentSku);
         $variants = $this->getVariantsForSku($sku);
 
-        // Skip the first one (newest to keep)
-        $variantsToDelete = $variants->skip(1);
+        $this->line("    Total variants found: {$variants->count()}");
+        $this->line('    Correct product_id: '.($correctProductId ?? 'NOT FOUND (parent not in Shopify)'));
 
-        foreach ($variantsToDelete as $variant) {
-            $this->newLine();
-            $this->line("  SKU: {$sku}");
-            $this->line("    Keeping variant_id: {$newestVariantId}");
-            $this->line("    Deleting variant_id: {$variant->variant_id}");
-
-            // Check if this would leave the product with no variants (Shopify won't allow this)
-            $productVariantCount = ShopifyProductVariant::where('product_id', $variant->product_id)->count();
-            if ($productVariantCount <= 1) {
-                $this->warn('    Skipping - cannot delete the last variant of a product');
-                $this->stats['skipped']++;
+        foreach ($variants as $variant) {
+            // Check if this variant is on the correct product
+            if ($correctProductId && $variant->product_id == $correctProductId) {
+                $this->info("    KEEP variant_id: {$variant->variant_id} (on correct parent product)");
+                $this->stats['kept_on_correct_product']++;
 
                 continue;
             }
+
+            // This variant is on wrong product - needs deletion
+            $this->line("    DELETE variant_id: {$variant->variant_id} (on wrong product {$variant->product_id})");
 
             if ($isDryRun) {
-                $this->line('    [DRY RUN] Would delete from Shopify and database');
+                $productVariantCount = ShopifyProductVariant::where('product_id', $variant->product_id)->count();
+                if ($productVariantCount <= 1) {
+                    $this->line("      [DRY RUN] Would delete entire product {$variant->product_id}");
+                } else {
+                    $this->line('      [DRY RUN] Would delete variant from product');
+                }
 
                 continue;
             }
 
-            // Delete from Shopify first
-            $shopifyResult = $this->deleteVariantFromShopify($variant->product_id, $variant->variant_id);
+            // Check if this is the only variant on the product
+            $productVariantCount = ShopifyProductVariant::where('product_id', $variant->product_id)->count();
 
-            if ($shopifyResult['success']) {
-                $this->stats['deleted_shopify']++;
+            if ($productVariantCount <= 1) {
+                // Delete entire product (can't delete last variant)
+                $this->line('      Deleting entire product (only variant)...');
+                $result = $this->deleteProductFromShopify($variant->product_id);
 
-                // Delete from local database using trait
-                $this->cleanupStaleVariant($variant, 'DeleteDuplicateVariants');
-                $this->stats['deleted_database']++;
-
-                $this->info('    Deleted successfully');
-                Log::info('DeleteDuplicateVariants: Deleted duplicate variant', [
-                    'sku' => $sku,
-                    'deleted_variant_id' => $variant->variant_id,
-                    'kept_variant_id' => $newestVariantId,
-                ]);
+                if ($result['success']) {
+                    $this->stats['products_deleted']++;
+                    // Delete all variants for this product from database
+                    $this->cleanupProductVariants($variant->product_id);
+                    $this->stats['deleted_database']++;
+                    $this->info('      Deleted product successfully');
+                } else {
+                    $this->handleDeletionError($result, $variant, $sku);
+                }
             } else {
-                $errorMessage = $this->formatGraphQLErrorMessage($shopifyResult);
+                // Delete just this variant
+                $this->line('      Deleting variant from product...');
+                $result = $this->deleteVariantFromShopify($variant->product_id, $variant->variant_id);
 
-                // Check if variant doesn't exist on Shopify (already deleted)
-                if ($this->isResourceNotExistsError($errorMessage)) {
-                    $this->warn('    Variant not found on Shopify - cleaning database only');
-
-                    // Still delete from database
+                if ($result['success']) {
+                    $this->stats['variants_deleted']++;
                     $this->cleanupStaleVariant($variant, 'DeleteDuplicateVariants');
                     $this->stats['deleted_database']++;
-
-                    Log::info('DeleteDuplicateVariants: Cleaned stale variant record', [
-                        'sku' => $sku,
-                        'variant_id' => $variant->variant_id,
-                    ]);
+                    $this->info('      Deleted variant successfully');
                 } else {
-                    $this->error("    Failed to delete: {$errorMessage}");
-                    $this->stats['errors']++;
-
-                    Log::error('DeleteDuplicateVariants: Failed to delete variant', [
-                        'sku' => $sku,
-                        'variant_id' => $variant->variant_id,
-                        'error' => $errorMessage,
-                    ]);
+                    $this->handleDeletionError($result, $variant, $sku);
                 }
             }
+
+            // Rate limiting
+            usleep(100000); // 100ms delay
+        }
+    }
+
+    /**
+     * Handle deletion errors with appropriate logging and stats
+     */
+    private function handleDeletionError(array $result, ShopifyProductVariant $variant, string $sku): void
+    {
+        $errorMessage = $this->formatGraphQLErrorMessage($result);
+
+        // Check if resource doesn't exist on Shopify (already deleted)
+        if ($this->isResourceNotExistsError($errorMessage)) {
+            $this->warn('      Not found on Shopify - cleaning database only');
+            $this->cleanupStaleVariant($variant, 'DeleteDuplicateVariants');
+            $this->stats['deleted_database']++;
+        } else {
+            $this->error("      Failed: {$errorMessage}");
+            $this->stats['errors']++;
+
+            Log::error('DeleteDuplicateVariants: Failed to delete', [
+                'sku' => $sku,
+                'variant_id' => $variant->variant_id,
+                'product_id' => $variant->product_id,
+                'error' => $errorMessage,
+            ]);
+        }
+    }
+
+    /**
+     * Cleanup all variants for a product from the database
+     */
+    private function cleanupProductVariants(int $productId): void
+    {
+        $variants = ShopifyProductVariant::where('product_id', $productId)->get();
+        foreach ($variants as $variant) {
+            $this->cleanupStaleVariant($variant, 'DeleteDuplicateVariants');
         }
     }
 
@@ -300,6 +395,70 @@ class DeleteDuplicateVariants extends Command
     }
 
     /**
+     * Delete an entire product from Shopify using GraphQL
+     */
+    private function deleteProductFromShopify(int $productId): array
+    {
+        $mutation = <<<'GRAPHQL'
+        mutation productDelete($input: ProductDeleteInput!) {
+          productDelete(input: $input) {
+            deletedProductId
+            userErrors {
+              field
+              message
+            }
+          }
+        }
+        GRAPHQL;
+
+        $productGid = "gid://shopify/Product/{$productId}";
+
+        try {
+            $response = $this->client->query([
+                'query' => $mutation,
+                'variables' => [
+                    'input' => ['id' => $productGid],
+                ],
+            ]);
+
+            $resultBody = json_decode($response->getBody()->getContents(), true);
+
+            $userErrors = $resultBody['data']['productDelete']['userErrors'] ?? [];
+            $graphqlErrors = $resultBody['errors'] ?? [];
+
+            if (! empty($userErrors) || ! empty($graphqlErrors)) {
+                return [
+                    'success' => false,
+                    'user_errors' => $userErrors,
+                    'graphql_errors' => $graphqlErrors,
+                ];
+            }
+
+            Log::info('DeleteDuplicateVariants: Deleted product from Shopify', [
+                'product_id' => $productId,
+                'deleted_id' => $resultBody['data']['productDelete']['deletedProductId'] ?? null,
+            ]);
+
+            return [
+                'success' => true,
+                'user_errors' => [],
+                'graphql_errors' => [],
+            ];
+        } catch (\Exception $e) {
+            Log::error('DeleteDuplicateVariants: Exception during product deletion', [
+                'product_id' => $productId,
+                'exception' => $e->getMessage(),
+            ]);
+
+            return [
+                'success' => false,
+                'user_errors' => [],
+                'graphql_errors' => [['message' => $e->getMessage()]],
+            ];
+        }
+    }
+
+    /**
      * Display summary statistics
      */
     private function displaySummary(bool $isDryRun): void
@@ -307,19 +466,16 @@ class DeleteDuplicateVariants extends Command
         $this->newLine();
         $this->info('Summary:');
         $this->info('========');
-        $this->info("  Duplicate variants found: {$this->stats['duplicates_found']}");
+        $this->info("  Duplicate SKUs processed: {$this->stats['duplicates_found']}");
+        $this->info("  Skipped (standalone/parent products): {$this->stats['skipped_standalone']}");
+        $this->info("  Kept on correct parent product: {$this->stats['kept_on_correct_product']}");
 
         if ($isDryRun) {
             $this->warn('  [DRY RUN] No changes were made');
-            if ($this->stats['skipped'] > 0) {
-                $this->warn("  Skipped (last variant): {$this->stats['skipped']}");
-            }
         } else {
-            $this->info("  Deleted from Shopify: {$this->stats['deleted_shopify']}");
-            $this->info("  Deleted from database: {$this->stats['deleted_database']}");
-            if ($this->stats['skipped'] > 0) {
-                $this->warn("  Skipped (last variant): {$this->stats['skipped']}");
-            }
+            $this->info("  Products deleted from Shopify: {$this->stats['products_deleted']}");
+            $this->info("  Variants deleted from Shopify: {$this->stats['variants_deleted']}");
+            $this->info("  Database records cleaned: {$this->stats['deleted_database']}");
             $this->info("  Errors: {$this->stats['errors']}");
         }
 

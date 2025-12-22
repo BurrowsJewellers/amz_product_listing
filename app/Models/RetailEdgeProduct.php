@@ -62,7 +62,10 @@ class RetailEdgeProduct extends Model
 
     public function children(): HasMany
     {
-        return $this->hasMany(RetailEdgeProduct::class, 'old_key', 'sku');
+        // Exclude self-referencing parent (where old_key = sku)
+        // Only return true children where old_key points to this product's SKU
+        return $this->hasMany(RetailEdgeProduct::class, 'old_key', 'sku')
+            ->whereRaw('old_key != sku');
     }
 
     public function parent(): BelongsTo
