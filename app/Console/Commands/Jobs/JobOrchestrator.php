@@ -55,6 +55,16 @@ class JobOrchestrator extends Command
                 'shopify:delete-duplicate-variants' => ['--force' => true],
             ],
         ],
+        'amazon-sync' => [
+            'description' => 'Amazon operations chain',
+            'marketplace' => 'Amazon',
+            'jobs' => [
+                'generateAmzProductsJson',      // 1. Submit new product listings to Amazon
+                'checkAmzFeedStatus',           // 2. Check feed submission status
+                'amazonUpdateInventoryPrice',   // 3. Update inventory and prices for existing products
+            ],
+            'job_args' => [],
+        ],
     ];
 
     /**

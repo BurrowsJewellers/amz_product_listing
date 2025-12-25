@@ -11,8 +11,7 @@
  * Orchestrated chains handle:
  * - Main sync (getProductsFromEWebMain, shopify:verify-sync-prices, shopify:update-price-inventory-batch)
  * - Shopify sync (shopifyGetProducts, shopifyCreateProduct, shopifyUploadImages, shopifyArchiveProducts)
- *
- * NOTE: Amazon sync chain is temporarily disabled and managed separately.
+ * - Amazon sync (generateAmzProductsJson, checkAmzFeedStatus, amazonUpdateInventoryPrice)
  */
 
 use App\Console\Commands\EWeb\GetBrandsFromEWeb;
@@ -68,6 +67,17 @@ Schedule::command('job:orchestrator shopify-sync')
     })
     ->description('Shopify operations: Get products → Create → Upload images → Archive');
 
+// AMAZON OPERATIONS CHAIN - Every hour at :15
+Schedule::command('job:orchestrator amazon-sync')
+    ->cron('15 */1 * * *')
+    ->when(function () {
+        return ! \App\Http\Controllers\SyncJobController::isChainPaused(
+            ['generateAmzProductsJson', 'checkAmzFeedStatus', 'amazonUpdateInventoryPrice'],
+            'Amazon'
+        );
+    })
+    ->description('Amazon operations: Generate listings → Check status → Update inventory/prices');
+
 // ========================================
 // INDEPENDENT JOBS (with pause checking)
 // ========================================
@@ -79,11 +89,11 @@ Schedule::command(GetBrandsFromEWeb::class)
         return ! \App\Http\Controllers\SyncJobController::isPaused('getBrandsFromEWeb');
     });
 
-Schedule::command(CountImages::class)
-    ->dailyAt('17:00')
-    ->when(function () {
-        return ! \App\Http\Controllers\SyncJobController::isPaused('shopifyCountImages');
-    });
+// Schedule::command(CountImages::class)
+//     ->dailyAt('17:00')
+//     ->when(function () {
+//         return ! \App\Http\Controllers\SyncJobController::isPaused('shopifyCountImages');
+//     });
 
 Schedule::command(UpdateProduct::class)
     ->dailyAt('20:00')
@@ -118,7 +128,11 @@ Schedule::command('getProductsFromEWeb')
  * - shopifyUploadImages (via orchestrator shopify-sync)
  * - shopifyArchiveProducts (via orchestrator shopify-sync)
  *
- * TEMPORARILY DISABLED:
- * - Amazon sync chain (managed separately when needed)
+ * MOVED TO AMAZON-SYNC CHAIN (every hour at :15):
+ * - generateAmzProductsJson (via orchestrator amazon-sync)
+ * - checkAmzFeedStatus (via orchestrator amazon-sync)
+ * - amazonUpdateInventoryPrice (via orchestrator amazon-sync)
+ *
+ * DEPRECATED:
  * - Pandora-related commands (moved to Deprecated folder)
  */
