@@ -59,9 +59,11 @@ class JobOrchestrator extends Command
             'description' => 'Amazon operations chain',
             'marketplace' => 'Amazon',
             'jobs' => [
-                'generateAmzProductsJson',      // 1. Submit new product listings to Amazon
-                'checkAmzFeedStatus',           // 2. Check feed submission status
-                'amazonUpdateInventoryPrice',   // 3. Update inventory and prices for existing products
+                'processAmzMerchantListingAllData', // 1. Download Amazon report & sync listings
+                'getProductsFromEWebAmazon',        // 2. Import from RetailEdge & reset feed status on inventory change
+                'generateAmzProductsJson',          // 3. Submit new product listings to Amazon
+                'checkAmzFeedStatus',               // 4. Check feed submission status
+                'amazonUpdateInventoryPrice',       // 5. Update inventory and prices for existing products
             ],
             'job_args' => [],
         ],

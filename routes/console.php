@@ -11,7 +11,7 @@
  * Orchestrated chains handle:
  * - Main sync (getProductsFromEWebMain, shopify:verify-sync-prices, shopify:update-price-inventory-batch)
  * - Shopify sync (shopifyGetProducts, shopifyCreateProduct, shopifyUploadImages, shopifyArchiveProducts)
- * - Amazon sync (generateAmzProductsJson, checkAmzFeedStatus, amazonUpdateInventoryPrice)
+ * - Amazon sync (processAmzMerchantListingAllData, getProductsFromEWebAmazon, generateAmzProductsJson, checkAmzFeedStatus, amazonUpdateInventoryPrice)
  */
 
 use App\Console\Commands\EWeb\GetBrandsFromEWeb;
@@ -72,11 +72,11 @@ Schedule::command('job:orchestrator amazon-sync')
     ->cron('15 */1 * * *')
     ->when(function () {
         return ! \App\Http\Controllers\SyncJobController::isChainPaused(
-            ['generateAmzProductsJson', 'checkAmzFeedStatus', 'amazonUpdateInventoryPrice'],
+            ['processAmzMerchantListingAllData', 'getProductsFromEWebAmazon', 'generateAmzProductsJson', 'checkAmzFeedStatus', 'amazonUpdateInventoryPrice'],
             'Amazon'
         );
     })
-    ->description('Amazon operations: Generate listings → Check status → Update inventory/prices');
+    ->description('Amazon operations: Download report → Import products → Generate listings → Check status → Update inventory/prices');
 
 // ========================================
 // INDEPENDENT JOBS (with pause checking)
@@ -129,6 +129,8 @@ Schedule::command('getProductsFromEWeb')
  * - shopifyArchiveProducts (via orchestrator shopify-sync)
  *
  * MOVED TO AMAZON-SYNC CHAIN (every hour at :15):
+ * - processAmzMerchantListingAllData (via orchestrator amazon-sync)
+ * - getProductsFromEWebAmazon (via orchestrator amazon-sync)
  * - generateAmzProductsJson (via orchestrator amazon-sync)
  * - checkAmzFeedStatus (via orchestrator amazon-sync)
  * - amazonUpdateInventoryPrice (via orchestrator amazon-sync)
