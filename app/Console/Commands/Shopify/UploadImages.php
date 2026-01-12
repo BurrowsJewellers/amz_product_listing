@@ -233,41 +233,87 @@ class UploadImages extends Command
 
                     // Assign all images to variant if we have media
                     $mediaIds = array_filter(array_column($result['media'], 'id'));
+                    $assignmentSucceeded = false;
+
                     if (! empty($mediaIds) && $variant->variant_id) {
                         $mediaCount = count($mediaIds);
-                        $this->line("  Assigning {$mediaCount} media file(s) to variant...");
-                        $assignResult = $this->graphqlService->assignMediaToVariant(
-                            $variant->product_id,
-                            $variant->variant_id,
-                            $mediaIds
-                        );
-                        if ($assignResult['success']) {
-                            $assigned = $assignResult['assigned_count'] ?? $mediaCount;
-                            $this->info("  ✓ {$assigned}/{$mediaCount} media file(s) assigned to variant");
+
+                        // Wait for media to finish processing before assigning to variant
+                        $this->line('  Waiting for media to finish processing...');
+                        $waitResult = $this->graphqlService->waitForMediaReady($variant->product_id, $mediaIds);
+
+                        if (! empty($waitResult['ready'])) {
+                            $readyCount = count($waitResult['ready']);
+                            $this->line("  {$readyCount}/{$mediaCount} media file(s) ready");
+
+                            // Assign only ready media to variant
+                            $this->line("  Assigning {$readyCount} media file(s) to variant...");
+                            $assignResult = $this->graphqlService->assignMediaToVariant(
+                                $variant->product_id,
+                                $variant->variant_id,
+                                $waitResult['ready']
+                            );
+
+                            if ($assignResult['success']) {
+                                $assigned = $assignResult['assigned_count'] ?? $readyCount;
+                                $this->info("  ✓ {$assigned}/{$readyCount} media file(s) assigned to variant");
+                                $assignmentSucceeded = true;
+                            } else {
+                                $this->warn('  ⚠ Could not assign media to variant: '.$this->formatGraphQLErrorMessage($assignResult));
+                            }
                         } else {
-                            $this->warn('  ⚠ Could not assign media to variant: '.$this->formatGraphQLErrorMessage($assignResult));
+                            $this->warn('  ⚠ No media became ready after waiting (timed out or failed)');
+                            if (! empty($waitResult['failed'])) {
+                                $this->warn('    Failed media: '.count($waitResult['failed']));
+                            }
+                            if (! empty($waitResult['pending'])) {
+                                $this->warn('    Still pending: '.count($waitResult['pending']));
+                            }
                         }
                     } elseif (! $variant->variant_id) {
                         $this->line('  (Skipping variant assignment - no variant_id)');
+                        $assignmentSucceeded = true; // No variant to assign, upload alone is success
+                    } else {
+                        $assignmentSucceeded = true; // No media IDs to assign
                     }
 
-                    $variant->update(['images_requires_update' => 0]);
-                    $successCount++;
+                    // Only mark success if assignment succeeded (or wasn't needed)
+                    if ($assignmentSucceeded) {
+                        $variant->update(['images_requires_update' => 0]);
+                        $successCount++;
 
-                    // Log success with SyncLogger
-                    $this->syncLogger->logSuccess(
-                        SyncLogger::MARKETPLACE_SHOPIFY,
-                        'shopifyUploadImages',
-                        $sku,
-                        SyncLogger::OP_IMAGE_UPLOAD,
-                        [
-                            'item_title' => $productTitle,
-                            'to_value' => "{$imageCount} image(s)",
-                            'message' => "Uploaded {$imageCount} image(s) successfully",
-                            'shopify_product_id' => $variant->product_id,
-                            'shopify_variant_id' => $variant->variant_id,
-                        ]
-                    );
+                        // Log success with SyncLogger
+                        $this->syncLogger->logSuccess(
+                            SyncLogger::MARKETPLACE_SHOPIFY,
+                            'shopifyUploadImages',
+                            $sku,
+                            SyncLogger::OP_IMAGE_UPLOAD,
+                            [
+                                'item_title' => $productTitle,
+                                'to_value' => "{$imageCount} image(s)",
+                                'message' => "Uploaded {$imageCount} image(s) successfully",
+                                'shopify_product_id' => $variant->product_id,
+                                'shopify_variant_id' => $variant->variant_id,
+                            ]
+                        );
+                    } else {
+                        // Mark for retry - assignment failed
+                        $variant->update(['images_requires_update' => 2]);
+                        $failCount++;
+
+                        $this->syncLogger->logError(
+                            SyncLogger::MARKETPLACE_SHOPIFY,
+                            'shopifyUploadImages',
+                            $sku,
+                            SyncLogger::OP_IMAGE_UPLOAD,
+                            'Media uploaded but variant assignment failed - will retry',
+                            [
+                                'item_title' => $productTitle,
+                                'shopify_product_id' => $variant->product_id,
+                                'shopify_variant_id' => $variant->variant_id,
+                            ]
+                        );
+                    }
                 } else {
                     $errorMessage = $this->formatGraphQLErrorMessage($result);
 

@@ -658,6 +658,139 @@ class ShopifyGraphQLService extends ShopifyConnectionService
     }
 
     /**
+     * Get the current status of media items on a product
+     *
+     * @param  int  $productId  Shopify product ID (numeric)
+     * @param  array  $mediaIds  Array of media GIDs to check
+     * @return array Associative array mapping media GID to status (UPLOADED, PROCESSING, READY, FAILED)
+     */
+    public function getMediaStatus(int $productId, array $mediaIds): array
+    {
+        $session = $this->getSession();
+        $client = new Graphql($session->getShop(), $session->getAccessToken());
+        $productGid = "gid://shopify/Product/{$productId}";
+
+        $query = <<<'GRAPHQL'
+        query getProductMediaStatus($id: ID!) {
+          product(id: $id) {
+            media(first: 50) {
+              nodes {
+                ... on MediaImage {
+                  id
+                  status
+                }
+              }
+            }
+          }
+        }
+        GRAPHQL;
+
+        try {
+            $response = $client->query([
+                'query' => $query,
+                'variables' => [
+                    'id' => $productGid,
+                ],
+            ]);
+
+            $resultBody = json_decode($response->getBody()->getContents(), true);
+            $mediaNodes = $resultBody['data']['product']['media']['nodes'] ?? [];
+
+            // Build status mapping for requested media IDs
+            $statusMap = [];
+            foreach ($mediaNodes as $node) {
+                $mediaId = $node['id'] ?? null;
+                $status = $node['status'] ?? 'UNKNOWN';
+                if ($mediaId && in_array($mediaId, $mediaIds)) {
+                    $statusMap[$mediaId] = $status;
+                }
+            }
+
+            return $statusMap;
+        } catch (\Exception $e) {
+            Log::error('ShopifyGraphQLService: Exception during getMediaStatus', [
+                'product_id' => $productId,
+                'exception' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
+    }
+
+    /**
+     * Wait for media to become ready with exponential backoff
+     *
+     * Shopify processes media asynchronously. This method polls the media status
+     * until all requested media reach READY or FAILED status.
+     *
+     * @param  int  $productId  Shopify product ID (numeric)
+     * @param  array  $mediaIds  Array of media GIDs to wait for
+     * @param  int  $maxAttempts  Maximum polling attempts (default 10)
+     * @param  int  $initialDelayMs  Initial delay in milliseconds (default 500)
+     * @return array ['success' => bool, 'ready' => [...], 'failed' => [...], 'pending' => [...]]
+     */
+    public function waitForMediaReady(int $productId, array $mediaIds, int $maxAttempts = 10, int $initialDelayMs = 500): array
+    {
+        $attempt = 0;
+        $delay = $initialDelayMs;
+
+        while ($attempt < $maxAttempts) {
+            $statuses = $this->getMediaStatus($productId, $mediaIds);
+
+            $ready = [];
+            $failed = [];
+            $pending = [];
+
+            foreach ($mediaIds as $mediaId) {
+                $status = $statuses[$mediaId] ?? 'UNKNOWN';
+                if ($status === 'READY') {
+                    $ready[] = $mediaId;
+                } elseif ($status === 'FAILED') {
+                    $failed[] = $mediaId;
+                } else {
+                    $pending[] = $mediaId; // PROCESSING, UPLOADED, UNKNOWN
+                }
+            }
+
+            // All done if nothing pending
+            if (empty($pending)) {
+                Log::debug('ShopifyGraphQLService: waitForMediaReady completed', [
+                    'product_id' => $productId,
+                    'attempts' => $attempt + 1,
+                    'ready_count' => count($ready),
+                    'failed_count' => count($failed),
+                ]);
+
+                return [
+                    'success' => ! empty($ready),
+                    'ready' => $ready,
+                    'failed' => $failed,
+                    'pending' => [],
+                ];
+            }
+
+            // Wait with exponential backoff (500ms, 1s, 2s, 4s... capped at 5s)
+            usleep($delay * 1000);
+            $delay = min($delay * 2, 5000);
+            $attempt++;
+        }
+
+        // Timeout - return current state
+        Log::warning('ShopifyGraphQLService: waitForMediaReady timed out', [
+            'product_id' => $productId,
+            'max_attempts' => $maxAttempts,
+            'pending_count' => count($pending ?? []),
+        ]);
+
+        return [
+            'success' => ! empty($ready),
+            'ready' => $ready ?? [],
+            'failed' => $failed ?? [],
+            'pending' => $pending ?? [],
+        ];
+    }
+
+    /**
      * Assign media to a specific variant using GraphQL
      * Uses productVariantAppendMedia mutation to attach images to a variant
      * Note: Shopify only allows ONE media per variant per API call, so we make separate calls
