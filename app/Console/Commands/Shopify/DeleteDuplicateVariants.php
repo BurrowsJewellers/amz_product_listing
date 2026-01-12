@@ -5,6 +5,7 @@ namespace App\Console\Commands\Shopify;
 use App\Models\RetailEdgeProduct;
 use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyConnectionService;
+use App\Services\SyncLogger;
 use App\Traits\ShopifyCleanupTrait;
 use App\Traits\ShopifyErrorFormatterTrait;
 use Illuminate\Console\Command;
@@ -52,10 +53,13 @@ class DeleteDuplicateVariants extends Command
         'errors' => 0,
     ];
 
+    private SyncLogger $syncLogger;
+
     public function __construct(
         private ShopifyConnectionService $connectionService
     ) {
         parent::__construct();
+        $this->syncLogger = new SyncLogger;
     }
 
     /**
@@ -270,8 +274,22 @@ class DeleteDuplicateVariants extends Command
                     $this->cleanupProductVariants($variant->product_id);
                     $this->stats['deleted_database']++;
                     $this->info('      Deleted product successfully');
+
+                    // Log success
+                    $this->syncLogger->logSuccess(
+                        SyncLogger::MARKETPLACE_SHOPIFY,
+                        'shopify:delete-duplicate-variants',
+                        $sku,
+                        SyncLogger::OP_PRODUCT_DELETE,
+                        [
+                            'message' => "Deleted duplicate product (only variant on wrong product)",
+                            'shopify_product_id' => $variant->product_id,
+                            'shopify_variant_id' => $variant->variant_id,
+                            'context_data' => ['parent_sku' => $parentSku ?? null],
+                        ]
+                    );
                 } else {
-                    $this->handleDeletionError($result, $variant, $sku);
+                    $this->handleDeletionError($result, $variant, $sku, $parentSku ?? null);
                 }
             } else {
                 // Delete just this variant
@@ -283,8 +301,22 @@ class DeleteDuplicateVariants extends Command
                     $this->cleanupStaleVariant($variant, 'DeleteDuplicateVariants');
                     $this->stats['deleted_database']++;
                     $this->info('      Deleted variant successfully');
+
+                    // Log success
+                    $this->syncLogger->logSuccess(
+                        SyncLogger::MARKETPLACE_SHOPIFY,
+                        'shopify:delete-duplicate-variants',
+                        $sku,
+                        SyncLogger::OP_VARIANT_DELETE,
+                        [
+                            'message' => "Deleted duplicate variant from wrong product",
+                            'shopify_product_id' => $variant->product_id,
+                            'shopify_variant_id' => $variant->variant_id,
+                            'context_data' => ['parent_sku' => $parentSku ?? null],
+                        ]
+                    );
                 } else {
-                    $this->handleDeletionError($result, $variant, $sku);
+                    $this->handleDeletionError($result, $variant, $sku, $parentSku ?? null);
                 }
             }
 
@@ -296,7 +328,7 @@ class DeleteDuplicateVariants extends Command
     /**
      * Handle deletion errors with appropriate logging and stats
      */
-    private function handleDeletionError(array $result, ShopifyProductVariant $variant, string $sku): void
+    private function handleDeletionError(array $result, ShopifyProductVariant $variant, string $sku, ?string $parentSku = null): void
     {
         $errorMessage = $this->formatGraphQLErrorMessage($result);
 
@@ -305,16 +337,38 @@ class DeleteDuplicateVariants extends Command
             $this->warn('      Not found on Shopify - cleaning database only');
             $this->cleanupStaleVariant($variant, 'DeleteDuplicateVariants');
             $this->stats['deleted_database']++;
+
+            // Log as success since we cleaned up the database
+            $this->syncLogger->logSuccess(
+                SyncLogger::MARKETPLACE_SHOPIFY,
+                'shopify:delete-duplicate-variants',
+                $sku,
+                SyncLogger::OP_DUPLICATE_CLEANUP,
+                [
+                    'message' => "Cleaned up stale database record (not found on Shopify)",
+                    'shopify_product_id' => $variant->product_id,
+                    'shopify_variant_id' => $variant->variant_id,
+                    'context_data' => ['parent_sku' => $parentSku],
+                ]
+            );
         } else {
             $this->error("      Failed: {$errorMessage}");
             $this->stats['errors']++;
 
-            Log::error('DeleteDuplicateVariants: Failed to delete', [
-                'sku' => $sku,
-                'variant_id' => $variant->variant_id,
-                'product_id' => $variant->product_id,
-                'error' => $errorMessage,
-            ]);
+            // Log failure with SyncLogger (replaces Log::error)
+            $this->syncLogger->logFailure(
+                SyncLogger::MARKETPLACE_SHOPIFY,
+                'shopify:delete-duplicate-variants',
+                $sku,
+                SyncLogger::OP_VARIANT_DELETE,
+                $errorMessage,
+                [
+                    'shopify_product_id' => $variant->product_id,
+                    'shopify_variant_id' => $variant->variant_id,
+                    'errors' => array_merge($result['user_errors'] ?? [], $result['graphql_errors'] ?? []),
+                    'context_data' => ['parent_sku' => $parentSku],
+                ]
+            );
         }
     }
 
@@ -380,12 +434,7 @@ class DeleteDuplicateVariants extends Command
                 'graphql_errors' => [],
             ];
         } catch (\Exception $e) {
-            Log::error('DeleteDuplicateVariants: Exception during variant deletion', [
-                'product_id' => $productId,
-                'variant_id' => $variantId,
-                'exception' => $e->getMessage(),
-            ]);
-
+            // Exception will be logged by handleDeletionError via SyncLogger
             return [
                 'success' => false,
                 'user_errors' => [],
@@ -434,10 +483,7 @@ class DeleteDuplicateVariants extends Command
                 ];
             }
 
-            Log::info('DeleteDuplicateVariants: Deleted product from Shopify', [
-                'product_id' => $productId,
-                'deleted_id' => $resultBody['data']['productDelete']['deletedProductId'] ?? null,
-            ]);
+            // Success will be logged by the caller via SyncLogger
 
             return [
                 'success' => true,
@@ -445,11 +491,7 @@ class DeleteDuplicateVariants extends Command
                 'graphql_errors' => [],
             ];
         } catch (\Exception $e) {
-            Log::error('DeleteDuplicateVariants: Exception during product deletion', [
-                'product_id' => $productId,
-                'exception' => $e->getMessage(),
-            ]);
-
+            // Exception will be logged by handleDeletionError via SyncLogger
             return [
                 'success' => false,
                 'user_errors' => [],

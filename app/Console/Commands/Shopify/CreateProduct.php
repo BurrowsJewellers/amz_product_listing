@@ -4,13 +4,13 @@ namespace App\Console\Commands\Shopify;
 
 use App\Http\Controllers\SyncJobController;
 use App\Models\Brand;
-use App\Models\PriceInventoryLog;
 use App\Models\RetailEdgeProduct;
 use App\Models\ShopifyMetafield;
 use App\Models\ShopifyProductMetafield;
 use App\Models\ShopifyProductVariantMetafield;
 use App\Services\MetafieldAssignmentService;
 use App\Services\ShopifyService;
+use App\Services\SyncLogger;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -18,6 +18,16 @@ use Shopify\Clients\Graphql;
 
 class CreateProduct extends Command
 {
+    /**
+     * Sync logger for operation tracking
+     */
+    private SyncLogger $syncLogger;
+
+    /**
+     * Store last API context for error logging
+     */
+    private array $lastApiContext = [];
+
     /**
      * The name and signature of the console command.
      *
@@ -52,6 +62,9 @@ class CreateProduct extends Command
         try {
             Log::info("$marketplace $jobType started!");
             $product_errors_occurred = false;
+
+            // Initialize sync logger for operation tracking
+            $this->syncLogger = new SyncLogger;
 
             // Single Eloquent query for pending parent/standalone products
             // This replaces the previous two-query approach (raw SQL + Eloquent)
@@ -113,16 +126,17 @@ class CreateProduct extends Command
                     $this->info("Processing Product: {$product->title} (SKU: {$product->sku})");
 
                     // Log product creation start
-                    PriceInventoryLog::create([
-                        'marketplace' => 'Shopify',
-                        'item_identifier' => $product->sku,
-                        'change_type' => 'product_create',
-                        'from_value' => null,
-                        'to_value' => 'initiating',
-                        'status' => 'processing',
-                        'message' => "Starting GraphQL product creation for: {$product->title}",
-                        'job_name' => 'shopifyCreateProduct',
-                    ]);
+                    $this->syncLogger->log(
+                        SyncLogger::MARKETPLACE_SHOPIFY,
+                        'shopifyCreateProduct',
+                        $product->sku,
+                        SyncLogger::OP_PRODUCT_CREATE,
+                        SyncLogger::STATUS_PENDING,
+                        [
+                            'item_title' => $product->title,
+                            'message' => "Starting GraphQL product creation for: {$product->title}",
+                        ]
+                    );
 
                     try {
                         // Create product using GraphQL
@@ -130,16 +144,22 @@ class CreateProduct extends Command
 
                         if ($createdProductData) {
                             // Log product creation success
-                            PriceInventoryLog::create([
-                                'marketplace' => 'Shopify',
-                                'item_identifier' => $product->sku,
-                                'change_type' => 'product_create',
-                                'from_value' => null,
-                                'to_value' => $createdProductData['id'],
-                                'status' => 'success',
-                                'message' => "Product created successfully with ID: {$createdProductData['id']}",
-                                'job_name' => 'shopifyCreateProduct',
-                            ]);
+                            $this->syncLogger->logSuccess(
+                                SyncLogger::MARKETPLACE_SHOPIFY,
+                                'shopifyCreateProduct',
+                                $product->sku,
+                                SyncLogger::OP_PRODUCT_CREATE,
+                                [
+                                    'item_title' => $product->title,
+                                    'to_value' => $createdProductData['id'],
+                                    'message' => "Product created successfully with ID: {$createdProductData['id']}",
+                                    'shopify_product_id' => $this->extractIdFromGid($createdProductData['id']),
+                                    'context_data' => [
+                                        'children_count' => $product->children->count(),
+                                        'brand' => $product->brand?->name,
+                                    ],
+                                ]
+                            );
 
                             // Handle metafields after creation (same as UpdateProduct)
                             $this->handleMetafieldsAfterCreation($product, $createdProductData, $client);
@@ -174,24 +194,43 @@ class CreateProduct extends Command
                         $errorMessage = $e->getMessage();
 
                         // Log product creation failure
-                        PriceInventoryLog::create([
-                            'marketplace' => 'Shopify',
-                            'item_identifier' => $product->sku,
-                            'change_type' => 'product_create',
-                            'from_value' => null,
-                            'to_value' => 'failed',
-                            'status' => 'failed',
-                            'message' => "Product creation failed: {$errorMessage}",
-                            'job_name' => 'shopifyCreateProduct',
-                        ]);
+                        $this->syncLogger->logFailure(
+                            SyncLogger::MARKETPLACE_SHOPIFY,
+                            'shopifyCreateProduct',
+                            $product->sku,
+                            SyncLogger::OP_PRODUCT_CREATE,
+                            $e,
+                            [
+                                'item_title' => $product->title,
+                                'api_request' => $this->lastApiContext['api_request'] ?? $this->buildProductInput($product),
+                                'api_response' => $this->lastApiContext['api_response'] ?? null,
+                                'errors' => array_merge(
+                                    $this->lastApiContext['user_errors'] ?? [],
+                                    $this->lastApiContext['graphql_errors'] ?? []
+                                ),
+                                'context_data' => [
+                                    'sku' => $product->sku,
+                                    'title' => $product->title,
+                                    'children_count' => $product->children->count(),
+                                    'brand' => $product->brand?->name,
+                                    'quantity' => $product->quantity,
+                                ],
+                            ]
+                        );
 
-                        Log::error("Shopify GraphQL Exception for SKU {$product->sku}: {$errorMessage}");
+                        // Clear API context after logging
+                        $this->lastApiContext = [];
+
+                        // Error already logged via SyncLogger above
                         $this->error("Failed to create product {$product->sku}: {$errorMessage}");
 
                         // Mark children as failed
                         foreach ($product->children as $child) {
                             $child->update(['uploaded_to_shopify' => 2]);
                         }
+
+                        // Mark parent as failed too
+                        $product->update(['uploaded_to_shopify' => 2]);
                     }
 
                     usleep(1500000); // 1.5 second delay
@@ -273,6 +312,14 @@ class CreateProduct extends Command
         $this->line('Executing GraphQL productCreate mutation...');
         $response = $client->query(['query' => $mutation, 'variables' => ['product' => $productInput]]);
         $resultBody = json_decode($response->getBody()->getContents(), true);
+
+        // Store API context for error logging
+        $this->lastApiContext = [
+            'api_request' => $productInput,
+            'api_response' => $resultBody,
+            'user_errors' => $resultBody['data']['productCreate']['userErrors'] ?? [],
+            'graphql_errors' => $resultBody['errors'] ?? [],
+        ];
 
         // Handle errors
         $errors = $this->handleGraphQLErrors($resultBody);
@@ -1048,16 +1095,17 @@ class CreateProduct extends Command
                     }
 
                     // Log batch error
-                    PriceInventoryLog::create([
-                        'marketplace' => 'Shopify',
-                        'item_identifier' => $product->sku,
-                        'change_type' => 'metafield_create',
-                        'from_value' => null,
-                        'to_value' => 'batch_failed',
-                        'status' => 'failed',
-                        'message' => "Batch {$batchNumber} failed with ".count($userErrors).' errors',
-                        'job_name' => 'shopifyCreateProduct',
-                    ]);
+                    $this->syncLogger->logFailure(
+                        SyncLogger::MARKETPLACE_SHOPIFY,
+                        'shopifyCreateProduct',
+                        $product->sku,
+                        SyncLogger::OP_METAFIELD_UPDATE,
+                        "Batch {$batchNumber} failed with ".count($userErrors).' errors',
+                        [
+                            'item_title' => $product->title,
+                            'errors' => $userErrors,
+                        ]
+                    );
                 } else {
                     $createdMetafields = $resultBody['data']['metafieldsSet']['metafields'] ?? [];
                     $batchSuccessful = count($createdMetafields);
@@ -1081,16 +1129,17 @@ class CreateProduct extends Command
                 $totalFailed += count($batch);
 
                 // Log batch exception
-                PriceInventoryLog::create([
-                    'marketplace' => 'Shopify',
-                    'item_identifier' => $product->sku,
-                    'change_type' => 'metafield_create',
-                    'from_value' => null,
-                    'to_value' => 'batch_exception',
-                    'status' => 'failed',
-                    'message' => "Batch {$batchNumber} exception: ".$e->getMessage(),
-                    'job_name' => 'shopifyCreateProduct',
-                ]);
+                $this->syncLogger->logFailure(
+                    SyncLogger::MARKETPLACE_SHOPIFY,
+                    'shopifyCreateProduct',
+                    $product->sku,
+                    SyncLogger::OP_METAFIELD_UPDATE,
+                    $e,
+                    [
+                        'item_title' => $product->title,
+                        'message' => "Batch {$batchNumber} exception: ".$e->getMessage(),
+                    ]
+                );
             }
         }
 
@@ -1105,16 +1154,20 @@ class CreateProduct extends Command
         $this->info("Metafield processing complete: {$totalSuccessful} successful, {$totalFailed} failed out of {$totalMetafields} total");
 
         // Log final summary
-        PriceInventoryLog::create([
-            'marketplace' => 'Shopify',
-            'item_identifier' => $product->sku,
-            'change_type' => 'metafield_create',
-            'from_value' => null,
-            'to_value' => "{$totalSuccessful}_of_{$totalMetafields}",
-            'status' => $totalFailed > 0 ? 'partial' : 'success',
-            'message' => "Metafield batch processing complete: {$totalSuccessful} successful, {$totalFailed} failed",
-            'job_name' => 'shopifyCreateProduct',
-        ]);
+        $status = $totalFailed > 0 ? SyncLogger::STATUS_FAILED : SyncLogger::STATUS_SUCCESS;
+        $this->syncLogger->log(
+            SyncLogger::MARKETPLACE_SHOPIFY,
+            'shopifyCreateProduct',
+            $product->sku,
+            SyncLogger::OP_METAFIELD_UPDATE,
+            $status,
+            [
+                'item_title' => $product->title,
+                'from_value' => '0',
+                'to_value' => "{$totalSuccessful}_of_{$totalMetafields}",
+                'message' => "Metafield batch processing complete: {$totalSuccessful} successful, {$totalFailed} failed",
+            ]
+        );
     }
 
     /**

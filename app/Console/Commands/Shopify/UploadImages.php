@@ -5,6 +5,7 @@ namespace App\Console\Commands\Shopify;
 use App\Http\Controllers\SyncJobController;
 use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyGraphQLService;
+use App\Services\SyncLogger;
 use App\Traits\ShopifyCleanupTrait;
 use App\Traits\ShopifyErrorFormatterTrait;
 use Illuminate\Console\Command;
@@ -31,10 +32,13 @@ class UploadImages extends Command
 
     protected ShopifyGraphQLService $graphqlService;
 
+    private SyncLogger $syncLogger;
+
     public function __construct(ShopifyGraphQLService $graphqlService)
     {
         parent::__construct();
         $this->graphqlService = $graphqlService;
+        $this->syncLogger = new SyncLogger;
     }
 
     /**
@@ -127,10 +131,22 @@ class UploadImages extends Command
                 // Validate variant has required IDs
                 if (empty($variant->product_id)) {
                     $this->error('  ✗ No product_id - marking as failed');
-                    Log::warning("shopifyUploadImages: Variant {$sku} has no product_id - marking as failed");
                     $variant->update(['images_requires_update' => 2]);
                     $failedCount++;
                     $remainingCount--;
+
+                    // Log failure with SyncLogger
+                    $this->syncLogger->logFailure(
+                        SyncLogger::MARKETPLACE_SHOPIFY,
+                        'shopifyUploadImages',
+                        $sku,
+                        SyncLogger::OP_IMAGE_UPLOAD,
+                        'Variant has no product_id',
+                        [
+                            'item_title' => $productTitle,
+                            'shopify_variant_id' => $variant->variant_id,
+                        ]
+                    );
 
                     continue;
                 }
@@ -138,10 +154,23 @@ class UploadImages extends Command
                 // Check if variant has images to upload
                 if (! $variant->images || $variant->images->isEmpty()) {
                     $variant->update(['images_requires_update' => 2]);
-                    Log::debug("No images found in RetailEdge for {$sku}");
                     $this->warn('  ⚠ No images available in RetailEdge - marked for review');
                     $skippedCount++;
                     $remainingCount--;
+
+                    // Log skipped with SyncLogger
+                    $this->syncLogger->logSkipped(
+                        SyncLogger::MARKETPLACE_SHOPIFY,
+                        'shopifyUploadImages',
+                        $sku,
+                        SyncLogger::OP_IMAGE_UPLOAD,
+                        'No images found in RetailEdge',
+                        [
+                            'item_title' => $productTitle,
+                            'shopify_product_id' => $variant->product_id,
+                            'shopify_variant_id' => $variant->variant_id,
+                        ]
+                    );
 
                     // Short delay before next variant
                     usleep(500000);
@@ -158,10 +187,23 @@ class UploadImages extends Command
 
                 if (empty($imageUrls)) {
                     $variant->update(['images_requires_update' => 2]);
-                    Log::warning("shopifyUploadImages: No valid image URLs for {$sku}");
                     $this->warn('  ⚠ No valid image URLs found - marked for review');
                     $skippedCount++;
                     $remainingCount--;
+
+                    // Log skipped with SyncLogger
+                    $this->syncLogger->logSkipped(
+                        SyncLogger::MARKETPLACE_SHOPIFY,
+                        'shopifyUploadImages',
+                        $sku,
+                        SyncLogger::OP_IMAGE_UPLOAD,
+                        'No valid image URLs found',
+                        [
+                            'item_title' => $productTitle,
+                            'shopify_product_id' => $variant->product_id,
+                            'shopify_variant_id' => $variant->variant_id,
+                        ]
+                    );
 
                     continue;
                 }
@@ -210,8 +252,22 @@ class UploadImages extends Command
                     }
 
                     $variant->update(['images_requires_update' => 0]);
-                    Log::info("shopifyUploadImages: Uploaded {$imageCount} image(s) for SKU {$sku}");
                     $successCount++;
+
+                    // Log success with SyncLogger
+                    $this->syncLogger->logSuccess(
+                        SyncLogger::MARKETPLACE_SHOPIFY,
+                        'shopifyUploadImages',
+                        $sku,
+                        SyncLogger::OP_IMAGE_UPLOAD,
+                        [
+                            'item_title' => $productTitle,
+                            'to_value' => "{$imageCount} image(s)",
+                            'message' => "Uploaded {$imageCount} image(s) successfully",
+                            'shopify_product_id' => $variant->product_id,
+                            'shopify_variant_id' => $variant->variant_id,
+                        ]
+                    );
                 } else {
                     $errorMessage = $this->formatGraphQLErrorMessage($result);
 
@@ -222,20 +278,48 @@ class UploadImages extends Command
                         $cleanedCount++;
                         $remainingCount--;
 
+                        // Log cleanup success with SyncLogger
+                        $this->syncLogger->logSuccess(
+                            SyncLogger::MARKETPLACE_SHOPIFY,
+                            'shopifyUploadImages',
+                            $sku,
+                            SyncLogger::OP_DUPLICATE_CLEANUP,
+                            [
+                                'item_title' => $productTitle,
+                                'message' => 'Cleaned up stale database record (product not found on Shopify)',
+                                'shopify_product_id' => $variant->product_id,
+                                'shopify_variant_id' => $variant->variant_id,
+                            ]
+                        );
+
                         continue;
                     }
 
                     $variant->update(['images_requires_update' => 2]);
                     $this->error("  ✗ Upload failed: {$errorMessage}");
-                    Log::error("shopifyUploadImages: Failed for SKU {$sku}: {$errorMessage}");
                     $failedCount++;
+
+                    // Log failure with SyncLogger
+                    $this->syncLogger->logFailure(
+                        SyncLogger::MARKETPLACE_SHOPIFY,
+                        'shopifyUploadImages',
+                        $sku,
+                        SyncLogger::OP_IMAGE_UPLOAD,
+                        $errorMessage,
+                        [
+                            'item_title' => $productTitle,
+                            'shopify_product_id' => $variant->product_id,
+                            'shopify_variant_id' => $variant->variant_id,
+                            'errors' => array_merge($result['user_errors'] ?? [], $result['graphql_errors'] ?? []),
+                        ]
+                    );
                 }
 
                 $remainingCount--;
             } catch (\Throwable $e) {
                 $variantSku = isset($variant) ? ($variant->sku ?: '[EMPTY SKU]') : 'unknown';
+                $variantTitle = isset($variant) ? ($variant->product?->title ?? '[Unknown Product]') : '[Unknown]';
                 $this->error("  ✗ Exception: {$e->getMessage()}");
-                Log::error("Exception uploading images for {$variantSku}: {$e->getMessage()}");
                 report($e);
 
                 // Mark variant as failed if we have one
@@ -245,6 +329,20 @@ class UploadImages extends Command
 
                 $failedCount++;
                 $remainingCount--;
+
+                // Log failure with SyncLogger
+                $this->syncLogger->logFailure(
+                    SyncLogger::MARKETPLACE_SHOPIFY,
+                    'shopifyUploadImages',
+                    $variantSku,
+                    SyncLogger::OP_IMAGE_UPLOAD,
+                    $e,
+                    [
+                        'item_title' => $variantTitle,
+                        'shopify_product_id' => isset($variant) ? $variant->product_id : null,
+                        'shopify_variant_id' => isset($variant) ? $variant->variant_id : null,
+                    ]
+                );
             }
 
             // Delay between variants to avoid rate limiting (500ms)
@@ -272,6 +370,6 @@ class UploadImages extends Command
         );
         $this->newLine();
 
-        Log::info("$marketplace shopifyUploadImages: {$successCount} succeeded, {$failedCount} failed, {$skippedCount} skipped, {$cleanedCount} cleaned");
+        // Individual operations logged via SyncLogger; job lifecycle logged by handle()
     }
 }

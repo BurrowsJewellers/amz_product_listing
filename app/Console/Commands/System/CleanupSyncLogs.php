@@ -2,8 +2,9 @@
 
 namespace App\Console\Commands\System;
 
+use App\Models\SyncOperationLog;
 use App\Models\SyncRetryJob;
-use App\Services\SyncFailureLogger;
+use App\Services\SyncLogger;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 
@@ -21,14 +22,14 @@ class CleanupSyncLogs extends Command
      *
      * @var string
      */
-    protected $description = 'Clean up old sync failure logs and completed retry jobs based on configured retention periods';
+    protected $description = 'Clean up old sync operation logs and completed retry jobs based on configured retention periods';
 
-    protected SyncFailureLogger $failureLogger;
+    protected SyncLogger $syncLogger;
 
-    public function __construct(SyncFailureLogger $failureLogger)
+    public function __construct(SyncLogger $syncLogger)
     {
         parent::__construct();
-        $this->failureLogger = $failureLogger;
+        $this->syncLogger = $syncLogger;
     }
 
     /**
@@ -48,17 +49,17 @@ class CleanupSyncLogs extends Command
         $this->info('🧹 Starting sync logs cleanup...');
         $this->newLine();
 
-        // Cleanup failure logs
-        $failureLogRetentionDays = config('sync.log_retention_days', 7);
-        $this->info("📋 Cleaning up failure logs older than {$failureLogRetentionDays} days...");
+        // Cleanup operation logs
+        $logRetentionDays = config('sync.log_retention_days', 30);
+        $this->info("📋 Cleaning up operation logs older than {$logRetentionDays} days...");
 
         if ($isDryRun) {
-            $failureLogsCount = \App\Models\SyncFailureLog::olderThan($failureLogRetentionDays)->count();
-            $this->line("  Would delete: {$failureLogsCount} failure log(s)");
+            $logsCount = SyncOperationLog::olderThan($logRetentionDays)->count();
+            $this->line("  Would delete: {$logsCount} operation log(s)");
         } else {
-            $deletedFailureLogs = $this->failureLogger->cleanupOldLogs();
-            $this->line("  ✅ Deleted: {$deletedFailureLogs} failure log(s)");
-            Log::info("Cleaned up {$deletedFailureLogs} old sync failure logs");
+            $deletedLogs = $this->syncLogger->cleanupOldLogs();
+            $this->line("  ✅ Deleted: {$deletedLogs} operation log(s)");
+            Log::info("Cleaned up {$deletedLogs} old sync operation logs");
         }
 
         $this->newLine();

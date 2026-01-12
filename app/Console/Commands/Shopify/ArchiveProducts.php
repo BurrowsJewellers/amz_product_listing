@@ -5,6 +5,7 @@ namespace App\Console\Commands\Shopify;
 use App\Http\Controllers\SyncJobController;
 use App\Models\ShopifyProduct;
 use App\Services\ShopifyGraphQLService;
+use App\Services\SyncLogger;
 use App\Traits\ShopifyCleanupTrait;
 use App\Traits\ShopifyErrorFormatterTrait;
 use Illuminate\Console\Command;
@@ -32,10 +33,13 @@ class ArchiveProducts extends Command
 
     protected ShopifyGraphQLService $graphqlService;
 
+    private SyncLogger $syncLogger;
+
     public function __construct(ShopifyGraphQLService $graphqlService)
     {
         parent::__construct();
         $this->graphqlService = $graphqlService;
+        $this->syncLogger = new SyncLogger;
     }
 
     /**
@@ -124,8 +128,20 @@ class ArchiveProducts extends Command
             try {
                 // Validate product_id exists
                 if (empty($p->product_id)) {
-                    Log::warning("shopifyArchiveProducts: Skipping product with empty product_id (pid: {$p->pid})");
                     $failedCount++;
+
+                    // Log skipped with SyncLogger
+                    $this->syncLogger->logSkipped(
+                        SyncLogger::MARKETPLACE_SHOPIFY,
+                        'shopifyArchiveProducts',
+                        "[pid:{$p->pid}]",
+                        SyncLogger::OP_PRODUCT_ARCHIVE,
+                        'Product has no product_id',
+                        [
+                            'item_title' => $p->title,
+                            'context_data' => ['internal_pid' => $p->pid],
+                        ]
+                    );
 
                     continue;
                 }
@@ -135,11 +151,21 @@ class ArchiveProducts extends Command
                 if ($result['success']) {
                     ShopifyProduct::where('id', $p->pid)->update(['status' => 'archived']);
 
-                    $msg = "Archived: {$p->title}";
-                    $this->info($msg);
-                    Log::debug($msg);
-
+                    $this->info("Archived: {$p->title}");
                     $successCount++;
+
+                    // Log success with SyncLogger
+                    $this->syncLogger->logSuccess(
+                        SyncLogger::MARKETPLACE_SHOPIFY,
+                        'shopifyArchiveProducts',
+                        "[product:{$p->product_id}]",
+                        SyncLogger::OP_PRODUCT_ARCHIVE,
+                        [
+                            'item_title' => $p->title,
+                            'message' => 'Product archived (zero inventory)',
+                            'shopify_product_id' => $p->product_id,
+                        ]
+                    );
                 } else {
                     $errorMessage = $this->formatGraphQLErrorMessage($result);
 
@@ -148,22 +174,56 @@ class ArchiveProducts extends Command
                         $this->cleanupStaleProduct($p, 'shopifyArchiveProducts');
                         $cleanedCount++;
 
+                        // Log cleanup success with SyncLogger
+                        $this->syncLogger->logSuccess(
+                            SyncLogger::MARKETPLACE_SHOPIFY,
+                            'shopifyArchiveProducts',
+                            "[product:{$p->product_id}]",
+                            SyncLogger::OP_DUPLICATE_CLEANUP,
+                            [
+                                'item_title' => $p->title,
+                                'message' => 'Cleaned up stale product record (not found on Shopify)',
+                                'shopify_product_id' => $p->product_id,
+                            ]
+                        );
+
                         continue;
                     }
 
-                    $msg = "Failed to archive: {$p->title} - {$errorMessage}";
-                    $this->error($msg);
-                    Log::error($msg);
-
+                    $this->error("Failed to archive: {$p->title} - {$errorMessage}");
                     $failedCount++;
+
+                    // Log failure with SyncLogger
+                    $this->syncLogger->logFailure(
+                        SyncLogger::MARKETPLACE_SHOPIFY,
+                        'shopifyArchiveProducts',
+                        "[product:{$p->product_id}]",
+                        SyncLogger::OP_PRODUCT_ARCHIVE,
+                        $errorMessage,
+                        [
+                            'item_title' => $p->title,
+                            'shopify_product_id' => $p->product_id,
+                            'errors' => array_merge($result['user_errors'] ?? [], $result['graphql_errors'] ?? []),
+                        ]
+                    );
                 }
             } catch (\Throwable $e) {
-                $msg = "Exception archiving product {$p->title}: {$e->getMessage()}";
-                $this->error($msg);
-                Log::error($msg);
+                $this->error("Exception archiving product {$p->title}: {$e->getMessage()}");
                 report($e);
-
                 $failedCount++;
+
+                // Log failure with SyncLogger
+                $this->syncLogger->logFailure(
+                    SyncLogger::MARKETPLACE_SHOPIFY,
+                    'shopifyArchiveProducts',
+                    "[product:{$p->product_id}]",
+                    SyncLogger::OP_PRODUCT_ARCHIVE,
+                    $e,
+                    [
+                        'item_title' => $p->title,
+                        'shopify_product_id' => $p->product_id ?? null,
+                    ]
+                );
             }
 
             // Minimal delay between GraphQL calls (100ms)
@@ -175,6 +235,7 @@ class ArchiveProducts extends Command
             $summary .= ", {$cleanedCount} stale records cleaned";
         }
         $this->info($summary);
-        Log::info("$marketplace shopifyArchiveProducts: {$successCount} archived, {$failedCount} failed, {$cleanedCount} cleaned");
+
+        // Individual operations logged via SyncLogger; job lifecycle logged by handle()
     }
 }

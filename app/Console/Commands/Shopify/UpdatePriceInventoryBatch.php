@@ -3,12 +3,11 @@
 namespace App\Console\Commands\Shopify;
 
 use App\Http\Controllers\SyncJobController;
-use App\Models\PriceInventoryLog;
 use App\Models\ShopifyLocation;
 use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
 use App\Services\ShopifyGraphQLService;
-use App\Services\SyncFailureLogger;
+use App\Services\SyncLogger;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Shopify\Rest\Admin2025_07\Product as ShopifyProductAPI;
@@ -31,13 +30,13 @@ class UpdatePriceInventoryBatch extends Command
 
     protected ShopifyGraphQLService $graphqlService;
 
-    protected SyncFailureLogger $failureLogger;
+    protected SyncLogger $syncLogger;
 
-    public function __construct(ShopifyGraphQLService $graphqlService, SyncFailureLogger $failureLogger)
+    public function __construct(ShopifyGraphQLService $graphqlService, SyncLogger $syncLogger)
     {
         parent::__construct();
         $this->graphqlService = $graphqlService;
-        $this->failureLogger = $failureLogger;
+        $this->syncLogger = $syncLogger;
     }
 
     /**
@@ -64,14 +63,13 @@ class UpdatePriceInventoryBatch extends Command
 
             if (! $location) {
                 Log::error("$marketplace $jobType failed: No Shopify location found for inventory updates.");
-                PriceInventoryLog::create([
-                    'marketplace' => $marketplace,
-                    'item_identifier' => 'GENERAL',
-                    'change_type' => 'setup',
-                    'status' => 'failed',
-                    'job_name' => $this->signature,
-                    'message' => 'No Shopify location found for inventory updates. Command halted.',
-                ]);
+                $this->syncLogger->logFailure(
+                    SyncLogger::MARKETPLACE_SHOPIFY,
+                    $this->signature,
+                    'GENERAL',
+                    SyncLogger::OP_INVENTORY_UPDATE,
+                    'No Shopify location found for inventory updates. Command halted.'
+                );
                 $job->finishJob('No Shopify location found');
 
                 return Command::FAILURE;
@@ -94,7 +92,7 @@ class UpdatePriceInventoryBatch extends Command
             $job->finishJob($e->getMessage());
             report($e);
             Log::error("$marketplace $jobType failed. Error: {$e->getMessage()}");
-            $this->error('Command failed: ' . $e->getMessage());
+            $this->error('Command failed: '.$e->getMessage());
 
             return Command::FAILURE;
         }
@@ -231,7 +229,7 @@ class UpdatePriceInventoryBatch extends Command
 
         foreach ($chunks as $chunkIndex => $chunk) {
             $chunkNumber = $chunkIndex + 1;
-            $this->info("[Chunk {$chunkNumber}/{$totalChunks}] Processing " . count($chunk) . ' inventory items...');
+            $this->info("[Chunk {$chunkNumber}/{$totalChunks}] Processing ".count($chunk).' inventory items...');
 
             // Prepare items for bulk update
             $items = array_map(function ($item) {
@@ -265,16 +263,18 @@ class UpdatePriceInventoryBatch extends Command
             $oldPrice = $variant->price;
             $newPrice = $variantData['price'];
 
-            PriceInventoryLog::create([
-                'marketplace' => $marketplace,
-                'item_identifier' => $skuValue,
-                'change_type' => 'price',
-                'from_value' => $oldPrice,
-                'to_value' => $newPrice,
-                'status' => 'success',
-                'job_name' => $this->signature,
-                'message' => 'Price updated via GraphQL productVariantsBulkUpdate. Variant ID: ' . $variant->variant_id,
-            ]);
+            $this->syncLogger->logSuccess(
+                SyncLogger::MARKETPLACE_SHOPIFY,
+                $this->signature,
+                $skuValue,
+                SyncLogger::OP_PRICE_UPDATE,
+                [
+                    'from_value' => (string) $oldPrice,
+                    'to_value' => (string) $newPrice,
+                    'message' => 'Price updated via GraphQL productVariantsBulkUpdate. Variant ID: '.$variant->variant_id,
+                    'shopify_variant_id' => $variant->variant_id,
+                ]
+            );
 
             $updates = [
                 'price' => $newPrice,
@@ -285,16 +285,18 @@ class UpdatePriceInventoryBatch extends Command
                 $oldCompareAtPrice = $variant->compare_at_price;
                 $newCompareAtPrice = $variantData['compare_at_price'];
 
-                PriceInventoryLog::create([
-                    'marketplace' => $marketplace,
-                    'item_identifier' => $skuValue,
-                    'change_type' => 'compare_at_price',
-                    'from_value' => $oldCompareAtPrice,
-                    'to_value' => $newCompareAtPrice,
-                    'status' => 'success',
-                    'job_name' => $this->signature,
-                    'message' => 'Compare_at_price updated via GraphQL productVariantsBulkUpdate. Variant ID: ' . $variant->variant_id,
-                ]);
+                $this->syncLogger->logSuccess(
+                    SyncLogger::MARKETPLACE_SHOPIFY,
+                    $this->signature,
+                    $skuValue,
+                    SyncLogger::OP_PRICE_UPDATE,
+                    [
+                        'from_value' => (string) $oldCompareAtPrice,
+                        'to_value' => (string) $newCompareAtPrice,
+                        'message' => 'Compare_at_price updated via GraphQL productVariantsBulkUpdate. Variant ID: '.$variant->variant_id,
+                        'shopify_variant_id' => $variant->variant_id,
+                    ]
+                );
 
                 $updates['compare_at_price'] = $newCompareAtPrice ?? 0;
             }
@@ -329,29 +331,24 @@ class UpdatePriceInventoryBatch extends Command
                 continue; // Skip further processing for this variant
             }
 
-            $this->failureLogger->logFailure(
-                $variant,
-                'price',
+            $this->syncLogger->logFailure(
+                SyncLogger::MARKETPLACE_SHOPIFY,
+                $this->signature,
+                $skuValue,
+                SyncLogger::OP_PRICE_UPDATE,
                 $errorMessage,
-                $result,
                 [
-                    'job_name' => $this->signature,
+                    'from_value' => (string) $variant->price,
+                    'to_value' => $variant->retailEdgeProduct ? (string) $variant->retailEdgeProduct->price : null,
                     'api_request' => $variantData,
-                    'user_errors' => $result['user_errors'] ?? null,
-                    'graphql_errors' => $result['graphql_errors'] ?? null,
+                    'api_response' => $result,
+                    'errors' => array_merge(
+                        $result['user_errors'] ?? [],
+                        $result['graphql_errors'] ?? []
+                    ),
+                    'shopify_variant_id' => $variant->variant_id,
                 ]
             );
-
-            PriceInventoryLog::create([
-                'marketplace' => $marketplace,
-                'item_identifier' => $skuValue,
-                'change_type' => 'price',
-                'from_value' => $variant->price,
-                'to_value' => $variant->retailEdgeProduct ? $variant->retailEdgeProduct->price : null,
-                'status' => 'failed',
-                'job_name' => $this->signature,
-                'message' => $errorMessage,
-            ]);
 
             $variant->update(['price_requires_update' => 2]);
             $this->error("✗ Price update failed for {$skuValue}");
@@ -369,16 +366,18 @@ class UpdatePriceInventoryBatch extends Command
             $oldInventory = $variant->inventory_quantity;
             $newInventory = $item['quantity'];
 
-            PriceInventoryLog::create([
-                'marketplace' => $marketplace,
-                'item_identifier' => $skuValue,
-                'change_type' => 'inventory',
-                'from_value' => $oldInventory,
-                'to_value' => $newInventory,
-                'status' => 'success',
-                'job_name' => $this->signature,
-                'message' => 'Inventory updated via GraphQL inventorySetQuantities (bulk). Variant ID: ' . $variant->variant_id,
-            ]);
+            $this->syncLogger->logSuccess(
+                SyncLogger::MARKETPLACE_SHOPIFY,
+                $this->signature,
+                $skuValue,
+                SyncLogger::OP_INVENTORY_UPDATE,
+                [
+                    'from_value' => (string) $oldInventory,
+                    'to_value' => (string) $newInventory,
+                    'message' => 'Inventory updated via GraphQL inventorySetQuantities (bulk). Variant ID: '.$variant->variant_id,
+                    'shopify_variant_id' => $variant->variant_id,
+                ]
+            );
 
             $variant->update([
                 'inventory_quantity' => $newInventory,
@@ -419,30 +418,27 @@ class UpdatePriceInventoryBatch extends Command
                 continue; // Skip further processing for this variant
             }
 
-            $this->failureLogger->logFailure(
-                $variant,
-                'inventory',
+            $this->syncLogger->logFailure(
+                SyncLogger::MARKETPLACE_SHOPIFY,
+                $this->signature,
+                $skuValue,
+                SyncLogger::OP_INVENTORY_UPDATE,
                 $errorMessage,
-                $result,
                 [
-                    'job_name' => $this->signature,
-                    'inventory_item_id' => $item['inventory_item_id'],
-                    'target_quantity' => $item['quantity'],
-                    'user_errors' => $result['user_errors'] ?? null,
-                    'graphql_errors' => $result['graphql_errors'] ?? null,
+                    'from_value' => (string) $variant->inventory_quantity,
+                    'to_value' => (string) $item['quantity'],
+                    'api_response' => $result,
+                    'errors' => array_merge(
+                        $result['user_errors'] ?? [],
+                        $result['graphql_errors'] ?? []
+                    ),
+                    'context_data' => [
+                        'inventory_item_id' => $item['inventory_item_id'],
+                        'target_quantity' => $item['quantity'],
+                    ],
+                    'shopify_variant_id' => $variant->variant_id,
                 ]
             );
-
-            PriceInventoryLog::create([
-                'marketplace' => $marketplace,
-                'item_identifier' => $skuValue,
-                'change_type' => 'inventory',
-                'from_value' => $variant->inventory_quantity,
-                'to_value' => $item['quantity'],
-                'status' => 'failed',
-                'job_name' => $this->signature,
-                'message' => $errorMessage,
-            ]);
 
             $variant->update(['inventory_requires_update' => 2]);
             $this->error("✗ Inventory update failed for {$skuValue}");
@@ -458,29 +454,31 @@ class UpdatePriceInventoryBatch extends Command
         Log::warning("Missing RetailEdgeProduct for SKU: {$skuValue} (Variant ID: {$variant->id})");
 
         if ($variant->price_requires_update == 1) {
-            PriceInventoryLog::create([
-                'marketplace' => $marketplace,
-                'item_identifier' => $skuValue,
-                'change_type' => 'price',
-                'from_value' => $variant->price,
-                'to_value' => null,
-                'status' => 'failed',
-                'job_name' => $this->signature,
-                'message' => 'Missing RetailEdgeProduct. Price update skipped.',
-            ]);
+            $this->syncLogger->logSkipped(
+                SyncLogger::MARKETPLACE_SHOPIFY,
+                $this->signature,
+                $skuValue,
+                SyncLogger::OP_PRICE_UPDATE,
+                'Missing RetailEdgeProduct. Price update skipped.',
+                [
+                    'from_value' => (string) $variant->price,
+                    'shopify_variant_id' => $variant->variant_id,
+                ]
+            );
         }
 
         if ($variant->inventory_requires_update == 1) {
-            PriceInventoryLog::create([
-                'marketplace' => $marketplace,
-                'item_identifier' => $skuValue,
-                'change_type' => 'inventory',
-                'from_value' => $variant->inventory_quantity,
-                'to_value' => null,
-                'status' => 'failed',
-                'job_name' => $this->signature,
-                'message' => 'Missing RetailEdgeProduct. Inventory update skipped.',
-            ]);
+            $this->syncLogger->logSkipped(
+                SyncLogger::MARKETPLACE_SHOPIFY,
+                $this->signature,
+                $skuValue,
+                SyncLogger::OP_INVENTORY_UPDATE,
+                'Missing RetailEdgeProduct. Inventory update skipped.',
+                [
+                    'from_value' => (string) $variant->inventory_quantity,
+                    'shopify_variant_id' => $variant->variant_id,
+                ]
+            );
         }
 
         $variant->update([
@@ -611,18 +609,19 @@ class UpdatePriceInventoryBatch extends Command
                     $variantData = $data['variants'][$index];
                     $skuValue = $variant->sku ?: '[EMPTY SKU]';
 
-                    PriceInventoryLog::create([
-                        'marketplace' => $marketplace,
-                        'item_identifier' => $skuValue,
-                        'change_type' => 'price_retry',
-                        'from_value' => $variant->price,
-                        'to_value' => $variantData['price'],
-                        'status' => 'success',
-                        'job_name' => $this->signature,
-                        'message' => 'Retry successful: Price updated via GraphQL productVariantsBulkUpdate. Variant ID: ' . $variant->variant_id,
-                    ]);
-
-                    $this->failureLogger->logSuccess($variant, 'price', ['job_name' => $this->signature]);
+                    $this->syncLogger->logSuccess(
+                        SyncLogger::MARKETPLACE_SHOPIFY,
+                        $this->signature,
+                        $skuValue,
+                        SyncLogger::OP_PRICE_UPDATE,
+                        [
+                            'from_value' => (string) $variant->price,
+                            'to_value' => (string) $variantData['price'],
+                            'message' => 'Retry successful: Price updated via GraphQL productVariantsBulkUpdate. Variant ID: '.$variant->variant_id,
+                            'shopify_variant_id' => $variant->variant_id,
+                            'retry_count' => 1,
+                        ]
+                    );
 
                     $variant->update([
                         'price' => $variantData['price'],
@@ -638,16 +637,19 @@ class UpdatePriceInventoryBatch extends Command
                 foreach ($data['records'] as $index => $variant) {
                     $skuValue = $variant->sku ?: '[EMPTY SKU]';
 
-                    PriceInventoryLog::create([
-                        'marketplace' => $marketplace,
-                        'item_identifier' => $skuValue,
-                        'change_type' => 'price_retry',
-                        'from_value' => $variant->price,
-                        'to_value' => $variant->retailEdgeProduct ? $variant->retailEdgeProduct->price : null,
-                        'status' => 'failed',
-                        'job_name' => $this->signature,
-                        'message' => $errorMessage,
-                    ]);
+                    $this->syncLogger->logFailure(
+                        SyncLogger::MARKETPLACE_SHOPIFY,
+                        $this->signature,
+                        $skuValue,
+                        SyncLogger::OP_PRICE_UPDATE,
+                        $errorMessage,
+                        [
+                            'from_value' => (string) $variant->price,
+                            'to_value' => $variant->retailEdgeProduct ? (string) $variant->retailEdgeProduct->price : null,
+                            'shopify_variant_id' => $variant->variant_id,
+                            'retry_count' => 1,
+                        ]
+                    );
 
                     // Mark as status 3 (repeated failure)
                     $variant->update(['price_requires_update' => 3]);
@@ -685,18 +687,19 @@ class UpdatePriceInventoryBatch extends Command
                 $variant = $item['variant'];
                 $skuValue = $variant->sku ?: '[EMPTY SKU]';
 
-                PriceInventoryLog::create([
-                    'marketplace' => $marketplace,
-                    'item_identifier' => $skuValue,
-                    'change_type' => 'inventory_retry',
-                    'from_value' => $variant->inventory_quantity,
-                    'to_value' => $item['quantity'],
-                    'status' => 'success',
-                    'job_name' => $this->signature,
-                    'message' => 'Retry successful: Inventory updated via GraphQL inventorySetQuantities (bulk). Variant ID: ' . $variant->variant_id,
-                ]);
-
-                $this->failureLogger->logSuccess($variant, 'inventory', ['job_name' => $this->signature]);
+                $this->syncLogger->logSuccess(
+                    SyncLogger::MARKETPLACE_SHOPIFY,
+                    $this->signature,
+                    $skuValue,
+                    SyncLogger::OP_INVENTORY_UPDATE,
+                    [
+                        'from_value' => (string) $variant->inventory_quantity,
+                        'to_value' => (string) $item['quantity'],
+                        'message' => 'Retry successful: Inventory updated via GraphQL inventorySetQuantities (bulk). Variant ID: '.$variant->variant_id,
+                        'shopify_variant_id' => $variant->variant_id,
+                        'retry_count' => 1,
+                    ]
+                );
 
                 $variant->update([
                     'inventory_quantity' => $item['quantity'],
@@ -716,16 +719,19 @@ class UpdatePriceInventoryBatch extends Command
                 $variant = $item['variant'];
                 $skuValue = $variant->sku ?: '[EMPTY SKU]';
 
-                PriceInventoryLog::create([
-                    'marketplace' => $marketplace,
-                    'item_identifier' => $skuValue,
-                    'change_type' => 'inventory_retry',
-                    'from_value' => $variant->inventory_quantity,
-                    'to_value' => $item['quantity'],
-                    'status' => 'failed',
-                    'job_name' => $this->signature,
-                    'message' => $errorMessage,
-                ]);
+                $this->syncLogger->logFailure(
+                    SyncLogger::MARKETPLACE_SHOPIFY,
+                    $this->signature,
+                    $skuValue,
+                    SyncLogger::OP_INVENTORY_UPDATE,
+                    $errorMessage,
+                    [
+                        'from_value' => (string) $variant->inventory_quantity,
+                        'to_value' => (string) $item['quantity'],
+                        'shopify_variant_id' => $variant->variant_id,
+                        'retry_count' => 1,
+                    ]
+                );
 
                 // Mark as status 3 (repeated failure)
                 $variant->update(['inventory_requires_update' => 3]);
@@ -739,7 +745,7 @@ class UpdatePriceInventoryBatch extends Command
      */
     private function formatErrorMessage(array $result, string $prefix = ''): string
     {
-        $errorMessage = $prefix . 'GraphQL Error: ';
+        $errorMessage = $prefix.'GraphQL Error: ';
         if (! empty($result['user_errors'])) {
             $errorMessage .= json_encode($result['user_errors']);
         } elseif (! empty($result['graphql_errors'])) {

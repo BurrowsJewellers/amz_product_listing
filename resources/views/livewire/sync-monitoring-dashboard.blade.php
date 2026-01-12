@@ -1,15 +1,110 @@
 <div wire:poll.{{ config('sync.dashboard_refresh_interval', 2000) }}ms="refreshDashboard">
+    <!-- Overview Stats -->
     <div class="row mb-4">
-        <!-- Stats Cards -->
         <div class="col-sm-6 col-lg-3">
             <div class="card text-white bg-primary">
                 <div class="card-body">
-                    <div class="fs-4 fw-semibold">{{ $stats['total_failures'] ?? 0 }}</div>
-                    <div>Total Failure Logs</div>
+                    <div class="fs-4 fw-semibold">{{ $stats['total_operations'] ?? 0 }}</div>
+                    <div>Total Operations</div>
                 </div>
             </div>
         </div>
 
+        <div class="col-sm-6 col-lg-3">
+            <div class="card text-white bg-success">
+                <div class="card-body">
+                    <div class="fs-4 fw-semibold">{{ $stats['total_successful'] ?? 0 }}</div>
+                    <div>Successful ({{ $stats['success_rate'] ?? 0 }}%)</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-sm-6 col-lg-3">
+            <div class="card text-white bg-danger">
+                <div class="card-body">
+                    <div class="fs-4 fw-semibold">{{ $stats['total_failed'] ?? 0 }}</div>
+                    <div>Failed Operations</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-sm-6 col-lg-3">
+            <div class="card text-white bg-info">
+                <div class="card-body">
+                    <div class="fs-4 fw-semibold">{{ $stats['operations_today'] ?? 0 }}</div>
+                    <div>Operations Today</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Marketplace Breakdown -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <strong>Shopify</strong>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-4 text-center">
+                            <div class="fs-4 fw-semibold text-primary">{{ $stats['shopify']['total'] ?? 0 }}</div>
+                            <small>Total</small>
+                        </div>
+                        <div class="col-4 text-center">
+                            <div class="fs-4 fw-semibold text-success">{{ $stats['shopify']['successful'] ?? 0 }}</div>
+                            <small>Success</small>
+                        </div>
+                        <div class="col-4 text-center">
+                            <div class="fs-4 fw-semibold text-danger">{{ $stats['shopify']['failed'] ?? 0 }}</div>
+                            <small>Failed</small>
+                        </div>
+                    </div>
+                    @if(isset($stats['shopify']['success_rate']))
+                    <div class="progress mt-3" style="height: 20px;">
+                        <div class="progress-bar bg-success" role="progressbar" style="width: {{ $stats['shopify']['success_rate'] }}%">
+                            {{ $stats['shopify']['success_rate'] }}% Success Rate
+                        </div>
+                    </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header bg-warning text-dark">
+                    <strong>Amazon</strong>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-4 text-center">
+                            <div class="fs-4 fw-semibold text-primary">{{ $stats['amazon']['total'] ?? 0 }}</div>
+                            <small>Total</small>
+                        </div>
+                        <div class="col-4 text-center">
+                            <div class="fs-4 fw-semibold text-success">{{ $stats['amazon']['successful'] ?? 0 }}</div>
+                            <small>Success</small>
+                        </div>
+                        <div class="col-4 text-center">
+                            <div class="fs-4 fw-semibold text-danger">{{ $stats['amazon']['failed'] ?? 0 }}</div>
+                            <small>Failed</small>
+                        </div>
+                    </div>
+                    @if(isset($stats['amazon']['success_rate']))
+                    <div class="progress mt-3" style="height: 20px;">
+                        <div class="progress-bar bg-success" role="progressbar" style="width: {{ $stats['amazon']['success_rate'] }}%">
+                            {{ $stats['amazon']['success_rate'] }}% Success Rate
+                        </div>
+                    </div>
+                    @endif
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Flag Status (Items needing attention) -->
+    <div class="row mb-4">
         <div class="col-sm-6 col-lg-3">
             <div class="card text-white bg-warning">
                 <div class="card-body">
@@ -20,7 +115,7 @@
         </div>
 
         <div class="col-sm-6 col-lg-3">
-            <div class="card text-white bg-danger">
+            <div class="card text-white bg-dark">
                 <div class="card-body">
                     <div class="fs-4 fw-semibold">{{ $stats['failures_flag_3'] ?? 0 }}</div>
                     <div>Items with Flag 3 (Repeated Failure)</div>
@@ -29,10 +124,19 @@
         </div>
 
         <div class="col-sm-6 col-lg-3">
+            <div class="card text-white bg-secondary">
+                <div class="card-body">
+                    <div class="fs-4 fw-semibold">{{ $stats['failed_today'] ?? 0 }}</div>
+                    <div>Failed Today</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-sm-6 col-lg-3">
             <div class="card text-white bg-info">
                 <div class="card-body">
-                    <div class="fs-4 fw-semibold">{{ $stats['failures_today'] ?? 0 }}</div>
-                    <div>Failures Today</div>
+                    <div class="fs-4 fw-semibold">{{ $stats['operations_this_week'] ?? 0 }}</div>
+                    <div>This Week</div>
                 </div>
             </div>
         </div>

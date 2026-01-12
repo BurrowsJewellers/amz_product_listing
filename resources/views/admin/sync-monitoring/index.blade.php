@@ -6,10 +6,10 @@
 
     @livewire('sync-monitoring-dashboard')
 
-    @livewire('sync-failures-table')
+    @livewire('sync-logs-table')
 
     @livewire('retry-progress-modal')
 
-    @livewire('failure-details-modal')
+    @livewire('log-details-modal')
 </div>
 @endsection

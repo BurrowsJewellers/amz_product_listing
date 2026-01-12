@@ -7,7 +7,7 @@ use App\Models\ShopifyProduct;
 use App\Models\ShopifyProductVariant;
 use App\Models\SyncRetryJob;
 use App\Services\ShopifyGraphQLService;
-use App\Services\SyncFailureLogger;
+use App\Services\SyncLogger;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -46,7 +46,7 @@ class RetryFailedSyncsJob implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(ShopifyGraphQLService $graphqlService, SyncFailureLogger $failureLogger): void
+    public function handle(ShopifyGraphQLService $graphqlService, SyncLogger $syncLogger): void
     {
         $retryJob = SyncRetryJob::find($this->retryJobId);
 
@@ -126,18 +126,20 @@ class RetryFailedSyncsJob implements ShouldQueue
                     $variant->refresh(); // Reload to get updated flags
 
                     if (! $variant->retailEdgeProduct) {
-                        $failureLogger->logFailure(
-                            $variant,
-                            'price_inventory',
+                        $syncLogger->logFailure(
+                            SyncLogger::MARKETPLACE_SHOPIFY,
+                            'RetryFailedSyncsJob',
+                            $variant->sku ?: '[EMPTY SKU]',
+                            SyncLogger::OP_PRICE_INVENTORY_UPDATE,
                             'Missing RetailEdgeProduct',
-                            null,
                             [
-                                'job_name' => 'RetryFailedSyncsJob',
-                                'retry_job_id' => $this->retryJobId,
+                                'shopify_variant_id' => $variant->variant_id,
+                                'retry_count' => 1,
                             ]
                         );
                         $failureCount++;
                         $processedCount++;
+
                         continue;
                     }
 
@@ -176,14 +178,14 @@ class RetryFailedSyncsJob implements ShouldQueue
                     // Handle success
                     foreach ($variantRecords as $index => $variant) {
                         $variantData = $variantsData[$index];
-                        $this->handleSuccess($variant, $variantData, $location, $failureLogger);
+                        $this->handleSuccess($variant, $variantData, $location, $syncLogger);
                         $successCount++;
                     }
                 } else {
                     // Handle failure
                     foreach ($variantRecords as $index => $variant) {
                         $variantData = $variantsData[$index];
-                        $this->handleFailure($variant, $variantData, $result, $failureLogger);
+                        $this->handleFailure($variant, $variantData, $result, $syncLogger);
                         $failureCount++;
                     }
                 }
@@ -239,9 +241,10 @@ class RetryFailedSyncsJob implements ShouldQueue
         ShopifyProductVariant $variant,
         array $variantData,
         ShopifyLocation $location,
-        SyncFailureLogger $failureLogger
+        SyncLogger $syncLogger
     ): void {
         $updates = [];
+        $skuValue = $variant->sku ?: '[EMPTY SKU]';
 
         // Handle price update
         if (isset($variantData['price'])) {
@@ -249,10 +252,19 @@ class RetryFailedSyncsJob implements ShouldQueue
             $updates['compare_at_price'] = $variantData['compare_at_price'] ?? 0;
             $updates['price_requires_update'] = 0;
 
-            $failureLogger->logSuccess($variant, 'price', [
-                'job_name' => 'RetryFailedSyncsJob',
-                'retry_job_id' => $this->retryJobId,
-            ]);
+            $syncLogger->logSuccess(
+                SyncLogger::MARKETPLACE_SHOPIFY,
+                'RetryFailedSyncsJob',
+                $skuValue,
+                SyncLogger::OP_PRICE_UPDATE,
+                [
+                    'from_value' => (string) $variant->price,
+                    'to_value' => (string) $variantData['price'],
+                    'message' => 'Retry successful',
+                    'shopify_variant_id' => $variant->variant_id,
+                    'retry_count' => 1,
+                ]
+            );
         }
 
         // Handle inventory update
@@ -260,10 +272,19 @@ class RetryFailedSyncsJob implements ShouldQueue
             $updates['inventory_quantity'] = $variantData['inventory_quantity'];
             $updates['inventory_requires_update'] = 0;
 
-            $failureLogger->logSuccess($variant, 'inventory', [
-                'job_name' => 'RetryFailedSyncsJob',
-                'retry_job_id' => $this->retryJobId,
-            ]);
+            $syncLogger->logSuccess(
+                SyncLogger::MARKETPLACE_SHOPIFY,
+                'RetryFailedSyncsJob',
+                $skuValue,
+                SyncLogger::OP_INVENTORY_UPDATE,
+                [
+                    'from_value' => (string) $variant->inventory_quantity,
+                    'to_value' => (string) $variantData['inventory_quantity'],
+                    'message' => 'Retry successful',
+                    'shopify_variant_id' => $variant->variant_id,
+                    'retry_count' => 1,
+                ]
+            );
 
             // Reactivate product if inventory > 0 and currently archived
             if ($variantData['inventory_quantity'] > 0 && $variant->product && $variant->product->status == 'archived') {
@@ -281,27 +302,32 @@ class RetryFailedSyncsJob implements ShouldQueue
         ShopifyProductVariant $variant,
         array $variantData,
         array $result,
-        SyncFailureLogger $failureLogger
+        SyncLogger $syncLogger
     ): void {
-        $operationType = 'price_inventory';
+        $operationType = SyncLogger::OP_PRICE_INVENTORY_UPDATE;
         if (isset($variantData['price']) && ! isset($variantData['inventory_quantity'])) {
-            $operationType = 'price';
+            $operationType = SyncLogger::OP_PRICE_UPDATE;
         } elseif (isset($variantData['inventory_quantity']) && ! isset($variantData['price'])) {
-            $operationType = 'inventory';
+            $operationType = SyncLogger::OP_INVENTORY_UPDATE;
         }
 
-        $failureLogger->logFailure(
-            $variant,
+        $skuValue = $variant->sku ?: '[EMPTY SKU]';
+
+        $syncLogger->logFailure(
+            SyncLogger::MARKETPLACE_SHOPIFY,
+            'RetryFailedSyncsJob',
+            $skuValue,
             $operationType,
             'GraphQL API Error: '.json_encode($result['user_errors'] ?? $result['graphql_errors']),
-            $result,
             [
-                'job_name' => 'RetryFailedSyncsJob',
-                'retry_job_id' => $this->retryJobId,
                 'api_request' => $variantData,
-                'user_errors' => $result['user_errors'] ?? null,
-                'graphql_errors' => $result['graphql_errors'] ?? null,
-                'target_data' => $variantData,
+                'api_response' => $result,
+                'errors' => array_merge(
+                    $result['user_errors'] ?? [],
+                    $result['graphql_errors'] ?? []
+                ),
+                'shopify_variant_id' => $variant->variant_id,
+                'retry_count' => 1,
             ]
         );
 

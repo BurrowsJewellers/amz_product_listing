@@ -4,9 +4,8 @@ namespace App\Livewire;
 
 use App\Jobs\RetryFailedSyncsJob;
 use App\Models\ShopifyProductVariant;
-use App\Models\SyncFailureLog;
 use App\Models\SyncRetryJob;
-use App\Services\SyncFailureLogger;
+use App\Services\SyncLogger;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Livewire\Component;
@@ -60,23 +59,41 @@ class SyncMonitoringDashboard extends Component
                     ->orWhere('inventory_requires_update', 3);
             })->count();
 
+            // Use SyncLogger for statistics
+            $syncLogger = new SyncLogger;
+            $allStats = $syncLogger->getStatistics();
+            $shopifyStats = $syncLogger->getStatistics(SyncLogger::MARKETPLACE_SHOPIFY);
+            $amazonStats = $syncLogger->getStatistics(SyncLogger::MARKETPLACE_AMAZON);
+
             $this->stats = [
-                'total_failures' => SyncFailureLog::count(),
+                'total_operations' => $allStats['total'],
+                'total_successful' => $allStats['successful'],
+                'total_failed' => $allStats['failed'],
+                'success_rate' => $allStats['success_rate'],
                 'failures_flag_2' => $variantsWithFlag2,
                 'failures_flag_3' => $variantsWithFlag3,
-                'failures_today' => SyncFailureLog::whereDate('created_at', today())->count(),
-                'failures_this_week' => SyncFailureLog::where('created_at', '>=', now()->subWeek())->count(),
+                'operations_today' => $allStats['today'],
+                'operations_this_week' => $allStats['this_week'],
+                'failed_today' => $allStats['failed_today'],
+                'shopify' => $shopifyStats,
+                'amazon' => $amazonStats,
             ];
         } catch (\Exception $e) {
             Log::error('Failed to load dashboard stats', [
                 'error' => $e->getMessage(),
             ]);
             $this->stats = [
-                'total_failures' => 0,
+                'total_operations' => 0,
+                'total_successful' => 0,
+                'total_failed' => 0,
+                'success_rate' => 0,
                 'failures_flag_2' => 0,
                 'failures_flag_3' => 0,
-                'failures_today' => 0,
-                'failures_this_week' => 0,
+                'operations_today' => 0,
+                'operations_this_week' => 0,
+                'failed_today' => 0,
+                'shopify' => [],
+                'amazon' => [],
             ];
         }
     }

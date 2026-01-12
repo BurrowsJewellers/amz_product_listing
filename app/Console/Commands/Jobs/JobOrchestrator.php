@@ -143,12 +143,20 @@ class JobOrchestrator extends Command
 
     /**
      * Execute a job chain
+     * Jobs continue to execute even if previous jobs fail (resilient execution)
      */
     private function executeChain(string $chainName, array $chain): int
     {
         $startTime = microtime(true);
         $totalJobs = count($chain['jobs']);
         $currentJob = 0;
+
+        // Track results for summary
+        $results = [
+            'successful' => [],
+            'failed' => [],
+            'skipped' => [],
+        ];
 
         // Wait for dependent chains to complete
         if (isset($this->chainDependencies[$chainName])) {
@@ -178,15 +186,17 @@ class JobOrchestrator extends Command
             $marketplace = $chain['marketplace'] ?? null;
             if (! SyncJobController::canStart($jobCommand, $marketplace)) {
                 if (SyncJobController::isPaused($jobCommand, $marketplace)) {
-                    $this->error("❌ Job is paused: {$jobCommand}");
-                    Log::error("Chain {$chainName} stopped: Job {$jobCommand} is paused");
+                    $this->warn("⏸️  Skipped (paused): {$jobCommand}");
+                    $results['skipped'][] = ['job' => $jobCommand, 'reason' => 'paused'];
+                    Log::warning("Chain {$chainName}: Job {$jobCommand} skipped (paused)");
 
-                    return 1;
+                    continue; // Continue to next job
                 } else {
-                    $this->error("❌ Job is already running: {$jobCommand}");
-                    Log::error("Chain {$chainName} stopped: Job {$jobCommand} is already running");
+                    $this->warn("⏭️  Skipped (already running): {$jobCommand}");
+                    $results['skipped'][] = ['job' => $jobCommand, 'reason' => 'already_running'];
+                    Log::warning("Chain {$chainName}: Job {$jobCommand} skipped (already running)");
 
-                    return 1;
+                    continue; // Continue to next job
                 }
             }
 
@@ -200,28 +210,97 @@ class JobOrchestrator extends Command
 
             if ($exitCode === 0) {
                 $this->info("✅ Completed: {$jobCommand} (".number_format($jobDuration, 2).'s)');
+                $results['successful'][] = [
+                    'job' => $jobCommand,
+                    'duration' => $jobDuration,
+                ];
             } else {
                 $this->error("❌ Failed: {$jobCommand} (exit code: {$exitCode})");
-                Log::error("Chain {$chainName} failed at job: {$jobCommand}", [
+                $results['failed'][] = [
+                    'job' => $jobCommand,
+                    'exit_code' => $exitCode,
+                    'duration' => $jobDuration,
+                ];
+                Log::error("Chain {$chainName}: Job failed but continuing to next job", [
+                    'job' => $jobCommand,
                     'exit_code' => $exitCode,
                     'duration' => $jobDuration,
                 ]);
-
-                return $exitCode;
+                // Continue to next job instead of returning
             }
         }
 
         $totalDuration = microtime(true) - $startTime;
+
+        // Display chain summary
+        $this->displayChainSummary($chainName, $results, $totalDuration);
+
+        // Log final status
+        $hasFailures = ! empty($results['failed']);
+        if ($hasFailures) {
+            Log::warning("Job chain completed with failures: {$chainName}", [
+                'total_duration' => $totalDuration,
+                'successful' => count($results['successful']),
+                'failed' => count($results['failed']),
+                'skipped' => count($results['skipped']),
+                'failed_jobs' => array_column($results['failed'], 'job'),
+            ]);
+        } else {
+            Log::info("Job chain completed successfully: {$chainName}", [
+                'total_duration' => $totalDuration,
+                'jobs_executed' => count($results['successful']),
+                'skipped' => count($results['skipped']),
+            ]);
+        }
+
+        // Return failure code if any job failed
+        return $hasFailures ? Command::FAILURE : Command::SUCCESS;
+    }
+
+    /**
+     * Display a summary of the chain execution
+     */
+    private function displayChainSummary(string $chainName, array $results, float $totalDuration): void
+    {
         $this->info('');
-        $this->info('🎉 Chain completed successfully!');
+        $this->info(str_repeat('═', 50));
+        $this->info("📊 Chain Summary: {$chainName}");
+        $this->info(str_repeat('═', 50));
+
+        $successCount = count($results['successful']);
+        $failedCount = count($results['failed']);
+        $skippedCount = count($results['skipped']);
+        $totalJobs = $successCount + $failedCount + $skippedCount;
+
+        $this->info("Total jobs: {$totalJobs}");
+        $this->info("✅ Successful: {$successCount}");
+
+        if ($failedCount > 0) {
+            $this->error("❌ Failed: {$failedCount}");
+            foreach ($results['failed'] as $failed) {
+                $this->error("   - {$failed['job']} (exit code: {$failed['exit_code']})");
+            }
+        } else {
+            $this->info('❌ Failed: 0');
+        }
+
+        if ($skippedCount > 0) {
+            $this->warn("⏭️  Skipped: {$skippedCount}");
+            foreach ($results['skipped'] as $skipped) {
+                $this->warn("   - {$skipped['job']} ({$skipped['reason']})");
+            }
+        }
+
+        $this->info('');
         $this->info('Total duration: '.number_format($totalDuration, 2).'s');
 
-        Log::info("Job chain completed successfully: {$chainName}", [
-            'total_duration' => $totalDuration,
-            'jobs_executed' => $totalJobs,
-        ]);
-
-        return 0;
+        if ($failedCount === 0 && $skippedCount === 0) {
+            $this->info('🎉 Chain completed successfully!');
+        } elseif ($failedCount === 0) {
+            $this->info('✅ Chain completed (some jobs skipped)');
+        } else {
+            $this->error('⚠️  Chain completed with failures - check logs for details');
+        }
     }
 
     /**

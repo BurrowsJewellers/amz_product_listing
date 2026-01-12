@@ -2,100 +2,101 @@
 
 namespace App\Livewire;
 
-use App\Models\SyncFailureLog;
+use App\Models\SyncOperationLog;
 use Illuminate\Support\Facades\Log;
 use Livewire\Component;
 
-class FailureDetailsModal extends Component
+class LogDetailsModal extends Component
 {
     public $show = false;
 
-    public $failureId = null;
+    public $logId = null;
 
-    public $failure = null;
+    public $log = null;
 
     public $activeTab = 'overview';
 
-    public $retryHistory = [];
+    public $history = [];
 
-    protected $listeners = ['showFailureDetails'];
+    protected $listeners = ['showLogDetails'];
 
     public function render()
     {
-        return view('livewire.failure-details-modal');
+        return view('livewire.log-details-modal');
     }
 
     /**
-     * Show failure details
+     * Show log details
      */
-    public function showFailureDetails($failureId)
+    public function showLogDetails($logId)
     {
         try {
-            // Validate failure ID
-            if (! is_numeric($failureId) || $failureId <= 0) {
-                Log::warning('Invalid failure ID for details modal', ['id' => $failureId]);
+            // Validate log ID
+            if (! is_numeric($logId) || $logId <= 0) {
+                Log::warning('Invalid log ID for details modal', ['id' => $logId]);
 
                 return;
             }
 
-            $this->failureId = $failureId;
+            $this->logId = $logId;
             $this->show = true;
             $this->activeTab = 'overview';
-            $this->loadFailure();
-            $this->loadRetryHistory();
+            $this->loadLog();
+            $this->loadHistory();
 
-            // If failure not found, close modal
-            if (! $this->failure) {
-                Log::warning('Failure not found for details modal', ['id' => $failureId]);
+            // If log not found, close modal
+            if (! $this->log) {
+                Log::warning('Log not found for details modal', ['id' => $logId]);
                 $this->closeModal();
             }
         } catch (\Exception $e) {
-            Log::error('Failed to show failure details', [
+            Log::error('Failed to show log details', [
                 'error' => $e->getMessage(),
-                'failure_id' => $failureId,
+                'log_id' => $logId,
             ]);
             $this->closeModal();
         }
     }
 
     /**
-     * Load failure data
+     * Load log data
      */
-    public function loadFailure()
+    public function loadLog()
     {
         try {
-            if ($this->failureId) {
-                $this->failure = SyncFailureLog::with(['variant.product'])
-                    ->find($this->failureId);
+            if ($this->logId) {
+                $this->log = SyncOperationLog::with(['shopifyVariant.product', 'shopifyProduct'])
+                    ->find($this->logId);
             }
         } catch (\Exception $e) {
-            Log::error('Failed to load failure data', [
+            Log::error('Failed to load log data', [
                 'error' => $e->getMessage(),
-                'failure_id' => $this->failureId,
+                'log_id' => $this->logId,
             ]);
-            $this->failure = null;
+            $this->log = null;
         }
     }
 
     /**
-     * Load retry history for this variant
+     * Load history for this item
      */
-    public function loadRetryHistory()
+    public function loadHistory()
     {
         try {
-            if ($this->failure && $this->failure->variant_id) {
-                $this->retryHistory = SyncFailureLog::where('variant_id', $this->failure->variant_id)
+            if ($this->log && $this->log->item_identifier) {
+                $this->history = SyncOperationLog::where('item_identifier', $this->log->item_identifier)
+                    ->where('marketplace', $this->log->marketplace)
                     ->orderBy('created_at', 'desc')
-                    ->limit(10) // Limit to prevent memory issues
+                    ->limit(10)
                     ->get()
                     ->toArray();
             }
         } catch (\Exception $e) {
-            Log::error('Failed to load retry history', [
+            Log::error('Failed to load history', [
                 'error' => $e->getMessage(),
-                'variant_id' => $this->failure?->variant_id,
+                'item_identifier' => $this->log?->item_identifier,
             ]);
-            $this->retryHistory = [];
+            $this->history = [];
         }
     }
 
@@ -106,7 +107,7 @@ class FailureDetailsModal extends Component
     {
         try {
             // Validate allowed tabs to prevent tampering
-            $allowedTabs = ['overview', 'api_request', 'api_response', 'data_comparison', 'error_location', 'retry_history'];
+            $allowedTabs = ['overview', 'api_request', 'api_response', 'context_data', 'errors', 'history'];
             if (! in_array($tab, $allowedTabs)) {
                 Log::warning('Invalid tab attempted', ['tab' => $tab]);
 
@@ -128,10 +129,10 @@ class FailureDetailsModal extends Component
     public function closeModal()
     {
         $this->show = false;
-        $this->failureId = null;
-        $this->failure = null;
+        $this->logId = null;
+        $this->log = null;
         $this->activeTab = 'overview';
-        $this->retryHistory = [];
+        $this->history = [];
     }
 
     /**
@@ -173,5 +174,23 @@ class FailureDetailsModal extends Component
 
             return '{}';
         }
+    }
+
+    /**
+     * Get status badge class
+     */
+    public function getStatusBadgeClass(): string
+    {
+        if (! $this->log) {
+            return 'bg-gray-100 text-gray-800';
+        }
+
+        return match ($this->log->status) {
+            'success' => 'bg-green-100 text-green-800',
+            'failed' => 'bg-red-100 text-red-800',
+            'pending' => 'bg-yellow-100 text-yellow-800',
+            'skipped' => 'bg-gray-100 text-gray-800',
+            default => 'bg-gray-100 text-gray-800',
+        };
     }
 }
