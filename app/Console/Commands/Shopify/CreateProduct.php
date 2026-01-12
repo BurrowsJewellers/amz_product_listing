@@ -53,20 +53,28 @@ class CreateProduct extends Command
             Log::info("$marketplace $jobType started!");
             $product_errors_occurred = false;
 
-            // Only fetch parent/standalone products (old_key = sku or empty)
-            // Child products should be added as variants on their parent, not as separate products
-            $pendingProducts = DB::select("SELECT rep.id, rep.sku
-                    FROM retail_edge_products rep
-                    LEFT JOIN shopify_product_variants spv ON rep.sku = spv.sku
-                    WHERE spv.id IS NULL
-                    AND (rep.old_key = rep.sku OR rep.old_key = '')
-                ");
-
-            $pendingProductIds = [];
-
-            foreach ($pendingProducts as $p) {
-                $pendingProductIds[] = $p->id;
-            }
+            // Single Eloquent query for pending parent/standalone products
+            // This replaces the previous two-query approach (raw SQL + Eloquent)
+            $baseQuery = RetailEdgeProduct::query()
+                // Not in Shopify (SKU not found in shopify_product_variants)
+                ->whereNotExists(function ($subquery) {
+                    $subquery->select(DB::raw(1))
+                        ->from('shopify_product_variants')
+                        ->whereColumn('shopify_product_variants.sku', 'retail_edge_products.sku');
+                })
+                // Parent/Standalone only (old_key = sku OR old_key is empty)
+                // Child products have old_key pointing to their parent's SKU
+                ->where(function ($q) {
+                    $q->whereColumn('old_key', 'sku')
+                        ->orWhere('old_key', '');
+                })
+                // Has stock
+                ->where('quantity', '>', 0)
+                // Has pending children OR is standalone (no children)
+                ->where(function ($q) {
+                    $q->whereHas('children', fn ($c) => $c->where('uploaded_to_shopify', 0))
+                        ->orWhereDoesntHave('children');
+                });
 
             $session = (new ShopifyService)->getSession();
             $variantTypes = ['vt1' => 'Size', 'vt2' => 'Color', 'vt3' => 'Material', 'vt4' => 'Style'];
@@ -80,21 +88,14 @@ class CreateProduct extends Command
                 $brandsArray[$brand->brand_id]['name'] = $brand->name;
             }
 
-            $countQuery = RetailEdgeProduct::whereIn('id', $pendingProductIds)->whereHas('children', function ($children) {
-                $children->where('uploaded_to_shopify', 0);
-            })->where('quantity', '>', 0);
-
-            $count = $countQuery->count();
+            $count = (clone $baseQuery)->count();
 
             // Initialize GraphQL client
             $client = new Graphql($session->getShop(), $session->getAccessToken());
 
             while ($count) {
                 $this->info('Count: '.$count);
-                $product = RetailEdgeProduct::whereIn('id', $pendingProductIds)
-                    ->withWhereHas('children', function ($children) {
-                        $children->where('uploaded_to_shopify', 0);
-                    })->with(['brand'])->where('quantity', '>', 0)->first();
+                $product = (clone $baseQuery)->with(['brand', 'children'])->first();
 
                 if ($product) {
                     // Defensive check: skip if this is somehow a child product
@@ -104,7 +105,7 @@ class CreateProduct extends Command
                             'old_key' => $product->old_key,
                         ]);
                         $product->update(['uploaded_to_shopify' => 1]); // Mark to prevent reprocessing
-                        $count = $countQuery->count();
+                        $count = (clone $baseQuery)->count();
 
                         continue;
                     }
@@ -197,7 +198,7 @@ class CreateProduct extends Command
                     $job->updateHeartbeat(); // Update heartbeat after each product
                 }
 
-                $count = $countQuery->count();
+                $count = (clone $baseQuery)->count();
             }
 
             if ($product_errors_occurred) {
@@ -1118,6 +1119,7 @@ class CreateProduct extends Command
 
     /**
      * Update the first variant's SKU if it's empty
+     * For standalone products (no children), uses the product itself as the variant source
      */
     private function updateFirstVariantSku(array $createdProduct, RetailEdgeProduct $product, $client): void
     {
@@ -1126,14 +1128,17 @@ class CreateProduct extends Command
         }
 
         $firstVariant = $createdProduct['variants']['edges'][0]['node'];
+
+        // For standalone products (no children), use the product itself as the variant source
         $firstChild = $product->children->first();
+        $variantSource = $firstChild ?? $product;
 
         // Check if the first variant has an empty SKU
-        if (empty($firstVariant['sku']) && $firstChild) {
-            $this->line("Updating first variant SKU from empty to: {$firstChild->sku}");
+        if (empty($firstVariant['sku'])) {
+            $this->line("Updating first variant SKU from empty to: {$variantSource->sku}");
 
             // Calculate prices for the first variant
-            $retailPrices = [$firstChild->retail_price1, $firstChild->retail_price2];
+            $retailPrices = [$variantSource->retail_price1, $variantSource->retail_price2];
             $prices = array_filter(array_map('floatval', $retailPrices), function ($price) {
                 return $price > 0;
             });
@@ -1145,9 +1150,9 @@ class CreateProduct extends Command
                 'id' => $firstVariant['id'],
                 'price' => (string) $price,
                 'compareAtPrice' => ($price == $compareAtPrice) ? null : (string) $compareAtPrice,
-                'barcode' => $firstChild->barcode,
+                'barcode' => $variantSource->barcode,
                 'inventoryItem' => [
-                    'sku' => $firstChild->sku,
+                    'sku' => $variantSource->sku,
                     'tracked' => true,
                 ],
                 'inventoryPolicy' => 'DENY',
@@ -1191,7 +1196,7 @@ class CreateProduct extends Command
                         $this->error("First variant SKU update error: {$error['message']}");
                     }
                 } else {
-                    $this->info("Successfully updated first variant SKU to: {$firstChild->sku}");
+                    $this->info("Successfully updated first variant SKU to: {$variantSource->sku}");
                 }
             } catch (\Exception $e) {
                 $this->error('Exception updating first variant SKU: '.$e->getMessage());
