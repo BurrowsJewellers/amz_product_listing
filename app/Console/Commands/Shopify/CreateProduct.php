@@ -125,19 +125,6 @@ class CreateProduct extends Command
                     $this->info('======================================');
                     $this->info("Processing Product: {$product->title} (SKU: {$product->sku})");
 
-                    // Log product creation start
-                    $this->syncLogger->log(
-                        SyncLogger::MARKETPLACE_SHOPIFY,
-                        'shopifyCreateProduct',
-                        $product->sku,
-                        SyncLogger::OP_PRODUCT_CREATE,
-                        SyncLogger::STATUS_PENDING,
-                        [
-                            'item_title' => $product->title,
-                            'message' => "Starting GraphQL product creation for: {$product->title}",
-                        ]
-                    );
-
                     try {
                         // Create product using GraphQL
                         $createdProductData = $this->createProductWithGraphQL($product, $client);
