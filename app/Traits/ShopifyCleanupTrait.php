@@ -38,8 +38,11 @@ trait ShopifyCleanupTrait
                 ShopifyProduct::where('id', $productId)->forceDelete();
             }
 
-            // Reset RetailEdge uploaded flag so product can be recreated
-            RetailEdgeProduct::where('sku', $sku)->update(['uploaded_to_shopify' => 0]);
+            // Only reset uploaded flag if no other Shopify variant record exists for this SKU
+            $remainingSkuVariants = ShopifyProductVariant::where('sku', $sku)->count();
+            if ($remainingSkuVariants === 0) {
+                RetailEdgeProduct::where('sku', $sku)->update(['uploaded_to_shopify' => 0]);
+            }
 
             if (property_exists($this, 'output') && method_exists($this, 'info')) {
                 $this->info("Cleaned stale variant: {$sku}");

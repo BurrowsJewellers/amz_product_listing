@@ -530,16 +530,40 @@ class GetProducts extends Command
      */
     private function handleProductDifferences(array $shopifySkus): void
     {
-        // Get all SKUs from retail_edge_products
-        $retailEdgeSkus = RetailEdgeProduct::whereHas('children', function ($query) {
+        // Get parent products that have children with stock
+        $parentProducts = RetailEdgeProduct::whereHas('children', function ($query) {
             $query->where('quantity', '>', 0);
-        })->pluck('sku')->toArray();
+        })->with(['children' => function ($query) {
+            $query->where('quantity', '>', 0);
+        }])->get();
+
+        // Build a lookup set of Shopify SKUs for fast checking
+        $shopifySkuSet = array_flip($shopifySkus);
+
+        // A parent is only truly "missing" if NONE of its children's SKUs exist in Shopify
+        $skusToRecreate = [];
+        $skippedParents = 0;
+        foreach ($parentProducts as $parent) {
+            $childSkus = $parent->children->pluck('sku')->toArray();
+            $hasChildInShopify = false;
+            foreach ($childSkus as $childSku) {
+                if (isset($shopifySkuSet[$childSku])) {
+                    $hasChildInShopify = true;
+                    break;
+                }
+            }
+            if (! $hasChildInShopify) {
+                $skusToRecreate[] = $parent->sku;
+            } else {
+                $skippedParents++;
+            }
+        }
 
         // Get all SKUs from local Shopify database
         $localShopifySkus = ShopifyProductVariant::pluck('sku')->toArray();
 
-        // Products to recreate (in retail_edge but not in Shopify)
-        $skusToRecreate = array_diff($retailEdgeSkus, $shopifySkus);
+        // Get all retail edge parent SKUs for deletion comparison
+        $retailEdgeSkus = $parentProducts->pluck('sku')->toArray();
 
         // Clean up stale Shopify records before recreation
         // This handles the case where products were deleted from Shopify but local records remain
@@ -561,9 +585,10 @@ class GetProducts extends Command
 
         $this->info('📊 Analysis Results:');
         $this->info('   • Shopify SKUs: '.count($shopifySkus));
-        $this->info('   • Retail Edge SKUs: '.count($retailEdgeSkus));
+        $this->info('   • Retail Edge parent SKUs: '.count($retailEdgeSkus));
         $this->info('   • Local Shopify SKUs: '.count($localShopifySkus));
-        $this->info('   • SKUs to recreate: '.count($skusToRecreate));
+        $this->info('   • Parents to recreate: '.count($skusToRecreate));
+        $this->info('   • Parents skipped (children already in Shopify): '.$skippedParents);
         $this->info('   • SKUs to delete: '.count($skusToDelete));
 
         // Handle recreation
@@ -590,12 +615,22 @@ class GetProducts extends Command
             return;
         }
 
-        // Mark retail_edge products as needing upload
-        $productsToRecreate = RetailEdgeProduct::whereIn('sku', $skusToRecreate)->get();
+        // Mark retail_edge products as needing upload — only reset children NOT already in Shopify
+        $productsToRecreate = RetailEdgeProduct::whereIn('sku', $skusToRecreate)->with('children')->get();
+        $existingVariantSkus = ShopifyProductVariant::pluck('sku')->flip();
 
         foreach ($productsToRecreate as $product) {
-            $product->children()->update(['uploaded_to_shopify' => 0]);
-            $this->info("   • Marked for recreation: {$product->sku} - {$product->title}");
+            $resetCount = 0;
+            $skippedCount = 0;
+            foreach ($product->children as $child) {
+                if ($existingVariantSkus->has($child->sku)) {
+                    $skippedCount++;
+                } else {
+                    $child->update(['uploaded_to_shopify' => 0]);
+                    $resetCount++;
+                }
+            }
+            $this->info("   • Marked for recreation: {$product->sku} - {$product->title} (reset: {$resetCount}, skipped already in Shopify: {$skippedCount})");
         }
 
         $this->stats['created'] = count($skusToRecreate);

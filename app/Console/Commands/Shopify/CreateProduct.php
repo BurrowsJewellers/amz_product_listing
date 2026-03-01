@@ -7,6 +7,7 @@ use App\Models\Brand;
 use App\Models\RetailEdgeProduct;
 use App\Models\ShopifyMetafield;
 use App\Models\ShopifyProductMetafield;
+use App\Models\ShopifyProductVariant;
 use App\Models\ShopifyProductVariantMetafield;
 use App\Services\MetafieldAssignmentService;
 use App\Services\ShopifyService;
@@ -124,6 +125,28 @@ class CreateProduct extends Command
                     }
                     $this->info('======================================');
                     $this->info("Processing Product: {$product->title} (SKU: {$product->sku})");
+
+                    // Safety guard: skip if any children's SKUs already exist in Shopify
+                    if ($product->children->isNotEmpty()) {
+                        $childSkus = $product->children->pluck('sku')->toArray();
+                        $existingChildSkus = ShopifyProductVariant::whereIn('sku', $childSkus)->pluck('sku')->toArray();
+
+                        if (! empty($existingChildSkus)) {
+                            $this->warn("⚠️  Skipping {$product->sku}: children already exist in Shopify: ".implode(', ', $existingChildSkus));
+                            Log::warning('CreateProduct: Skipping product with children already in Shopify', [
+                                'parent_sku' => $product->sku,
+                                'existing_child_skus' => $existingChildSkus,
+                            ]);
+
+                            // Mark parent and children as uploaded to prevent reprocessing
+                            $product->update(['uploaded_to_shopify' => 1]);
+                            $product->children()->whereIn('sku', $existingChildSkus)->update(['uploaded_to_shopify' => 1]);
+
+                            $count = (clone $baseQuery)->count();
+
+                            continue;
+                        }
+                    }
 
                     try {
                         // Create product using GraphQL
