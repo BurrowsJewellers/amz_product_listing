@@ -46,12 +46,14 @@ class JobOrchestrator extends Command
             'marketplace' => 'Shopify',
             'jobs' => [
                 'shopifyGetProducts',                      // 1. Sync existing Shopify products to local DB
-                'shopify:delete-duplicate-variants',       // 2. Clean up duplicate child products
-                'shopifyCreateProduct',                    // 3. Create new products (parents with children as variants)
-                'shopifyUploadImages',                     // 4. Upload product images
-                'shopifyArchiveProducts',                  // 5. Archive discontinued products
+                'shopify:delete-duplicate-products',       // 2. Clean up duplicate parent products (consolidates parent SKU → one Shopify product)
+                'shopify:delete-duplicate-variants',       // 3. Clean up duplicate child variants (relies on step 2 for deterministic parent lookup)
+                'shopifyCreateProduct',                    // 4. Create new products (parents with children as variants)
+                'shopifyUploadImages',                     // 5. Upload product images
+                'shopifyArchiveProducts',                  // 6. Archive discontinued products
             ],
             'job_args' => [
+                'shopify:delete-duplicate-products' => ['--force' => true],
                 'shopify:delete-duplicate-variants' => ['--force' => true],
             ],
         ],
