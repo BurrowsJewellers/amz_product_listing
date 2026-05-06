@@ -275,6 +275,9 @@ class ShopifyCreateMetafieldDefinitions extends Command
                     'gid' => $created['id'],
                 ]);
                 $this->info("Successfully created synthetic metafield '{$row->name}' ({$ownerType}) with GID: {$row->gid}");
+            } else {
+                $this->error("Failed to create synthetic metafield definition for '{$name}' ({$ownerType}). Response: ".json_encode($resultBody));
+                Log::error("Failed to create synthetic Shopify metafield '{$name}' ({$ownerType}). Response: ".json_encode($resultBody));
             }
         } catch (\Exception $e) {
             $this->error("Exception while creating synthetic metafield '{$name}' ({$ownerType}): ".$e->getMessage());
