@@ -2,12 +2,17 @@
 
 namespace App\Console\Commands\Shopify;
 
+use App\Models\RetailEdgeProduct;
+use App\Models\ShopifyMetafield;
+use App\Models\ShopifyProduct;
+use App\Services\MetafieldAssignmentService;
 use App\Services\ShopifyConnectionService;
 use App\Traits\ShopifyErrorFormatterTrait;
 use Illuminate\Console\Command;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Shopify\Clients\Graphql;
 
 class BackfillMetafields extends Command
 {
@@ -89,6 +94,161 @@ class BackfillMetafields extends Command
 
     private function processProduct(object $row, bool $dryRun, array &$stats): void
     {
-        // Implemented in Task 7
+        $shopifyProduct = ShopifyProduct::with('variants')->find($row->shopify_products_id);
+        if (! $shopifyProduct) {
+            return;
+        }
+
+        $variantSkus = $shopifyProduct->variants->pluck('sku')->filter()->values();
+        if ($variantSkus->isEmpty()) {
+            return;
+        }
+
+        $parent = $this->resolveParent($variantSkus->first());
+        if (! $parent) {
+            return;
+        }
+
+        $service = new MetafieldAssignmentService;
+        $assignment = $service->determineMetafieldAssignment($parent);
+
+        $batch = $this->buildMetafieldBatch($shopifyProduct, $assignment);
+        if (empty($batch)) {
+            return;
+        }
+
+        $productCount = count(array_filter($batch, fn ($m) => str_contains($m['ownerId'], '/Product/')));
+        $variantCount = count(array_filter($batch, fn ($m) => str_contains($m['ownerId'], '/ProductVariant/')));
+
+        if ($dryRun) {
+            $this->line(" [DRY] {$row->gid}: would set ".count($batch).' metafields');
+            $stats['product_writes'] += $productCount;
+            $stats['variant_writes'] += $variantCount;
+
+            return;
+        }
+
+        $this->writeBatch($batch);
+        $stats['product_writes'] += $productCount;
+        $stats['variant_writes'] += $variantCount;
+        usleep(100_000);
+    }
+
+    private function resolveParent(string $variantSku): ?RetailEdgeProduct
+    {
+        $variantRep = RetailEdgeProduct::where('sku', $variantSku)->first();
+        if (! $variantRep) {
+            return null;
+        }
+
+        if (empty($variantRep->old_key) || $variantRep->old_key === $variantRep->sku) {
+            return $variantRep; // standalone or self-parent
+        }
+
+        return RetailEdgeProduct::where('sku', $variantRep->old_key)->first() ?? $variantRep;
+    }
+
+    private function buildMetafieldBatch(ShopifyProduct $shopifyProduct, array $assignment): array
+    {
+        $batch = [];
+
+        // Product-level entries
+        foreach ($assignment['product_metafields'] as $mf) {
+            $def = ShopifyMetafield::where('name', $mf['isd_name'])
+                ->where('owner_type', 'PRODUCT')
+                ->first();
+            if (! $def || empty($mf['value'])) {
+                continue;
+            }
+            $batch[] = [
+                'ownerId' => "gid://shopify/Product/{$shopifyProduct->product_id}",
+                'namespace' => $def->namespace,
+                'key' => $def->key,
+                'type' => $def->type,
+                'value' => (string) $mf['value'],
+            ];
+        }
+
+        // Variant-level ISD entries
+        foreach ($assignment['variant_metafields'] as $variantSku => $metafields) {
+            $variantRow = $shopifyProduct->variants->firstWhere('sku', $variantSku);
+            if (! $variantRow || empty($variantRow->variant_id)) {
+                continue;
+            }
+            $ownerId = "gid://shopify/ProductVariant/{$variantRow->variant_id}";
+
+            foreach ($metafields as $mf) {
+                $def = ShopifyMetafield::where('name', $mf['isd_name'])
+                    ->where('owner_type', 'PRODUCTVARIANT')
+                    ->first();
+                if (! $def || empty($mf['value'])) {
+                    continue;
+                }
+                $batch[] = [
+                    'ownerId' => $ownerId,
+                    'namespace' => $def->namespace,
+                    'key' => $def->key,
+                    'type' => $def->type,
+                    'value' => (string) $mf['value'],
+                ];
+            }
+        }
+
+        // design_number_variant — full design number per variant
+        $designDef = ShopifyMetafield::where('namespace', 'custom')
+            ->where('key', 'design_number_variant')
+            ->where('owner_type', 'PRODUCTVARIANT')
+            ->first();
+
+        if ($designDef) {
+            foreach ($shopifyProduct->variants as $variantRow) {
+                if (empty($variantRow->variant_id) || empty($variantRow->sku)) {
+                    continue;
+                }
+                $rep = RetailEdgeProduct::where('sku', $variantRow->sku)->first();
+                if (! $rep || empty($rep->real_design_number)) {
+                    continue;
+                }
+                $batch[] = [
+                    'ownerId' => "gid://shopify/ProductVariant/{$variantRow->variant_id}",
+                    'namespace' => $designDef->namespace,
+                    'key' => $designDef->key,
+                    'type' => $designDef->type,
+                    'value' => (string) $rep->real_design_number,
+                ];
+            }
+        }
+
+        return $batch;
+    }
+
+    private function writeBatch(array $batch): void
+    {
+        $session = $this->connectionService->getSession();
+        $client = new Graphql($session->getShop(), $session->getAccessToken());
+
+        $mutation = <<<'GRAPHQL'
+    mutation metafieldsSet($metafields: [MetafieldsSetInput!]!) {
+      metafieldsSet(metafields: $metafields) {
+        metafields { id namespace key value ownerType }
+        userErrors { field message }
+      }
+    }
+    GRAPHQL;
+
+        foreach (array_chunk($batch, 25) as $chunk) {
+            $response = $client->query(['query' => $mutation, 'variables' => ['metafields' => $chunk]]);
+            $body = json_decode($response->getBody()->getContents(), true);
+
+            $userErrors = $body['data']['metafieldsSet']['userErrors'] ?? ($body['errors'] ?? []);
+            if (! empty($userErrors)) {
+                $msg = $this->formatGraphQLErrorMessage([
+                    'userErrors' => $userErrors,
+                    'errors' => $body['errors'] ?? [],
+                ]);
+                Log::warning('shopify:backfill-metafields userErrors', ['msg' => $msg, 'count' => count($chunk)]);
+                $this->warn('userErrors: '.$msg);
+            }
+        }
     }
 }
