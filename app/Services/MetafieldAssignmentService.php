@@ -16,11 +16,12 @@ class MetafieldAssignmentService
         $childrenCount = $children->count();
 
         if ($childrenCount <= 1) {
-            // Single variant: all metafields go to PRODUCT
+            $isds = $this->getAllProductISDs($product);
+
             return [
                 'type' => 'PRODUCT_ONLY',
-                'product_metafields' => $this->getAllProductISDs($product),
-                'variant_metafields' => [],
+                'product_metafields' => $isds['product_metafields'],
+                'variant_metafields' => $isds['variant_metafields'],
             ];
         }
 
@@ -29,28 +30,42 @@ class MetafieldAssignmentService
     }
 
     /**
-     * Get all ISDs for a product (used when single variant)
+     * Get all ISDs for a product (used when single variant or no variants)
      */
     private function getAllProductISDs(RetailEdgeProduct $product): array
     {
         $productMetafields = [];
+        $variantMetafields = [];
 
-        // For single variant, get ISDs from the product itself or its single child
-        $targetSku = $product->children->count() === 1 ? $product->children->first()->sku : $product->sku;
+        $singleChild = $product->children->count() === 1 ? $product->children->first() : null;
+        $targetSku = $singleChild ? $singleChild->sku : $product->sku;
 
         $isds = RetailEdgeProductIsd::where('sku', $targetSku)->get();
 
         foreach ($isds as $isd) {
-            if (! empty($isd->isd_value)) {
-                $productMetafields[] = [
+            if (empty($isd->isd_value)) {
+                continue;
+            }
+
+            $productMetafields[] = [
+                'isd_name' => $isd->isd_name,
+                'value' => $isd->isd_value,
+                'key_suffix' => '_product',
+            ];
+
+            if ($singleChild) {
+                $variantMetafields[$singleChild->sku][] = [
                     'isd_name' => $isd->isd_name,
                     'value' => $isd->isd_value,
-                    'key_suffix' => '_product',
+                    'key_suffix' => '_variant',
                 ];
             }
         }
 
-        return $productMetafields;
+        return [
+            'product_metafields' => $productMetafields,
+            'variant_metafields' => $variantMetafields,
+        ];
     }
 
     /**
@@ -85,12 +100,22 @@ class MetafieldAssignmentService
             }
 
             if (count($uniqueValues) === 1) {
-                // Common value across all variants → Product metafield
+                // Common value across all variants → Product metafield AND each variant
+                $sharedValue = reset($uniqueValues);
+
                 $commonMetafields[] = [
                     'isd_name' => $isdName,
-                    'value' => reset($uniqueValues),
+                    'value' => $sharedValue,
                     'key_suffix' => '_product',
                 ];
+
+                foreach (array_keys($values) as $childSku) {
+                    $variantMetafields[$childSku][] = [
+                        'isd_name' => $isdName,
+                        'value' => $sharedValue,
+                        'key_suffix' => '_variant',
+                    ];
+                }
             } else {
                 // Different values → Variant metafields
                 foreach ($values as $sku => $value) {
