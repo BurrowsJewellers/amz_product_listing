@@ -306,7 +306,10 @@ class UpdateProduct extends Command
     {
         $mktDescription = $product->marketing_description ?? '';
         if ($product->brand?->name == 'Pandora') {
-            $mktDescription .= ' - Design number: '.$product->real_design_number;
+            $designNumber = explode('-', (string) $product->real_design_number)[0];
+            if ($designNumber !== '') {
+                $mktDescription .= ' - Design number: '.$designNumber;
+            }
         }
 
         return $mktDescription;

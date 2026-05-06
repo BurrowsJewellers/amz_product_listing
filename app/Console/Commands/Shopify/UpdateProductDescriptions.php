@@ -348,7 +348,10 @@ class UpdateProductDescriptions extends Command
 
         // Add design number to all products (not just Pandora)
         if (! empty($product->real_design_number)) {
-            $mktDescription .= ' - Design number: '.$product->real_design_number;
+            $designNumber = explode('-', (string) $product->real_design_number)[0];
+            if ($designNumber !== '') {
+                $mktDescription .= ' - Design number: '.$designNumber;
+            }
         }
 
         return $mktDescription;
