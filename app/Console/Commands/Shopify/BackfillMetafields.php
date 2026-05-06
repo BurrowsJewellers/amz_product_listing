@@ -71,11 +71,12 @@ class BackfillMetafields extends Command
             $this->definitionCache["{$def->name}|{$def->owner_type}"] = $def;
         }
 
-        // Load design_number_variant definition separately
-        $this->designDefinition = ShopifyMetafield::where('namespace', 'custom')
-            ->where('key', 'design_number_variant')
-            ->where('owner_type', 'PRODUCTVARIANT')
-            ->first();
+        // Load design_number_variant definition from the already-loaded cache
+        $this->designDefinition = collect($this->definitionCache)->first(
+            fn ($d) => $d->namespace === 'custom'
+                && $d->key === 'design_number_variant'
+                && $d->owner_type === 'PRODUCTVARIANT'
+        );
 
         $products = $this->collectProducts($sku, $limit);
         $this->info('Products in scope: '.$products->count());
@@ -183,6 +184,7 @@ class BackfillMetafields extends Command
         $stats['variant_writes'] += $variantCount;
 
         if ($userErrorCount > 0) {
+            $stats['errors']++;
             $this->syncLogger->logFailure(
                 SyncLogger::MARKETPLACE_SHOPIFY,
                 'shopify:backfill-metafields',
