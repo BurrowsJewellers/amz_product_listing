@@ -276,6 +276,25 @@ class UpdateProduct extends Command
                     }
                 }
 
+                // design_number_variant — full RetailEdge real_design_number for this variant
+                $designDef = ShopifyMetafield::where('namespace', 'custom')
+                    ->where('key', 'design_number_variant')
+                    ->where('owner_type', 'PRODUCTVARIANT')
+                    ->first();
+
+                if ($designDef && ! empty($retailEdgeProduct->real_design_number)) {
+                    $metafieldsToSet[] = [
+                        'ownerId' => "gid://shopify/ProductVariant/{$variant->variant_id}",
+                        'namespace' => $designDef->namespace,
+                        'key' => $designDef->key,
+                        'type' => $designDef->type,
+                        'value' => (string) $retailEdgeProduct->real_design_number,
+                    ];
+                    $this->line("Added design_number_variant: {$variant->sku} = {$retailEdgeProduct->real_design_number}");
+                } elseif (! $designDef) {
+                    $this->warn('design_number_variant definition not found in shopify_metafields. Run shopify:create-metafield-definitions.');
+                }
+
                 // Batch process metafields in chunks of 250 (Shopify's limit)
                 if (! empty($metafieldsToSet)) {
                     $this->processMetafieldsInBatches($metafieldsToSet, $variant->sku, $retailEdgeProduct->sku, $client);
