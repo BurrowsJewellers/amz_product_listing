@@ -40,6 +40,8 @@ class SyncLogger
 
     public const OP_METAFIELD_UPDATE = 'metafield_update';
 
+    public const OP_METAFIELD_BACKFILL = 'metafield_backfill';
+
     public const OP_FEED_SUBMIT = 'feed_submit';
 
     public const OP_FEED_STATUS_CHECK = 'feed_status_check';
@@ -288,6 +290,7 @@ class SyncLogger
             self::OP_IMAGE_UPLOAD,
             self::OP_IMAGE_DELETE,
             self::OP_METAFIELD_UPDATE,
+            self::OP_METAFIELD_BACKFILL,
             self::OP_FEED_SUBMIT,
             self::OP_FEED_STATUS_CHECK,
         ];
