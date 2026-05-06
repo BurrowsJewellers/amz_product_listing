@@ -184,6 +184,14 @@ class ShopifyCreateMetafieldDefinitions extends Command
                 }
             }
 
+            $this->createSyntheticDefinition(
+                name: 'Design Number',
+                namespace: $defaultNamespace,
+                key: 'design_number_variant',
+                type: 'single_line_text_field',
+                ownerType: 'PRODUCTVARIANT',
+            );
+
             $this->info('Shopify metafield definition creation process finished.');
 
             $job->finishJob();
@@ -197,6 +205,80 @@ class ShopifyCreateMetafieldDefinitions extends Command
             Log::error("$marketplace $jobType failed: ".$e->getMessage());
 
             return Command::FAILURE;
+        }
+    }
+
+    private function createSyntheticDefinition(
+        string $name,
+        string $namespace,
+        string $key,
+        string $type,
+        string $ownerType,
+    ): void {
+        $existing = ShopifyMetafield::where('namespace', $namespace)
+            ->where('key', $key)
+            ->where('owner_type', $ownerType)
+            ->first();
+
+        if ($existing) {
+            $this->line("Synthetic metafield definition '{$name}' ({$ownerType}) already exists with GID: {$existing->gid}. Skipping.");
+
+            return;
+        }
+
+        $mutation = <<<'GRAPHQL'
+        mutation CreateMetafieldDefinition($definition: MetafieldDefinitionInput!) {
+          metafieldDefinitionCreate(definition: $definition) {
+            createdDefinition { id name namespace key type { name } ownerType }
+            userErrors { field message }
+          }
+        }
+        GRAPHQL;
+
+        $variables = [
+            'definition' => [
+                'name' => $name,
+                'namespace' => $namespace,
+                'key' => $key,
+                'type' => $type,
+                'ownerType' => $ownerType,
+                'description' => "Metafield for {$name} ({$ownerType})",
+            ],
+        ];
+
+        try {
+            $session = $this->shopifyConnectionService->getSession();
+            $client = new Graphql($session->getShop(), $session->getAccessToken());
+            $response = $client->query(['query' => $mutation, 'variables' => $variables]);
+
+            $resultBody = json_decode($response->getBody()->getContents(), true);
+            $result = $resultBody['data']['metafieldDefinitionCreate'] ?? null;
+            $errors = $resultBody['errors'] ?? ($result['userErrors'] ?? []);
+
+            if (! empty($errors)) {
+                foreach ($errors as $error) {
+                    $this->error("Shopify API Error for '{$name}' ({$ownerType}): ".($error['message'] ?? 'Unknown error'));
+                    Log::error("Shopify API Error for synthetic metafield '{$name}' ({$ownerType}): ".json_encode($error));
+                }
+
+                return;
+            }
+
+            if (! empty($result['createdDefinition'])) {
+                $created = $result['createdDefinition'];
+                $row = ShopifyMetafield::create([
+                    'name' => $created['name'],
+                    'namespace' => $created['namespace'],
+                    'key' => $created['key'],
+                    'type' => $created['type']['name'],
+                    'owner_type' => $created['ownerType'],
+                    'gid' => $created['id'],
+                ]);
+                $this->info("Successfully created synthetic metafield '{$row->name}' ({$ownerType}) with GID: {$row->gid}");
+            }
+        } catch (\Exception $e) {
+            $this->error("Exception while creating synthetic metafield '{$name}' ({$ownerType}): ".$e->getMessage());
+            Log::error("Exception for synthetic metafield '{$name}' ({$ownerType}): ".$e->getMessage(), ['exception' => $e]);
         }
     }
 }
