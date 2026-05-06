@@ -747,6 +747,38 @@ class CreateProduct extends Command
             }
         }
 
+        // design_number_variant — full RetailEdge real_design_number per variant
+        $designDef = ShopifyMetafield::where('namespace', 'custom')
+            ->where('key', 'design_number_variant')
+            ->where('owner_type', 'PRODUCTVARIANT')
+            ->first();
+
+        if ($designDef) {
+            $variantSkus = $product->children->isNotEmpty()
+                ? $product->children->pluck('sku', 'sku')
+                : collect([$product->sku => $product->sku]);
+
+            foreach ($variantSkus as $variantSku) {
+                $variantId = $this->findVariantIdBySku($createdProductData, $variantSku);
+                $variantRep = RetailEdgeProduct::where('sku', $variantSku)->first();
+
+                if (! $variantId || ! $variantRep || empty($variantRep->real_design_number)) {
+                    continue;
+                }
+
+                $metafieldsToSet[] = [
+                    'ownerId' => $variantId,
+                    'namespace' => $designDef->namespace,
+                    'key' => $designDef->key,
+                    'type' => $designDef->type,
+                    'value' => (string) $variantRep->real_design_number,
+                ];
+                $this->line("Added design_number_variant: {$variantSku} = {$variantRep->real_design_number}");
+            }
+        } else {
+            $this->warn('design_number_variant definition not found in shopify_metafields. Run shopify:create-metafield-definitions.');
+        }
+
         // Batch process metafields in chunks of 250 (Shopify's limit)
         if (! empty($metafieldsToSet)) {
             $this->processMetafieldsInBatches($metafieldsToSet, $product, $client);
@@ -876,10 +908,10 @@ class CreateProduct extends Command
     private function buildProductDescription(RetailEdgeProduct $product): string
     {
         $mktDescription = $product->marketing_description ?? '';
-        if ($product->brand?->name == 'Pandora') {
-            $mktDescription .= ' - Design number: '.$product->real_design_number;
-        } else {
-            $mktDescription .= ' - Design number: '.$product->real_design_number;
+        $designNumber = explode('-', (string) $product->real_design_number)[0];
+
+        if ($designNumber !== '') {
+            $mktDescription .= ' - Design number: '.$designNumber;
         }
 
         return $mktDescription;
