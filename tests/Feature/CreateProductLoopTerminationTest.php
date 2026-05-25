@@ -40,6 +40,7 @@ class CreateProductLoopTerminationTest extends TestCase
             $t->string('old_key')->nullable();
             $t->integer('quantity')->default(0);
             $t->integer('uploaded_to_shopify')->default(0);
+            $t->timestamps();
         });
         Schema::create('shopify_product_variants', function ($t) {
             $t->increments('id');
@@ -94,6 +95,51 @@ class CreateProductLoopTerminationTest extends TestCase
 
         // And once excluded, nothing else matches the P-2 restriction.
         $this->assertNull($cmd->nextPendingProduct([$only->id], 'P-2'));
+    }
+
+    public function test_reconcile_children_marks_only_skus_that_became_variants(): void
+    {
+        // Parent + 3 children; only C1 ends up as a real Shopify variant (option collapse).
+        DB::table('retail_edge_products')->insert([
+            ['sku' => 'PAR', 'old_key' => 'PAR', 'quantity' => 1, 'uploaded_to_shopify' => 0],
+            ['sku' => 'C1', 'old_key' => 'PAR', 'quantity' => 1, 'uploaded_to_shopify' => 0],
+            ['sku' => 'C2', 'old_key' => 'PAR', 'quantity' => 1, 'uploaded_to_shopify' => 0],
+            ['sku' => 'C3', 'old_key' => 'PAR', 'quantity' => 1, 'uploaded_to_shopify' => 0],
+        ]);
+
+        $cmd = new CreateProduct;
+        $product = \App\Models\RetailEdgeProduct::where('sku', 'PAR')->with('children')->first();
+
+        $createdData = ['variants' => ['edges' => [['node' => ['sku' => 'C1']]]]];
+        $result = $cmd->reconcileChildrenAfterCreate($product, $createdData);
+
+        $this->assertSame(['C1'], $result['created']);
+        $this->assertEqualsCanonicalizing(['C2', 'C3'], $result['blocked']);
+
+        $val = fn ($sku) => (int) \App\Models\RetailEdgeProduct::where('sku', $sku)->value('uploaded_to_shopify');
+        $this->assertSame(1, $val('C1'), 'A child that became a variant is uploaded.');
+        $this->assertSame(CreateProduct::STATUS_NEEDS_REVIEW, $val('C2'), 'A child with no variant is flagged, not falsely synced.');
+        $this->assertSame(CreateProduct::STATUS_NEEDS_REVIEW, $val('C3'));
+        $this->assertSame(CreateProduct::STATUS_NEEDS_REVIEW, $val('PAR'), 'Parent is flagged when any child is blocked.');
+    }
+
+    public function test_reconcile_children_marks_all_uploaded_when_every_variant_present(): void
+    {
+        DB::table('retail_edge_products')->insert([
+            ['sku' => 'PAR', 'old_key' => 'PAR', 'quantity' => 1, 'uploaded_to_shopify' => 0],
+            ['sku' => 'C1', 'old_key' => 'PAR', 'quantity' => 1, 'uploaded_to_shopify' => 0],
+            ['sku' => 'C2', 'old_key' => 'PAR', 'quantity' => 1, 'uploaded_to_shopify' => 0],
+        ]);
+
+        $cmd = new CreateProduct;
+        $product = \App\Models\RetailEdgeProduct::where('sku', 'PAR')->with('children')->first();
+
+        $createdData = ['variants' => ['edges' => [['node' => ['sku' => 'C1']], ['node' => ['sku' => 'C2']]]]];
+        $result = $cmd->reconcileChildrenAfterCreate($product, $createdData);
+
+        $this->assertEqualsCanonicalizing(['C1', 'C2'], $result['created']);
+        $this->assertSame([], $result['blocked']);
+        $this->assertSame(1, (int) \App\Models\RetailEdgeProduct::where('sku', 'PAR')->value('uploaded_to_shopify'));
     }
 
     public function test_classify_product_fetch_distinguishes_live_gone_and_error(): void
