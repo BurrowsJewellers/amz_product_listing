@@ -103,12 +103,10 @@ Schedule::command(UpdateProduct::class)
 
 // Note: shopifyRetryFailedInventoryUpdates removed - redundant with UpdatePriceInventoryBatch::processFailedUpdates()
 
-// Legacy single job (kept for backward compatibility, but with pause checking)
-Schedule::command('getProductsFromEWeb')
-    ->everyFifteenMinutes()
-    ->when(function () {
-        return ! \App\Http\Controllers\SyncJobController::isPaused('getProductsFromEWeb');
-    });
+// Removed: legacy `getProductsFromEWeb` schedule. No command has that exact signature
+// (only getProductsFromEWebMain / getProductsFromEWebAmazon), so it threw
+// "Command getProductsFromEWeb is ambiguous." every 15 minutes and never ran. The main
+// EWeb sync is handled by the main-sync orchestrator chain (getProductsFromEWebMain).
 
 // ========================================
 // DISABLED/DEPRECATED JOBS

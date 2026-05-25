@@ -45,15 +45,18 @@ class GetProductsFromEWebForAmazon extends Command
     {
         $marketplace = 'EWeb';
         $jobType = 'getProductsFromEWebAmazon';
-        $job = SyncJobController::getJob($jobType, $marketplace);
 
-        // if ($job->isRunning()) {
-        //     Log::info("$marketplace $jobType is already running.");
-        //     return;
-        // }
+        // Acquire the lock via startJob() (records started_at/last_heartbeat/process_id)
+        // so a hard process death leaves a *recoverable* lock instead of an unrecoverable
+        // orphan (status=1 with null timing). Previously this set status=1 directly.
+        $job = SyncJobController::acquireLock($jobType, $marketplace);
+        if (! $job) {
+            Log::info("$marketplace $jobType: cannot acquire lock (already running or paused)");
+
+            return;
+        }
 
         Log::info("$marketplace $jobType started!");
-        $job->update(['status' => 1]);
 
         try {
             $this->initializeRequirements();
@@ -71,10 +74,10 @@ class GetProductsFromEWebForAmazon extends Command
             }
 
             $this->handleInactiveProducts($webOptionBoolean7FalseSkus);
-            $job->update(['status' => 0, 'message' => null]);
+            $job->finishJob();
         } catch (\Exception $e) {
             report($e);
-            $job->update(['status' => 0, 'message' => $e->getMessage()]);
+            $job->finishJob($e->getMessage());
         }
 
         Log::info("$marketplace $jobType finished!");

@@ -81,6 +81,14 @@ class JobRecovery extends Command
                 }
             }
 
+            // Orphaned lock: marked running but with no started_at/heartbeat to age out
+            // (status set to running without startJob() and the process died). Without
+            // this it could never be recovered and would block its whole chain.
+            if (! $isStuck && ! $job->started_at && ! $job->last_heartbeat) {
+                $isStuck = true;
+                $reason = 'Orphaned lock (running with no started_at/heartbeat)';
+            }
+
             if ($isStuck) {
                 $stuckJobs[] = ['job' => $job, 'reason' => $reason];
             } else {
@@ -112,6 +120,15 @@ class JobRecovery extends Command
             $this->line("  - {$job->type} ({$job->marketplace}): {$reason}");
 
             if (! $isDryRun) {
+                // Terminate the process if it is still alive, otherwise freeing the lock
+                // just lets a zombie keep running (and re-logging) after recovery.
+                if ($job->process_id && function_exists('posix_kill') && @posix_kill((int) $job->process_id, 0)) {
+                    $signal = defined('SIGTERM') ? SIGTERM : 15;
+                    @posix_kill((int) $job->process_id, $signal);
+                    Log::warning("Job recovery: sent SIGTERM to stuck process {$job->process_id} for {$job->type} ({$job->marketplace})");
+                    $this->warn("    ↳ sent SIGTERM to live PID {$job->process_id}");
+                }
+
                 $previousMessage = $job->message;
                 $job->finishJob('Auto-recovered: '.$reason.($previousMessage ? ". Previous: {$previousMessage}" : ''));
 

@@ -80,6 +80,13 @@ class SyncJob extends Model
             return false;
         }
 
+        // Orphaned lock: marked running but with no started_at/heartbeat to age out.
+        // Happens when a job sets status=1 without startJob() and its process dies.
+        // Without this, such a row can never be recovered and blocks its whole chain.
+        if ($this->started_at === null && $this->last_heartbeat === null) {
+            return true;
+        }
+
         $timeoutMinutes = $this->timeout_minutes ?? 30;
         $timeoutAt = $this->started_at?->addMinutes($timeoutMinutes);
         $heartbeatStale = $this->last_heartbeat?->addMinutes(5);

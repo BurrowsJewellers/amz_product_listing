@@ -12,6 +12,7 @@ use App\Models\ShopifyProductVariantMetafield;
 use App\Services\MetafieldAssignmentService;
 use App\Services\ShopifyService;
 use App\Services\SyncLogger;
+use App\Traits\ShopifyCleanupTrait;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -19,6 +20,8 @@ use Shopify\Clients\Graphql;
 
 class CreateProduct extends Command
 {
+    use ShopifyCleanupTrait;
+
     /**
      * Sync logger for operation tracking
      */
@@ -34,7 +37,9 @@ class CreateProduct extends Command
      *
      * @var string
      */
-    protected $signature = 'shopifyCreateProduct';
+    protected $signature = 'shopifyCreateProduct
+                            {--sku= : Only process this single parent SKU (for controlled/manual runs)}
+                            {--limit= : Stop after processing this many products (for controlled/manual runs)}';
 
     /**
      * The console command description.
@@ -67,29 +72,8 @@ class CreateProduct extends Command
             // Initialize sync logger for operation tracking
             $this->syncLogger = new SyncLogger;
 
-            // Single Eloquent query for pending parent/standalone products
-            // This replaces the previous two-query approach (raw SQL + Eloquent)
-            $baseQuery = RetailEdgeProduct::query()
-                // Not in Shopify (SKU not found in shopify_product_variants)
-                ->whereNotExists(function ($subquery) {
-                    $subquery->select(DB::raw(1))
-                        ->from('shopify_product_variants')
-                        ->whereColumn('shopify_product_variants.sku', 'retail_edge_products.sku');
-                })
-                // Parent/Standalone only (old_key = sku OR old_key is empty)
-                // Child products have old_key pointing to their parent's SKU
-                ->where(function ($q) {
-                    $q->whereColumn('old_key', 'sku')
-                        ->orWhere('old_key', '');
-                })
-                // Has stock
-                ->where('quantity', '>', 0)
-                // Has pending children OR is standalone (no children)
-                ->where(function ($q) {
-                    $q->whereHas('children', fn ($c) => $c->where('uploaded_to_shopify', 0))
-                        ->orWhereDoesntHave('children');
-                });
-
+            // Pending parent/standalone products are selected via pendingParentBaseQuery()
+            // so the count and the iteration share one definition (see methods below).
             $session = (new ShopifyService)->getSession();
             $variantTypes = ['vt1' => 'Size', 'vt2' => 'Color', 'vt3' => 'Material', 'vt4' => 'Style'];
 
@@ -102,14 +86,31 @@ class CreateProduct extends Command
                 $brandsArray[$brand->brand_id]['name'] = $brand->name;
             }
 
-            $count = (clone $baseQuery)->count();
+            // Optional controlled-run constraints (default: process everything).
+            $onlySku = $this->option('sku') ?: null;
+            $limit = $this->option('limit') !== null ? (int) $this->option('limit') : null;
+
+            $count = $this->pendingParentBaseQuery()
+                ->when($onlySku, fn ($q) => $q->where('retail_edge_products.sku', $onlySku))
+                ->count();
 
             // Initialize GraphQL client
             $client = new Graphql($session->getShop(), $session->getAccessToken());
 
-            while ($count) {
-                $this->info('Count: '.$count);
-                $product = (clone $baseQuery)->with(['brand', 'children'])->first();
+            // Process each pending parent at most once. Tracking handled IDs guarantees
+            // the loop terminates even when a parent cannot be removed from the query by
+            // our writes — the root cause of the prior infinite loop on a parent whose
+            // children only partially exist in Shopify.
+            $processedIds = [];
+
+            while ($product = $this->nextPendingProduct($processedIds, $onlySku)) {
+                if ($limit !== null && count($processedIds) >= $limit) {
+                    $this->info("Reached --limit={$limit}; stopping this run.");
+                    break;
+                }
+
+                $processedIds[] = $product->id;
+                $this->info('Pending: '.$count.' | processed this run: '.count($processedIds)." (latest: {$product->sku})");
 
                 if ($product) {
                     // Defensive check: skip if this is somehow a child product
@@ -119,32 +120,30 @@ class CreateProduct extends Command
                             'old_key' => $product->old_key,
                         ]);
                         $product->update(['uploaded_to_shopify' => 1]); // Mark to prevent reprocessing
-                        $count = (clone $baseQuery)->count();
 
                         continue;
                     }
                     $this->info('======================================');
                     $this->info("Processing Product: {$product->title} (SKU: {$product->sku})");
 
-                    // Safety guard: skip if any children's SKUs already exist in Shopify
+                    // If any children are flagged as already in Shopify, reconcile against
+                    // the live store: add missing variants to a still-live product, or clean
+                    // up a stale mirror (deleted product) and fall through to recreate.
                     if ($product->children->isNotEmpty()) {
                         $childSkus = $product->children->pluck('sku')->toArray();
                         $existingChildSkus = ShopifyProductVariant::whereIn('sku', $childSkus)->pluck('sku')->toArray();
 
                         if (! empty($existingChildSkus)) {
-                            $this->warn("⚠️  Skipping {$product->sku}: children already exist in Shopify: ".implode(', ', $existingChildSkus));
-                            Log::warning('CreateProduct: Skipping product with children already in Shopify', [
-                                'parent_sku' => $product->sku,
-                                'existing_child_skus' => $existingChildSkus,
-                            ]);
+                            $outcome = $this->reconcileExistingChildren($product, $existingChildSkus, $client);
 
-                            // Mark parent and children as uploaded to prevent reprocessing
-                            $product->update(['uploaded_to_shopify' => 1]);
-                            $product->children()->whereIn('sku', $existingChildSkus)->update(['uploaded_to_shopify' => 1]);
+                            // 'added'    -> variants added to a still-live product; done with this parent
+                            // 'skip'     -> transient error verifying the product; retry on a later run
+                            // 'recreate' -> stale mirror was cleaned up; fall through and create it fresh
+                            if ($outcome !== 'recreate') {
+                                $job->updateHeartbeat();
 
-                            $count = (clone $baseQuery)->count();
-
-                            continue;
+                                continue;
+                            }
                         }
                     }
 
@@ -246,8 +245,6 @@ class CreateProduct extends Command
                     usleep(1500000); // 1.5 second delay
                     $job->updateHeartbeat(); // Update heartbeat after each product
                 }
-
-                $count = (clone $baseQuery)->count();
             }
 
             if ($product_errors_occurred) {
@@ -267,6 +264,207 @@ class CreateProduct extends Command
 
             return Command::FAILURE;
         }
+    }
+
+    /**
+     * Base query for pending parent/standalone products that need a Shopify product.
+     *
+     * Conditions: SKU not yet in Shopify, parent/standalone (old_key = sku or empty),
+     * in stock, and either has at least one pending child or no children at all.
+     */
+    protected function pendingParentBaseQuery()
+    {
+        return RetailEdgeProduct::query()
+            ->whereNotExists(function ($subquery) {
+                $subquery->select(DB::raw(1))
+                    ->from('shopify_product_variants')
+                    ->whereColumn('shopify_product_variants.sku', 'retail_edge_products.sku');
+            })
+            ->where(function ($q) {
+                $q->whereColumn('old_key', 'sku')
+                    ->orWhere('old_key', '');
+            })
+            ->where('quantity', '>', 0)
+            ->where(function ($q) {
+                $q->whereHas('children', fn ($c) => $c->where('uploaded_to_shopify', 0))
+                    ->orWhereDoesntHave('children');
+            });
+    }
+
+    /**
+     * Fetch the next pending parent to process, excluding ones already handled this run.
+     *
+     * Excluding handled IDs guarantees the create loop terminates: each parent is
+     * returned at most once even if our writes cannot remove it from the base query.
+     */
+    public function nextPendingProduct(array $excludeIds = [], ?string $onlySku = null): ?RetailEdgeProduct
+    {
+        return $this->pendingParentBaseQuery()
+            ->when($excludeIds, fn ($q) => $q->whereNotIn('retail_edge_products.id', $excludeIds))
+            ->when($onlySku, fn ($q) => $q->where('retail_edge_products.sku', $onlySku))
+            ->with(['brand', 'children'])
+            ->first();
+    }
+
+    /**
+     * Reconcile a parent whose children are flagged as already existing in Shopify.
+     *
+     * The local mirror can be stale (the Shopify product was deleted but the
+     * shopify_product_variants rows remain), so verify against the live store:
+     *  - live     -> add the missing children as variants; returns 'added'
+     *  - gone     -> clean up the orphaned local rows; returns 'recreate' (the caller
+     *                then creates the product fresh)
+     *  - error    -> transient failure verifying; returns 'skip' (retry next run —
+     *                never delete the mirror on an unconfirmed result)
+     *
+     * @return string one of 'added' | 'recreate' | 'skip'
+     */
+    private function reconcileExistingChildren(RetailEdgeProduct $product, array $existingChildSkus, $client): string
+    {
+        // Resolve the Shopify product from a child that claims to be synced.
+        $existingVariant = ShopifyProductVariant::whereIn('sku', $existingChildSkus)
+            ->whereNotNull('product_id')
+            ->first();
+
+        if (! $existingVariant || empty($existingVariant->product_id)) {
+            // Mirror references children but no product id — treat as stale and recreate.
+            $this->warn("⚠️  {$product->sku}: child variants present without a product id — cleaning stale mirror");
+            $this->cleanupStaleMirrorFor($existingChildSkus);
+
+            return 'recreate';
+        }
+
+        $productGid = 'gid://shopify/Product/'.$existingVariant->product_id;
+        $state = $this->classifyProductFetch($this->fetchProductBody($productGid, $client));
+
+        if ($state === 'error') {
+            Log::warning('CreateProduct: could not verify existing Shopify product; skipping this run', [
+                'parent_sku' => $product->sku,
+                'product_gid' => $productGid,
+            ]);
+            $this->warn("⏭️  {$product->sku}: could not verify {$productGid} (transient); will retry next run");
+
+            return 'skip';
+        }
+
+        if ($state === 'gone') {
+            // Stale mirror: the Shopify product was deleted. Drop the orphaned local
+            // rows (this also resets the children's uploaded flag) and recreate.
+            $this->warn("♻️  {$product->sku}: existing Shopify product {$productGid} no longer exists — cleaning stale mirror and recreating");
+            $this->cleanupStaleMirrorFor($existingChildSkus);
+
+            $this->syncLogger->logSuccess(
+                SyncLogger::MARKETPLACE_SHOPIFY,
+                'shopifyCreateProduct',
+                $product->sku,
+                SyncLogger::OP_DUPLICATE_CLEANUP,
+                [
+                    'item_title' => $product->title,
+                    'message' => 'Cleaned up stale local mirror (Shopify product no longer exists); recreating',
+                    'shopify_product_id' => $this->extractIdFromGid($productGid),
+                    'context_data' => ['stale_child_skus' => $existingChildSkus],
+                ]
+            );
+
+            return 'recreate';
+        }
+
+        // Live product: add only the missing children as variants.
+        $existingProductData = $this->getProductData($productGid, $client);
+        if (! $existingProductData) {
+            // Defensive: classified live but the full fetch failed — do not delete, retry later.
+            return 'skip';
+        }
+
+        // createProductVariants() skips option-combinations that already exist on the
+        // product, so only the missing children are added. Returns created SKUs.
+        $createdSkus = $this->createProductVariants($existingProductData, $product, $client);
+
+        // Existing children are already in Shopify; newly created ones now are too.
+        $resolvedSkus = array_values(array_unique(array_merge($existingChildSkus, $createdSkus)));
+        $product->children()->whereIn('sku', $resolvedSkus)->update(['uploaded_to_shopify' => 1]);
+
+        // Mark the parent done only when every child is resolved; otherwise leave it for a
+        // follow-up run (the loop guard prevents a retry within this run).
+        $unresolved = $product->children()->where('uploaded_to_shopify', 0)->count();
+        if ($unresolved === 0) {
+            $product->update(['uploaded_to_shopify' => 1]);
+        }
+
+        $this->syncLogger->logSuccess(
+            SyncLogger::MARKETPLACE_SHOPIFY,
+            'shopifyCreateProduct',
+            $product->sku,
+            SyncLogger::OP_PRODUCT_CREATE,
+            [
+                'item_title' => $product->title,
+                'to_value' => $productGid,
+                'message' => 'Added '.count($createdSkus).' missing variant(s) to existing Shopify product',
+                'shopify_product_id' => $this->extractIdFromGid($productGid),
+                'context_data' => [
+                    'created_skus' => $createdSkus,
+                    'already_present' => $existingChildSkus,
+                    'unresolved_children' => $unresolved,
+                ],
+            ]
+        );
+        $this->info("✅ {$product->sku}: added ".count($createdSkus)." variant(s) to {$productGid}");
+
+        return 'added';
+    }
+
+    /**
+     * Fetch a product's GraphQL body for an existence check, returning null if the
+     * request threw. Kept separate from classification so the decision stays pure.
+     */
+    private function fetchProductBody(string $productGid, $client): ?array
+    {
+        try {
+            $response = $client->query([
+                'query' => 'query($id: ID!){ product(id: $id){ id } }',
+                'variables' => ['id' => $productGid],
+            ]);
+
+            return json_decode($response->getBody()->getContents(), true);
+        } catch (\Throwable $e) {
+            Log::warning('CreateProduct: product existence check threw: '.$e->getMessage());
+
+            return null;
+        }
+    }
+
+    /**
+     * Classify a product-existence GraphQL response.
+     *
+     * @return string 'live' (product present), 'gone' (query ok but product null),
+     *                or 'error' (no body / GraphQL errors / malformed) — callers must
+     *                never delete local data on 'error'.
+     */
+    public function classifyProductFetch(?array $resultBody): string
+    {
+        if ($resultBody === null) {
+            return 'error';
+        }
+        if (! empty($resultBody['errors'])) {
+            return 'error';
+        }
+        if (! array_key_exists('data', $resultBody)) {
+            return 'error';
+        }
+
+        return ($resultBody['data']['product'] ?? null) === null ? 'gone' : 'live';
+    }
+
+    /**
+     * Force-delete the local Shopify mirror rows for the given child SKUs whose backing
+     * Shopify product no longer exists, resetting their RetailEdge uploaded flag so the
+     * product can be recreated. Reuses ShopifyCleanupTrait::cleanupStaleVariant().
+     */
+    private function cleanupStaleMirrorFor(array $childSkus): void
+    {
+        ShopifyProductVariant::whereIn('sku', $childSkus)
+            ->get()
+            ->each(fn ($variant) => $this->cleanupStaleVariant($variant, 'CreateProduct'));
     }
 
     /**
@@ -461,7 +659,7 @@ class CreateProduct extends Command
     /**
      * Create product variants (with duplicate detection)
      */
-    private function createProductVariants(array $createdProduct, RetailEdgeProduct $product, $client): void
+    private function createProductVariants(array $createdProduct, RetailEdgeProduct $product, $client): array
     {
         $this->line("Creating variants for product: {$product->title}");
 
@@ -527,10 +725,12 @@ class CreateProduct extends Command
         }
 
         if (! empty($variants)) {
-            $this->createVariantsBulk($variants, $client, $createdProduct);
-        } else {
-            $this->line('No new variants to create - all option combinations already exist');
+            return $this->createVariantsBulk($variants, $client, $createdProduct);
         }
+
+        $this->line('No new variants to create - all option combinations already exist');
+
+        return [];
     }
 
     /**
@@ -559,16 +759,19 @@ class CreateProduct extends Command
     /**
      * Create variants in bulk
      */
-    private function createVariantsBulk(array $variants, $client, array $createdProduct): void
+    private function createVariantsBulk(array $variants, $client, array $createdProduct): array
     {
         $this->line('Creating '.count($variants).' variants using bulk creation...');
-        $this->createVariantsIndividually($variants, $client, $createdProduct);
+
+        return $this->createVariantsIndividually($variants, $client, $createdProduct);
     }
 
     /**
-     * Create variants using productVariantsBulkCreate (2025-01 API)
+     * Create variants using productVariantsBulkCreate (2025-01 API).
+     *
+     * @return array<int, string> SKUs of the variants successfully created
      */
-    private function createVariantsIndividually(array $variants, $client, array $createdProduct): void
+    private function createVariantsIndividually(array $variants, $client, array $createdProduct): array
     {
         $this->line('Using productVariantsBulkCreate for variant creation...');
 
@@ -647,16 +850,26 @@ class CreateProduct extends Command
                 foreach ($userErrors as $error) {
                     $this->error("Bulk variant creation error: {$error['message']} ".(isset($error['field']) ? json_encode($error['field']) : ''));
                 }
-            } else {
-                $createdVariants = $resultBody['data']['productVariantsBulkCreate']['productVariants'] ?? [];
-                $this->info('Successfully created '.count($createdVariants).' variants using bulk creation');
 
-                foreach ($createdVariants as $variant) {
-                    $this->line("Created variant: {$variant['sku']} (ID: {$variant['id']})");
+                return [];
+            }
+
+            $createdVariants = $resultBody['data']['productVariantsBulkCreate']['productVariants'] ?? [];
+            $this->info('Successfully created '.count($createdVariants).' variants using bulk creation');
+
+            $createdSkus = [];
+            foreach ($createdVariants as $variant) {
+                $this->line("Created variant: {$variant['sku']} (ID: {$variant['id']})");
+                if (! empty($variant['sku'])) {
+                    $createdSkus[] = $variant['sku'];
                 }
             }
+
+            return $createdSkus;
         } catch (\Exception $e) {
             $this->error('Exception during bulk variant creation: '.$e->getMessage());
+
+            return [];
         }
     }
 
