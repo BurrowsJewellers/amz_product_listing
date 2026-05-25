@@ -23,6 +23,15 @@ class CreateProduct extends Command
     use ShopifyCleanupTrait;
 
     /**
+     * uploaded_to_shopify value for children that could not be created as distinct
+     * Shopify variants (option-collapse: their distinguishing attribute is missing from
+     * the variant-option source data). Flags them for a source-data fix without falsely
+     * reporting them as synced (1) or as a transient failure (2), and keeps them out of
+     * the create-pending query so they don't churn every run.
+     */
+    public const STATUS_NEEDS_REVIEW = 3;
+
+    /**
      * Sync logger for operation tracking
      */
     private SyncLogger $syncLogger;
@@ -176,22 +185,32 @@ class CreateProduct extends Command
                             // Save product to database
                             $this->saveProductToDatabase($createdProductData, $product);
 
-                            // Mark children as uploaded
-                            foreach ($product->children as $child) {
-                                $updated = $child->update(['uploaded_to_shopify' => 1]);
-                                if ($updated) {
-                                    $this->line("Marked child SKU {$child->sku} as uploaded_to_shopify");
-                                } else {
-                                    $this->warn("Failed to mark child SKU {$child->sku} as uploaded_to_shopify");
-                                }
-                            }
+                            // Mark only the children that actually became Shopify variants;
+                            // flag the rest for review instead of falsely marking them synced.
+                            $marked = $this->reconcileChildrenAfterCreate($product, $createdProductData);
+                            $this->line('Marked '.count($marked['created']).' child variant(s) as uploaded for '.$product->sku);
 
-                            // Also mark the parent as uploaded
-                            $parentUpdated = $product->update(['uploaded_to_shopify' => 1]);
-                            if ($parentUpdated) {
-                                $this->line("Marked parent SKU {$product->sku} as uploaded_to_shopify");
-                            } else {
-                                $this->warn("Failed to mark parent SKU {$product->sku} as uploaded_to_shopify");
+                            if (! empty($marked['blocked'])) {
+                                $this->warn("⚠️  {$product->sku}: ".count($marked['blocked']).' child(ren) could not be created as distinct variants (option collapse) — flagged for review: '.implode(', ', $marked['blocked']));
+                                Log::warning('CreateProduct: children could not be created as distinct variants; flagged for review', [
+                                    'parent_sku' => $product->sku,
+                                    'created' => $marked['created'],
+                                    'blocked' => $marked['blocked'],
+                                ]);
+                                $this->syncLogger->logFailure(
+                                    SyncLogger::MARKETPLACE_SHOPIFY,
+                                    'shopifyCreateProduct',
+                                    $product->sku,
+                                    SyncLogger::OP_PRODUCT_CREATE,
+                                    count($marked['blocked']).' child(ren) collapsed to an existing variant option and were not created; source data needs a distinguishing variant attribute',
+                                    [
+                                        'item_title' => $product->title,
+                                        'context_data' => [
+                                            'created_skus' => $marked['created'],
+                                            'blocked_skus' => $marked['blocked'],
+                                        ],
+                                    ]
+                                );
                             }
 
                             $this->info("Successfully created product: {$product->title}");
@@ -307,6 +326,40 @@ class CreateProduct extends Command
     }
 
     /**
+     * After a product create, mark each child uploaded only if its SKU actually became a
+     * variant on the created product; flag the rest as STATUS_NEEDS_REVIEW. This avoids
+     * falsely reporting children as synced when they collapse to the same variant option
+     * (their distinguishing attribute is missing from the variant-option source data).
+     * The parent is marked uploaded only when every child resolved.
+     *
+     * @return array{created: array<int, string>, blocked: array<int, string>}
+     */
+    public function reconcileChildrenAfterCreate(RetailEdgeProduct $product, array $createdProductData): array
+    {
+        $liveSkus = collect($createdProductData['variants']['edges'] ?? [])
+            ->pluck('node.sku')
+            ->filter()
+            ->all();
+
+        $created = [];
+        $blocked = [];
+
+        foreach ($product->children as $child) {
+            if (in_array($child->sku, $liveSkus, true)) {
+                $child->update(['uploaded_to_shopify' => 1]);
+                $created[] = $child->sku;
+            } else {
+                $child->update(['uploaded_to_shopify' => self::STATUS_NEEDS_REVIEW]);
+                $blocked[] = $child->sku;
+            }
+        }
+
+        $product->update(['uploaded_to_shopify' => empty($blocked) ? 1 : self::STATUS_NEEDS_REVIEW]);
+
+        return ['created' => $created, 'blocked' => $blocked];
+    }
+
+    /**
      * Reconcile a parent whose children are flagged as already existing in Shopify.
      *
      * The local mirror can be stale (the Shopify product was deleted but the
@@ -384,12 +437,23 @@ class CreateProduct extends Command
         $resolvedSkus = array_values(array_unique(array_merge($existingChildSkus, $createdSkus)));
         $product->children()->whereIn('sku', $resolvedSkus)->update(['uploaded_to_shopify' => 1]);
 
-        // Mark the parent done only when every child is resolved; otherwise leave it for a
-        // follow-up run (the loop guard prevents a retry within this run).
-        $unresolved = $product->children()->where('uploaded_to_shopify', 0)->count();
-        if ($unresolved === 0) {
-            $product->update(['uploaded_to_shopify' => 1]);
+        // Any child that couldn't be resolved into a variant (option collapse) is flagged
+        // for review rather than left pending to churn every run.
+        $blocked = $product->children->pluck('sku')
+            ->reject(fn ($sku) => in_array($sku, $resolvedSkus, true))
+            ->values()
+            ->all();
+        if (! empty($blocked)) {
+            $product->children()->whereIn('sku', $blocked)->update(['uploaded_to_shopify' => self::STATUS_NEEDS_REVIEW]);
+            Log::warning('CreateProduct: children could not be added as distinct variants to existing product; flagged for review', [
+                'parent_sku' => $product->sku,
+                'product_gid' => $productGid,
+                'blocked' => $blocked,
+            ]);
         }
+
+        // Parent done only when every child resolved; otherwise it is flagged too.
+        $product->update(['uploaded_to_shopify' => empty($blocked) ? 1 : self::STATUS_NEEDS_REVIEW]);
 
         $this->syncLogger->logSuccess(
             SyncLogger::MARKETPLACE_SHOPIFY,
@@ -404,7 +468,7 @@ class CreateProduct extends Command
                 'context_data' => [
                     'created_skus' => $createdSkus,
                     'already_present' => $existingChildSkus,
-                    'unresolved_children' => $unresolved,
+                    'blocked_skus' => $blocked,
                 ],
             ]
         );
