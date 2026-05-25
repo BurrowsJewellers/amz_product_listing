@@ -179,12 +179,12 @@ class ProcessAmzMerchantListingAllData extends Command
             $product = Product::where('sku', $productData['sku'])->first();
 
             if ($product) {
+                // Only update Amazon listing metadata, NOT quantity/price
+                // RetailEdge is the source of truth for inventory and pricing
                 $product->update([
                     'asin' => $productData['asin'],
                     'status' => $productData['status'],
                     'exists_on_amazon' => ! empty($productData['asin']) ? 1 : 0,
-                    'price' => $productData['price'],
-                    'quantity' => $productData['quantity'],
                 ]);
             }
         }

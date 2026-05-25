@@ -24,4 +24,12 @@ class ShopifyLocation extends Model
         'province_code',
         'active',
     ];
+
+    /**
+     * Get the inventory levels for this location
+     */
+    public function inventoryLevels()
+    {
+        return $this->hasMany(ShopifyInventoryLevel::class, 'location_id', 'location_id');
+    }
 }

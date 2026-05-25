@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Admin\PriceInventoryLogController;
+use App\Http\Controllers\Admin\SyncMonitoringController;
 use App\Http\Controllers\AmzFeedController;
 use App\Http\Controllers\AmzReportController;
 use App\Http\Controllers\DashboardController;
@@ -57,4 +58,9 @@ Route::middleware(['auth'])->group(function () {
 
     // Price Inventory Logs
     Route::get('/price-inventory-logs', [PriceInventoryLogController::class, 'index'])->name('price_inventory_logs.index');
+
+    // Sync Monitoring Dashboard
+    Route::get('/sync-monitoring', [SyncMonitoringController::class, 'index'])
+        ->middleware('throttle:60,1') // 60 requests per minute
+        ->name('sync_monitoring.index');
 });

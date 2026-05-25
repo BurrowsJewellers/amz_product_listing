@@ -60,58 +60,62 @@ class UpdateProductDescriptions extends Command
         $marketplace = 'Shopify';
         $jobType = 'shopifyUpdateDescriptions';
 
-        $job = SyncJobController::getJob($jobType, $marketplace);
+        // Acquire lock using locking system
+        $job = SyncJobController::acquireLock($jobType, $marketplace);
+        if (! $job) {
+            $this->warn('Job is already running or paused.');
+            Log::info("$marketplace $jobType: Cannot acquire lock (running or paused)");
 
-        if (! $job->isRunning()) {
-            try {
-                Log::info("$marketplace $jobType started!");
-                $job->update(['status' => 1]);
+            return Command::SUCCESS;
+        }
 
-                // Initialize GraphQL client
-                $session = (new ShopifyService)->getSession();
-                $this->client = new Graphql($session->getShop(), $session->getAccessToken());
+        try {
+            Log::info("$marketplace $jobType started!");
 
-                $this->info('🚀 Starting Shopify product description update...');
+            // Initialize GraphQL client
+            $session = (new ShopifyService)->getSession();
+            $this->client = new Graphql($session->getShop(), $session->getAccessToken());
 
-                if ($this->option('dry-run')) {
-                    $this->warn('🔍 DRY RUN MODE - No changes will be made');
-                }
+            $this->info('Starting Shopify product description update...');
 
-                // Load or reset progress
-                if ($this->option('reset')) {
-                    $this->info('🔄 Resetting progress...');
-                    $this->resetProgress();
-                } else {
-                    $this->loadProgress();
-                    if ($this->progress['stats']['total_processed'] > 0) {
-                        $this->info('📊 Resuming from previous progress:');
-                        $this->info('   - Total processed: '.$this->progress['stats']['total_processed']);
-                        $this->info('   - Updated: '.$this->progress['stats']['updated']);
-                        $this->info('   - Skipped: '.$this->progress['stats']['skipped']);
-                    }
-                }
-
-                // Process products
-                $this->processProducts();
-
-                // Display final statistics
-                $this->displayStatistics();
-
-                $job->update(['status' => 0, 'message' => 'Completed successfully']);
-                Log::info("$marketplace $jobType finished!");
-
-            } catch (\Exception $e) {
-                $job->update(['status' => 0, 'message' => $e->getMessage()]);
-                report($e);
-                $this->error('❌ Error: '.$e->getMessage());
-                Log::error("$marketplace $jobType failed: ".$e->getMessage(), ['exception' => $e]);
-
-                // Save progress even on error
-                $this->saveProgress();
+            if ($this->option('dry-run')) {
+                $this->warn('DRY RUN MODE - No changes will be made');
             }
-        } else {
-            Log::info("$marketplace $jobType is already running.");
-            $this->warn('⚠️ Job is already running.');
+
+            // Load or reset progress
+            if ($this->option('reset')) {
+                $this->info('Resetting progress...');
+                $this->resetProgress();
+            } else {
+                $this->loadProgress();
+                if ($this->progress['stats']['total_processed'] > 0) {
+                    $this->info('Resuming from previous progress:');
+                    $this->info('   - Total processed: '.$this->progress['stats']['total_processed']);
+                    $this->info('   - Updated: '.$this->progress['stats']['updated']);
+                    $this->info('   - Skipped: '.$this->progress['stats']['skipped']);
+                }
+            }
+
+            // Process products
+            $this->processProducts();
+
+            // Display final statistics
+            $this->displayStatistics();
+
+            $job->finishJob();
+            Log::info("$marketplace $jobType finished!");
+
+            return Command::SUCCESS;
+        } catch (\Throwable $e) {
+            // Save progress even on error
+            $this->saveProgress();
+
+            $job->finishJob($e->getMessage());
+            report($e);
+            $this->error('Error: '.$e->getMessage());
+            Log::error("$marketplace $jobType failed: ".$e->getMessage(), ['exception' => $e]);
+
+            return Command::FAILURE;
         }
     }
 
@@ -344,7 +348,10 @@ class UpdateProductDescriptions extends Command
 
         // Add design number to all products (not just Pandora)
         if (! empty($product->real_design_number)) {
-            $mktDescription .= ' - Design number: '.$product->real_design_number;
+            $designNumber = explode('-', (string) $product->real_design_number)[0];
+            if ($designNumber !== '') {
+                $mktDescription .= ' - Design number: '.$designNumber;
+            }
         }
 
         return $mktDescription;

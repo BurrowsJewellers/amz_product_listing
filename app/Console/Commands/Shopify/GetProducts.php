@@ -45,6 +45,8 @@ class GetProducts extends Command
         'deleted' => 0,
         'errors' => 0,
         'api_calls' => 0,
+        'with_images' => 0,
+        'without_images' => 0,
     ];
 
     /**
@@ -55,85 +57,93 @@ class GetProducts extends Command
         $marketplace = 'Shopify';
         $jobType = 'shopifyGetProducts';
 
-        $job = SyncJobController::getJob($jobType, $marketplace);
+        // Check if GetProductsFromEWebMain is running and wait if needed
+        $maxWaitTime = 300; // 5 minutes max wait
+        $waitInterval = 10; // Check every 10 seconds
+        $totalWaitTime = 0;
 
-        if (! $job->isRunning()) {
-            try {
-                // Check if GetProductsFromEWebMain is running and wait if needed
-                $maxWaitTime = 300; // 5 minutes max wait
-                $waitInterval = 10; // Check every 10 seconds
-                $totalWaitTime = 0;
+        while ($totalWaitTime < $maxWaitTime) {
+            $ewebJob = SyncJob::where('type', 'getProductsFromEWebMain')
+                ->where('marketplace', 'EWeb')
+                ->first();
 
-                while ($totalWaitTime < $maxWaitTime) {
-                    $ewebJob = SyncJob::where('type', 'getProductsFromEWebMain')
-                        ->where('marketplace', 'EWeb')
-                        ->first();
+            if ($ewebJob && $ewebJob->status == 1) {
+                $this->info("⏳ GetProductsFromEWebMain is running. Waiting... ({$totalWaitTime}s elapsed)");
+                Log::info("$marketplace $jobType waiting for GetProductsFromEWebMain to complete. Wait time: {$totalWaitTime}s");
 
-                    if ($ewebJob && $ewebJob->status == 1) {
-                        $this->info("⏳ GetProductsFromEWebMain is running. Waiting... ({$totalWaitTime}s elapsed)");
-                        Log::info("$marketplace $jobType waiting for GetProductsFromEWebMain to complete. Wait time: {$totalWaitTime}s");
-
-                        sleep($waitInterval);
-                        $totalWaitTime += $waitInterval;
-                    } else {
-                        // GetProductsFromEWebMain is not running, proceed
-                        if ($totalWaitTime > 0) {
-                            $this->info('✅ GetProductsFromEWebMain completed. Proceeding with Shopify sync.');
-                            Log::info("$marketplace $jobType proceeding after waiting {$totalWaitTime}s for GetProductsFromEWebMain");
-                        }
-                        break;
-                    }
+                sleep($waitInterval);
+                $totalWaitTime += $waitInterval;
+            } else {
+                // GetProductsFromEWebMain is not running, proceed
+                if ($totalWaitTime > 0) {
+                    $this->info('✅ GetProductsFromEWebMain completed. Proceeding with Shopify sync.');
+                    Log::info("$marketplace $jobType proceeding after waiting {$totalWaitTime}s for GetProductsFromEWebMain");
                 }
-
-                if ($totalWaitTime >= $maxWaitTime) {
-                    $this->warn("⚠️ Waited maximum time ({$maxWaitTime}s) for GetProductsFromEWebMain. Proceeding anyway.");
-                    Log::warning("$marketplace $jobType exceeded max wait time for GetProductsFromEWebMain. Proceeding.");
-                }
-
-                Log::info("$marketplace $jobType started!");
-                $job->update(['status' => 1]);
-
-                // Initialize GraphQL client
-                $session = (new ShopifyService)->getSession();
-                $this->client = new Graphql($session->getShop(), $session->getAccessToken());
-
-                $this->info('🚀 Starting Shopify GraphQL sync...');
-
-                if ($this->option('dry-run')) {
-                    $this->warn('🔍 DRY RUN MODE - No changes will be made');
-                }
-
-                // Step 1: Get Shopify locations
-                $this->info('📍 Syncing locations...');
-                $this->getLocations();
-
-                // Step 2: Get all products from Shopify with smart sync
-                $this->info('📦 Syncing products with GraphQL...');
-                $shopifySkus = $this->getProductsWithGraphQL();
-
-                // Step 3: Identify and handle missing products
-                $this->info('🔍 Analyzing product differences...');
-                $this->handleProductDifferences($shopifySkus);
-
-                // Step 4: Get inventory levels
-                $this->info('📊 Syncing inventory levels...');
-                $this->getInventoryLevels();
-
-                // Display final statistics
-                $this->displayStatistics();
-
-                $job->update(['status' => 0, 'message' => null]);
-                Log::info("$marketplace $jobType finished successfully!");
-            } catch (\Exception $e) {
-                $this->stats['errors']++;
-                $job->update(['status' => 0, 'message' => $e->getMessage()]);
-                report($e);
-                $this->error('❌ Error: '.$e->getMessage());
-                Log::error('Shopify GetProducts failed: '.$e->getMessage(), ['exception' => $e]);
+                break;
             }
-        } else {
-            Log::info("$marketplace $jobType is already running.");
-            $this->warn('⚠️  Job is already running.');
+        }
+
+        if ($totalWaitTime >= $maxWaitTime) {
+            $this->warn("⚠️ Waited maximum time ({$maxWaitTime}s) for GetProductsFromEWebMain. Proceeding anyway.");
+            Log::warning("$marketplace $jobType exceeded max wait time for GetProductsFromEWebMain. Proceeding.");
+        }
+
+        // Acquire lock using new locking system
+        $job = SyncJobController::acquireLock($jobType, $marketplace);
+        if (! $job) {
+            $this->warn('⚠️  Job is already running or paused.');
+            Log::info("$marketplace $jobType: Cannot acquire lock (running or paused)");
+
+            return Command::SUCCESS;
+        }
+
+        try {
+            Log::info("$marketplace $jobType started!");
+
+            // Initialize GraphQL client
+            $session = (new ShopifyService)->getSession();
+            $this->client = new Graphql($session->getShop(), $session->getAccessToken());
+
+            $this->info('🚀 Starting Shopify GraphQL sync...');
+
+            if ($this->option('dry-run')) {
+                $this->warn('🔍 DRY RUN MODE - No changes will be made');
+            }
+
+            // Step 1: Get Shopify locations
+            $this->info('📍 Syncing locations...');
+            $this->getLocations();
+            $job->updateHeartbeat();
+
+            // Step 2: Get all products from Shopify with smart sync
+            $this->info('📦 Syncing products with GraphQL...');
+            $shopifySkus = $this->getProductsWithGraphQL();
+            $job->updateHeartbeat();
+
+            // Step 3: Identify and handle missing products
+            $this->info('🔍 Analyzing product differences...');
+            $this->handleProductDifferences($shopifySkus);
+            $job->updateHeartbeat();
+
+            // Step 4: Get inventory levels
+            $this->info('📊 Syncing inventory levels...');
+            $this->getInventoryLevels();
+
+            // Display final statistics
+            $this->displayStatistics();
+
+            $job->finishJob();
+            Log::info("$marketplace $jobType finished successfully!");
+
+            return Command::SUCCESS;
+        } catch (\Throwable $e) {
+            $this->stats['errors']++;
+            $job->finishJob($e->getMessage());
+            report($e);
+            $this->error('❌ Error: '.$e->getMessage());
+            Log::error('Shopify GetProducts failed: '.$e->getMessage(), ['exception' => $e]);
+
+            return Command::FAILURE;
         }
     }
 
@@ -234,6 +244,9 @@ class GetProducts extends Command
                         tags
                         createdAt
                         updatedAt
+                        mediaCount {
+                          count
+                        }
                         variants(first: 250) {
                           edges {
                             node {
@@ -327,6 +340,11 @@ class GetProducts extends Command
                 $productNode['variants']['edges'] = $allVariants;
             }
 
+            // Extract media count
+            $mediaCount = $productNode['mediaCount']['count'] ?? 0;
+            $productTitle = $productNode['title'] ?? 'Unknown';
+            $productTitle = strlen($productTitle) > 40 ? substr($productTitle, 0, 37).'...' : $productTitle;
+
             if ($this->option('dry-run')) {
                 // In dry-run mode, just collect SKUs
                 $variants = $productNode['variants']['edges'] ?? [];
@@ -336,12 +354,30 @@ class GetProducts extends Command
                         $chunkSkus[] = $sku;
                     }
                 }
+                $imageStatus = $mediaCount > 0 ? "{$mediaCount} images" : '0 images (needs upload)';
+                $this->line("   {$productTitle} - {$imageStatus}");
             } else {
                 // Process products in a database transaction
-                DB::transaction(function () use ($productNode, &$chunkSkus) {
+                DB::transaction(function () use ($productNode, &$chunkSkus, $mediaCount, $productTitle) {
                     try {
                         $productData = $this->convertGraphQLToRestFormat($productNode);
                         (new ShopifyService)->saveProductToDb($productData);
+
+                        // Update images_requires_update flag based on media count
+                        $imageFlag = $mediaCount === 0 ? 1 : 0;
+                        ShopifyProductVariant::where('product_id', $productData['id'])
+                            ->update(['images_requires_update' => $imageFlag]);
+
+                        // Track image statistics
+                        if ($mediaCount > 0) {
+                            $this->stats['with_images']++;
+                            $imageStatus = "{$mediaCount} images";
+                        } else {
+                            $this->stats['without_images']++;
+                            $imageStatus = '0 images (flagged)';
+                        }
+
+                        $this->line("   {$productTitle} - {$imageStatus}");
 
                         // Collect SKUs
                         foreach ($productData['variants'] as $variant) {
@@ -484,6 +520,7 @@ class GetProducts extends Command
             'vendor' => $graphqlProduct['vendor'] ?? null,
             'product_type' => $graphqlProduct['productType'] ?? null,
             'tags' => is_array($graphqlProduct['tags']) ? implode(',', $graphqlProduct['tags']) : ($graphqlProduct['tags'] ?? ''),
+            'media_count' => $graphqlProduct['mediaCount']['count'] ?? 0,
             'variants' => $variants,
         ];
     }
@@ -493,25 +530,65 @@ class GetProducts extends Command
      */
     private function handleProductDifferences(array $shopifySkus): void
     {
-        // Get all SKUs from retail_edge_products
-        $retailEdgeSkus = RetailEdgeProduct::whereHas('children', function ($query) {
+        // Get parent products that have children with stock
+        $parentProducts = RetailEdgeProduct::whereHas('children', function ($query) {
             $query->where('quantity', '>', 0);
-        })->pluck('sku')->toArray();
+        })->with(['children' => function ($query) {
+            $query->where('quantity', '>', 0);
+        }])->get();
+
+        // Build a lookup set of Shopify SKUs for fast checking
+        $shopifySkuSet = array_flip($shopifySkus);
+
+        // A parent is only truly "missing" if NONE of its children's SKUs exist in Shopify
+        $skusToRecreate = [];
+        $skippedParents = 0;
+        foreach ($parentProducts as $parent) {
+            $childSkus = $parent->children->pluck('sku')->toArray();
+            $hasChildInShopify = false;
+            foreach ($childSkus as $childSku) {
+                if (isset($shopifySkuSet[$childSku])) {
+                    $hasChildInShopify = true;
+                    break;
+                }
+            }
+            if (! $hasChildInShopify) {
+                $skusToRecreate[] = $parent->sku;
+            } else {
+                $skippedParents++;
+            }
+        }
 
         // Get all SKUs from local Shopify database
         $localShopifySkus = ShopifyProductVariant::pluck('sku')->toArray();
 
-        // Products to recreate (in retail_edge but not in Shopify)
-        $skusToRecreate = array_diff($retailEdgeSkus, $shopifySkus);
+        // Get all retail edge parent SKUs for deletion comparison
+        $retailEdgeSkus = $parentProducts->pluck('sku')->toArray();
+
+        // Clean up stale Shopify records before recreation
+        // This handles the case where products were deleted from Shopify but local records remain
+        if (! empty($skusToRecreate) && ! $this->option('dry-run')) {
+            $staleVariants = ShopifyProductVariant::whereIn('sku', $skusToRecreate)->get();
+            if ($staleVariants->isNotEmpty()) {
+                $this->info('🧹 Cleaning up '.$staleVariants->count().' stale variant records before recreation...');
+                $staleProductIds = $staleVariants->pluck('shopify_product_id')->unique()->filter()->toArray();
+
+                if (! empty($staleProductIds)) {
+                    $this->deleteShopifyProductsFromDb($staleProductIds);
+                    $this->stats['deleted'] += count($staleProductIds);
+                }
+            }
+        }
 
         // Products to delete (in local DB but not in Shopify AND not in retail_edge)
         $skusToDelete = array_diff($localShopifySkus, array_merge($shopifySkus, $retailEdgeSkus));
 
         $this->info('📊 Analysis Results:');
         $this->info('   • Shopify SKUs: '.count($shopifySkus));
-        $this->info('   • Retail Edge SKUs: '.count($retailEdgeSkus));
+        $this->info('   • Retail Edge parent SKUs: '.count($retailEdgeSkus));
         $this->info('   • Local Shopify SKUs: '.count($localShopifySkus));
-        $this->info('   • SKUs to recreate: '.count($skusToRecreate));
+        $this->info('   • Parents to recreate: '.count($skusToRecreate));
+        $this->info('   • Parents skipped (children already in Shopify): '.$skippedParents);
         $this->info('   • SKUs to delete: '.count($skusToDelete));
 
         // Handle recreation
@@ -538,12 +615,22 @@ class GetProducts extends Command
             return;
         }
 
-        // Mark retail_edge products as needing upload
-        $productsToRecreate = RetailEdgeProduct::whereIn('sku', $skusToRecreate)->get();
+        // Mark retail_edge products as needing upload — only reset children NOT already in Shopify
+        $productsToRecreate = RetailEdgeProduct::whereIn('sku', $skusToRecreate)->with('children')->get();
+        $existingVariantSkus = ShopifyProductVariant::pluck('sku')->flip();
 
         foreach ($productsToRecreate as $product) {
-            $product->children()->update(['uploaded_to_shopify' => 0]);
-            $this->info("   • Marked for recreation: {$product->sku} - {$product->title}");
+            $resetCount = 0;
+            $skippedCount = 0;
+            foreach ($product->children as $child) {
+                if ($existingVariantSkus->has($child->sku)) {
+                    $skippedCount++;
+                } else {
+                    $child->update(['uploaded_to_shopify' => 0]);
+                    $resetCount++;
+                }
+            }
+            $this->info("   • Marked for recreation: {$product->sku} - {$product->title} (reset: {$resetCount}, skipped already in Shopify: {$skippedCount})");
         }
 
         $this->stats['created'] = count($skusToRecreate);
@@ -695,6 +782,10 @@ class GetProducts extends Command
         $this->info('   • Products deleted: '.$this->stats['deleted']);
         $this->info('   • API calls made: '.$this->stats['api_calls']);
         $this->info('   • Errors encountered: '.$this->stats['errors']);
+        $this->info('');
+        $this->info('🖼️  Image Statistics:');
+        $this->info('   • Products with images: '.$this->stats['with_images']);
+        $this->info('   • Products without images: '.$this->stats['without_images'].' (flagged for upload)');
         $this->info('');
 
         if ($this->stats['errors'] > 0) {

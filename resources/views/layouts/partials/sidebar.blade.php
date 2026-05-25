@@ -55,6 +55,16 @@
                     Amazon Reports</a>
             </li>
 
+            <li class="nav-title">Monitoring</li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="{{ route('sync_monitoring.index') }}">
+                    <svg class="nav-icon">
+                        <use xlink:href="{{ asset('vendors/@coreui/icons/svg/free.svg#cil-sync') }}"></use>
+                    </svg>
+                    Sync Monitoring</a>
+            </li>
+
             <!-- <li class="nav-item">
                 <a class="nav-link" href="charts.html">
                     <svg class="nav-icon">

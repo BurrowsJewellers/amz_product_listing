@@ -40,7 +40,7 @@ class GetProductsFromEWebMain extends Command
     /**
      * Execute the console command.
      */
-    public function handle()
+    public function handle(): int
     {
         // Set memory limit
         $memoryLimit = $this->option('memory-limit');
@@ -64,7 +64,14 @@ class GetProductsFromEWebMain extends Command
         $marketplace = 'EWeb';
         $jobType = 'getProductsFromEWebMain';
 
-        $job = SyncJobController::getJob($jobType, $marketplace);
+        $job = SyncJobController::acquireLock($jobType, $marketplace);
+
+        if (! $job) {
+            $this->warn('Job is paused or already running.');
+
+            return Command::SUCCESS;
+        }
+
         $this->currentJob = $job;
 
         // Set up signal handlers for graceful shutdown
@@ -76,9 +83,6 @@ class GetProductsFromEWebMain extends Command
 
         try {
             Log::info("$marketplace $jobType started!");
-
-            // Mark job as running
-            $job->update(['status' => 1]);
 
             $tempProductTable = 'retail_edge_products_temp';
             $tempImageTable = 'retail_edge_product_images_temp';
@@ -118,10 +122,10 @@ class GetProductsFromEWebMain extends Command
                     }
                 } catch (\Throwable $e) {
                     report($e);
-                    $job->update(['status' => 0, 'message' => 'Error during ShopifySku preparation: '.$e->getMessage()]);
+                    $job->finishJob('Error during ShopifySku preparation: '.$e->getMessage());
                     Log::error("$marketplace $jobType failed during ShopifySku preparation: ".$e->getMessage());
 
-                    return; // Exit if ShopifySku preparation fails
+                    return Command::SUCCESS; // Exit if ShopifySku preparation fails
                 }
 
                 // Drop temporary tables if they exist from a previous failed run
@@ -162,7 +166,7 @@ class GetProductsFromEWebMain extends Command
                 DB::commit();
                 Log::info('Main transaction committed successfully.');
 
-                $job->update(['status' => 0, 'message' => null]); // Reset job status to success
+                $job->finishJob(); // Reset job status to success
                 Log::info("$marketplace $jobType finished successfully!");
             } catch (\Throwable $e) {
                 if (DB::connection()->transactionLevel() > 0) {
@@ -171,7 +175,7 @@ class GetProductsFromEWebMain extends Command
                 }
                 report($e);
                 // Ensure job status is updated to reflect failure
-                $job->update(['status' => 0, 'message' => 'Error during main processing: '.$e->getMessage()]);
+                $job->finishJob('Error during main processing: '.$e->getMessage());
                 Log::error("$marketplace $jobType failed: ".$e->getMessage().' at '.$e->getFile().':'.$e->getLine());
             } finally {
                 // Drop temporary tables regardless of success or failure
@@ -183,10 +187,12 @@ class GetProductsFromEWebMain extends Command
         } catch (\Throwable $e) {
             // Global exception handler to ensure job status is always reset
             report($e);
-            $job->update(['status' => 0, 'message' => 'Unexpected error: '.$e->getMessage()]);
+            $job->finishJob('Unexpected error: '.$e->getMessage());
             Log::error("$marketplace $jobType failed with unexpected error: ".$e->getMessage().' at '.$e->getFile().':'.$e->getLine());
             throw $e; // Re-throw to maintain original behavior
         }
+
+        return Command::SUCCESS;
     }
 
     /**
@@ -197,10 +203,7 @@ class GetProductsFromEWebMain extends Command
         Log::warning("GetProductsFromEWebMain received signal {$signal}. Shutting down gracefully...");
 
         if ($this->currentJob) {
-            $this->currentJob->update([
-                'status' => 0,
-                'message' => "Process terminated by signal {$signal} - use checkpoint to resume",
-            ]);
+            $this->currentJob->finishJob("Process terminated by signal {$signal} - use checkpoint to resume");
         }
 
         // Clean up temporary tables if they exist
