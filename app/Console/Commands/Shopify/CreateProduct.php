@@ -10,6 +10,8 @@ use App\Models\ShopifyProductMetafield;
 use App\Models\ShopifyProductVariant;
 use App\Models\ShopifyProductVariantMetafield;
 use App\Services\MetafieldAssignmentService;
+use App\Services\Shopify\VariantSet;
+use App\Services\Shopify\VariantSetBuilder;
 use App\Services\ShopifyService;
 use App\Services\SyncLogger;
 use App\Traits\ShopifyCleanupTrait;
@@ -32,6 +34,13 @@ class CreateProduct extends Command
     public const STATUS_NEEDS_REVIEW = 3;
 
     /**
+     * Build a product (with all its variants) in a single productSet call when the
+     * family has fewer than this many variants; at or above it, productSet must run
+     * asynchronously and the result is polled. The largest current family is 78.
+     */
+    public const PRODUCTSET_SYNC_MAX = 100;
+
+    /**
      * Sync logger for operation tracking
      */
     private SyncLogger $syncLogger;
@@ -48,7 +57,8 @@ class CreateProduct extends Command
      */
     protected $signature = 'shopifyCreateProduct
                             {--sku= : Only process this single parent SKU (for controlled/manual runs)}
-                            {--limit= : Stop after processing this many products (for controlled/manual runs)}';
+                            {--limit= : Stop after processing this many products (for controlled/manual runs)}
+                            {--dry-run : With --sku, print what productSet would receive for that family without calling Shopify or writing to the DB}';
 
     /**
      * The console command description.
@@ -64,6 +74,11 @@ class CreateProduct extends Command
     {
         $marketplace = 'Shopify';
         $jobType = 'shopifyCreateProduct';
+
+        // Dry run: read-only preview of one family. No lock, no Shopify call, no DB write.
+        if ($this->option('dry-run')) {
+            return $this->runDryRun();
+        }
 
         // Acquire lock using new locking system
         $job = SyncJobController::acquireLock($jobType, $marketplace);
@@ -185,9 +200,10 @@ class CreateProduct extends Command
                             // Save product to database
                             $this->saveProductToDatabase($createdProductData, $product);
 
-                            // Mark only the children that actually became Shopify variants;
-                            // flag the rest for review instead of falsely marking them synced.
-                            $marked = $this->reconcileChildrenAfterCreate($product, $createdProductData);
+                            // Mark only the rows (parent + children) that actually became
+                            // Shopify variants; flag the rest for review instead of falsely
+                            // marking them synced.
+                            $marked = $this->markFlagsFromProductSet($product, $createdProductData);
                             $this->line('Marked '.count($marked['created']).' child variant(s) as uploaded for '.$product->sku);
 
                             if (! empty($marked['blocked'])) {
@@ -286,6 +302,111 @@ class CreateProduct extends Command
     }
 
     /**
+     * Read-only preview for a single family: builds the variant set and prints exactly
+     * what productSet would receive, plus which path (fresh create vs sync-existing) and
+     * which rows would be flagged for review. Never calls Shopify, never writes the DB.
+     */
+    private function runDryRun(): int
+    {
+        $sku = $this->option('sku');
+        if (! $sku) {
+            $this->error('--dry-run requires --sku=<sku> (a parent or child SKU in the family).');
+
+            return Command::FAILURE;
+        }
+
+        $row = RetailEdgeProduct::where('sku', $sku)->first();
+        if (! $row) {
+            $this->error("SKU {$sku} not found in retail_edge_products.");
+
+            return Command::FAILURE;
+        }
+
+        // Resolve to the family's parent so a child SKU still previews the whole family.
+        $parentSku = ($row->old_key && $row->old_key !== $row->sku) ? $row->old_key : $row->sku;
+        $product = RetailEdgeProduct::where('sku', $parentSku)->with(['brand', 'children'])->first();
+        if (! $product) {
+            $this->error("Parent SKU {$parentSku} (for {$sku}) not found.");
+
+            return Command::FAILURE;
+        }
+
+        if ($parentSku !== $sku) {
+            $this->info("{$sku} is a child; previewing its parent family {$parentSku}.");
+        }
+
+        $this->printDryRunPlan($this->dryRunPlan($product));
+
+        return Command::SUCCESS;
+    }
+
+    /**
+     * Build a structured preview of what productSet would do for one family. Read-only.
+     *
+     * @return array{sku: string, title: ?string, path: string, existing_product_gid: ?string, synchronous: bool, product_options: array, variants: array<int, array{sku: string, options: string, price: string}>, blocked: array<int, array{sku: string, reason: string}>}
+     */
+    private function dryRunPlan(RetailEdgeProduct $product): array
+    {
+        $set = (new VariantSetBuilder)->build($product);
+
+        // Path detection mirrors handle(): if any child SKU is already a Shopify variant
+        // with a product id, we'd sync onto that existing product; otherwise create fresh.
+        $childSkus = $product->children->pluck('sku')->all();
+        $existingVariant = ShopifyProductVariant::whereIn('sku', $childSkus)
+            ->whereNotNull('product_id')
+            ->first();
+
+        return [
+            'sku' => $product->sku,
+            'title' => $product->title,
+            'path' => $existingVariant ? 'sync_existing' : 'create',
+            'existing_product_gid' => $existingVariant ? 'gid://shopify/Product/'.$existingVariant->product_id : null,
+            'synchronous' => count($set->variants) < self::PRODUCTSET_SYNC_MAX,
+            'product_options' => $set->productOptions,
+            'variants' => array_map(fn ($v) => [
+                'sku' => $v['sku'],
+                'options' => collect($v['optionValues'])->map(fn ($o) => $o['optionName'].'='.$o['name'])->implode(' / ') ?: '(none)',
+                'price' => $v['price'],
+            ], $set->variants),
+            'blocked' => $set->blocked,
+        ];
+    }
+
+    /**
+     * Render a dry-run plan to the console.
+     */
+    private function printDryRunPlan(array $plan): void
+    {
+        $this->newLine();
+        $this->info('DRY RUN — '.$plan['sku'].' — '.$plan['title']);
+        $this->line('Path: '.$plan['path'].($plan['existing_product_gid'] ? ' ('.$plan['existing_product_gid'].')' : '').' | productSet: '.($plan['synchronous'] ? 'synchronous' : 'asynchronous'));
+
+        $options = collect($plan['product_options'])
+            ->map(fn ($o) => $o['name'].' ['.implode(', ', $o['values']).']')
+            ->implode('  |  ');
+        $this->line('Options: '.($options ?: '(none — single variant)'));
+
+        $this->newLine();
+        $this->table(['Variant SKU', 'Option values', 'Price'], array_map(
+            fn ($v) => [$v['sku'], $v['options'], $v['price']],
+            $plan['variants']
+        ));
+        $this->line(count($plan['variants']).' variant(s) would be sent to Shopify.');
+
+        if (! empty($plan['blocked'])) {
+            $this->newLine();
+            $this->warn(count($plan['blocked']).' row(s) would be FLAGGED FOR REVIEW (not listed):');
+            $this->table(['Blocked SKU', 'Reason'], array_map(
+                fn ($b) => [$b['sku'], $b['reason']],
+                $plan['blocked']
+            ));
+        }
+
+        $this->newLine();
+        $this->info('No changes made (dry run): Shopify was not called and no rows were updated.');
+    }
+
+    /**
      * Base query for pending parent/standalone products that need a Shopify product.
      *
      * Conditions: SKU not yet in Shopify, parent/standalone (old_key = sku or empty),
@@ -305,7 +426,12 @@ class CreateProduct extends Command
             })
             ->where('quantity', '>', 0)
             ->where(function ($q) {
-                $q->whereHas('children', fn ($c) => $c->where('uploaded_to_shopify', 0))
+                // The parent reaches here only when its OWN SKU is not yet a Shopify variant
+                // (whereNotExists above). It is pending if its own row still needs listing
+                // (uploaded_to_shopify = 0 — strictly pending, so review-flagged 3 won't churn),
+                // or it has a pending child, or it has no children at all.
+                $q->where('uploaded_to_shopify', 0)
+                    ->orWhereHas('children', fn ($c) => $c->where('uploaded_to_shopify', 0))
                     ->orWhereDoesntHave('children');
             });
     }
@@ -323,40 +449,6 @@ class CreateProduct extends Command
             ->when($onlySku, fn ($q) => $q->where('retail_edge_products.sku', $onlySku))
             ->with(['brand', 'children'])
             ->first();
-    }
-
-    /**
-     * After a product create, mark each child uploaded only if its SKU actually became a
-     * variant on the created product; flag the rest as STATUS_NEEDS_REVIEW. This avoids
-     * falsely reporting children as synced when they collapse to the same variant option
-     * (their distinguishing attribute is missing from the variant-option source data).
-     * The parent is marked uploaded only when every child resolved.
-     *
-     * @return array{created: array<int, string>, blocked: array<int, string>}
-     */
-    public function reconcileChildrenAfterCreate(RetailEdgeProduct $product, array $createdProductData): array
-    {
-        $liveSkus = collect($createdProductData['variants']['edges'] ?? [])
-            ->pluck('node.sku')
-            ->filter()
-            ->all();
-
-        $created = [];
-        $blocked = [];
-
-        foreach ($product->children as $child) {
-            if (in_array($child->sku, $liveSkus, true)) {
-                $child->update(['uploaded_to_shopify' => 1]);
-                $created[] = $child->sku;
-            } else {
-                $child->update(['uploaded_to_shopify' => self::STATUS_NEEDS_REVIEW]);
-                $blocked[] = $child->sku;
-            }
-        }
-
-        $product->update(['uploaded_to_shopify' => empty($blocked) ? 1 : self::STATUS_NEEDS_REVIEW]);
-
-        return ['created' => $created, 'blocked' => $blocked];
     }
 
     /**
@@ -422,38 +514,26 @@ class CreateProduct extends Command
             return 'recreate';
         }
 
-        // Live product: add only the missing children as variants.
-        $existingProductData = $this->getProductData($productGid, $client);
-        if (! $existingProductData) {
-            // Defensive: classified live but the full fetch failed — do not delete, retry later.
+        // Live product: sync the complete family onto it via productSet. This adds the
+        // parent's own variant and any missing children, updates the rest, and (being a
+        // list field) prunes variants no longer in the family. Safe here because the
+        // product is confirmed live and we emit the full intended set, never a partial one.
+        $outcome = $this->syncExistingProductVariants($product, $productGid, $client);
+        if (! $outcome['ok']) {
+            // Could not complete the update (no buildable set / API issue) — do not delete
+            // or mis-flag; retry next run.
+            $this->warn("⏭️  {$product->sku}: could not sync variants to {$productGid}; will retry next run");
+
             return 'skip';
         }
 
-        // createProductVariants() skips option-combinations that already exist on the
-        // product, so only the missing children are added. Returns created SKUs.
-        $createdSkus = $this->createProductVariants($existingProductData, $product, $client);
-
-        // Existing children are already in Shopify; newly created ones now are too.
-        $resolvedSkus = array_values(array_unique(array_merge($existingChildSkus, $createdSkus)));
-        $product->children()->whereIn('sku', $resolvedSkus)->update(['uploaded_to_shopify' => 1]);
-
-        // Any child that couldn't be resolved into a variant (option collapse) is flagged
-        // for review rather than left pending to churn every run.
-        $blocked = $product->children->pluck('sku')
-            ->reject(fn ($sku) => in_array($sku, $resolvedSkus, true))
-            ->values()
-            ->all();
-        if (! empty($blocked)) {
-            $product->children()->whereIn('sku', $blocked)->update(['uploaded_to_shopify' => self::STATUS_NEEDS_REVIEW]);
-            Log::warning('CreateProduct: children could not be added as distinct variants to existing product; flagged for review', [
+        if (! empty($outcome['blocked'])) {
+            Log::warning('CreateProduct: rows could not be synced as distinct variants on existing product; flagged for review', [
                 'parent_sku' => $product->sku,
                 'product_gid' => $productGid,
-                'blocked' => $blocked,
+                'blocked' => $outcome['blocked'],
             ]);
         }
-
-        // Parent done only when every child resolved; otherwise it is flagged too.
-        $product->update(['uploaded_to_shopify' => empty($blocked) ? 1 : self::STATUS_NEEDS_REVIEW]);
 
         $this->syncLogger->logSuccess(
             SyncLogger::MARKETPLACE_SHOPIFY,
@@ -463,16 +543,16 @@ class CreateProduct extends Command
             [
                 'item_title' => $product->title,
                 'to_value' => $productGid,
-                'message' => 'Added '.count($createdSkus).' missing variant(s) to existing Shopify product',
+                'message' => 'Synced '.count($outcome['created']).' variant(s) to existing Shopify product via productSet',
                 'shopify_product_id' => $this->extractIdFromGid($productGid),
                 'context_data' => [
-                    'created_skus' => $createdSkus,
+                    'created_skus' => $outcome['created'],
                     'already_present' => $existingChildSkus,
-                    'blocked_skus' => $blocked,
+                    'blocked_skus' => $outcome['blocked'],
                 ],
             ]
         );
-        $this->info("✅ {$product->sku}: added ".count($createdSkus)." variant(s) to {$productGid}");
+        $this->info("✅ {$product->sku}: synced ".count($outcome['created'])." variant(s) to {$productGid}");
 
         return 'added';
     }
@@ -536,86 +616,232 @@ class CreateProduct extends Command
      */
     private function createProductWithGraphQL(RetailEdgeProduct $product, $client): ?array
     {
-        // Build product input for GraphQL
-        $productInput = $this->buildProductInput($product);
+        // Build the complete variant set (parent + children) up front so the product
+        // and all of its variants are created in one atomic productSet call. The parent
+        // is included as a variant (the children() relation excludes it), and VT1 size
+        // is read per-category, fixing the dropped-parent and chain-collapse defects.
+        $set = (new VariantSetBuilder)->build($product);
+
+        if (empty($set->variants)) {
+            throw new \Exception("No buildable variants for {$product->sku} (every family row collapsed)");
+        }
+
+        $synchronous = count($set->variants) < self::PRODUCTSET_SYNC_MAX;
+        $this->line('Executing productSet ('.($synchronous ? 'sync' : 'async').') with '.count($set->variants).' variant(s)...');
+
+        $productId = $this->runProductSet($product, $set, $client, $synchronous);
+        if (! $productId) {
+            return null;
+        }
+
+        // Return the canonical edges shape the downstream save/reconcile code expects.
+        return $this->getProductData($productId, $client);
+    }
+
+    /**
+     * Build the ProductSetInput from the product's base attributes plus the prepared
+     * variant set. The target product (for updates) is passed separately via the
+     * productSet `identifier` argument, not inside this input.
+     */
+    private function buildProductSetInput(RetailEdgeProduct $product, VariantSet $set): array
+    {
+        // Reuse the base product attributes (title, description, vendor, tags, status,
+        // Pandora template suffix) but supply options/variants from the builder instead
+        // of the legacy buildProductOptions().
+        $input = $this->buildProductInput($product);
+        unset($input['productOptions']);
+
+        if (! empty($set->productOptions)) {
+            $input['productOptions'] = array_map(fn ($option) => [
+                'name' => $option['name'],
+                'position' => $option['position'],
+                'values' => array_map(fn ($value) => ['name' => $value], $option['values']),
+            ], $set->productOptions);
+        }
+
+        $input['variants'] = array_map(function ($variant) {
+            $out = [
+                'optionValues' => $variant['optionValues'],
+                'price' => $variant['price'],
+                'barcode' => $variant['barcode'],
+                'inventoryPolicy' => 'DENY',
+                'taxable' => true,
+                'inventoryItem' => ['sku' => $variant['sku'], 'tracked' => true],
+            ];
+            if (! empty($variant['compareAtPrice'])) {
+                $out['compareAtPrice'] = $variant['compareAtPrice'];
+            }
+
+            return $out;
+        }, $set->variants);
+
+        return $input;
+    }
+
+    /**
+     * Execute the productSet mutation and return the created/updated product GID.
+     * Pass $existingProductId (a product GID) to update that product in place via the
+     * `identifier` argument. Throws on user or GraphQL errors; polls when asynchronous.
+     */
+    private function runProductSet(RetailEdgeProduct $product, VariantSet $set, $client, bool $synchronous, ?string $existingProductId = null): ?string
+    {
+        $input = $this->buildProductSetInput($product, $set);
 
         $mutation = <<<'GRAPHQL'
-        mutation productCreate($product: ProductCreateInput!) {
-          productCreate(product: $product) {
-            product {
-              id
-              title
-              handle
+        mutation productSet($input: ProductSetInput!, $synchronous: Boolean!, $identifier: ProductSetIdentifiers) {
+          productSet(synchronous: $synchronous, input: $input, identifier: $identifier) {
+            product { id }
+            productSetOperation { id status }
+            userErrors { code field message }
+          }
+        }
+        GRAPHQL;
+
+        $variables = ['input' => $input, 'synchronous' => $synchronous];
+        if ($existingProductId) {
+            $variables['identifier'] = ['id' => $existingProductId];
+        }
+
+        $response = $client->query(['query' => $mutation, 'variables' => $variables]);
+        $body = json_decode($response->getBody()->getContents(), true);
+
+        $userErrors = $body['data']['productSet']['userErrors'] ?? [];
+        $this->lastApiContext = [
+            'api_request' => $input,
+            'api_response' => $body,
+            'user_errors' => $userErrors,
+            'graphql_errors' => $body['errors'] ?? [],
+        ];
+
+        $errors = $this->handleGraphQLErrors($body);
+        if (! empty($errors) || ! empty($userErrors)) {
+            $messages = array_merge(
+                $errors,
+                array_map(fn ($e) => $e['message'] ?? json_encode($e), $userErrors)
+            );
+            throw new \Exception('productSet errors: '.implode(' | ', $messages));
+        }
+
+        $productId = $body['data']['productSet']['product']['id'] ?? null;
+        if ($productId) {
+            return $productId;
+        }
+
+        $operationId = $body['data']['productSet']['productSetOperation']['id'] ?? null;
+        if ($operationId) {
+            return $this->pollProductSetOperation($operationId, $client);
+        }
+
+        return null;
+    }
+
+    /**
+     * Poll an asynchronous productSet operation until the product resolves. Only reached
+     * for families at/above PRODUCTSET_SYNC_MAX variants.
+     */
+    private function pollProductSetOperation(string $operationId, $client, int $maxAttempts = 15): ?string
+    {
+        $query = <<<'GRAPHQL'
+        query productOperation($id: ID!) {
+          productOperation(id: $id) {
+            ... on ProductSetOperation {
               status
-              options {
-                id
-                name
-                position
-                optionValues {
-                  id
-                  name
-                  hasVariants
-                }
-              }
-              variants(first: 100) {
-                edges {
-                  node {
-                    id
-                    sku
-                    price
-                    compareAtPrice
-                    barcode
-                    selectedOptions {
-                      name
-                      value
-                    }
-                  }
-                }
-              }
-            }
-            userErrors {
-              field
-              message
+              product { id }
             }
           }
         }
         GRAPHQL;
 
-        $this->line('Executing GraphQL productCreate mutation...');
-        $response = $client->query(['query' => $mutation, 'variables' => ['product' => $productInput]]);
-        $resultBody = json_decode($response->getBody()->getContents(), true);
+        for ($attempt = 0; $attempt < $maxAttempts; $attempt++) {
+            usleep(1000000); // 1s between polls
+            $response = $client->query(['query' => $query, 'variables' => ['id' => $operationId]]);
+            $operation = json_decode($response->getBody()->getContents(), true)['data']['productOperation'] ?? null;
 
-        // Store API context for error logging
-        $this->lastApiContext = [
-            'api_request' => $productInput,
-            'api_response' => $resultBody,
-            'user_errors' => $resultBody['data']['productCreate']['userErrors'] ?? [],
-            'graphql_errors' => $resultBody['errors'] ?? [],
-        ];
-
-        // Handle errors
-        $errors = $this->handleGraphQLErrors($resultBody);
-        if (! empty($errors)) {
-            throw new \Exception('GraphQL Errors: '.implode(' | ', $errors));
-        }
-
-        $createdProduct = $resultBody['data']['productCreate']['product'] ?? null;
-
-        if ($createdProduct) {
-            // Update the first variant's SKU if it's empty
-            $this->updateFirstVariantSku($createdProduct, $product, $client);
-
-            if ($product->children->count() > 1) {
-                // Only create additional variants if there are multiple children
-                // The first variant is already created by productCreate
-                $this->createProductVariants($createdProduct, $product, $client);
+            $status = $operation['status'] ?? null;
+            if ($status === 'COMPLETE' && ! empty($operation['product']['id'])) {
+                return $operation['product']['id'];
             }
-
-            // Refresh product data to get updated variants
-            $createdProduct = $this->getProductData($createdProduct['id'], $client);
+            if ($status === 'FAILED') {
+                throw new \Exception("productSet async operation {$operationId} failed");
+            }
         }
 
-        return $createdProduct;
+        throw new \Exception("productSet async operation {$operationId} did not complete in time");
+    }
+
+    /**
+     * Reconcile uploaded_to_shopify flags after a productSet create, based on which SKUs
+     * actually became live variants. Parent and children are treated uniformly: a row is
+     * marked synced (1) only if its SKU is a live variant, otherwise flagged for review (3).
+     *
+     * @return array{created: array<int, string>, blocked: array<int, string>}
+     */
+    private function markFlagsFromProductSet(RetailEdgeProduct $product, array $createdProductData): array
+    {
+        $liveSkus = collect($createdProductData['variants']['edges'] ?? [])
+            ->pluck('node.sku')
+            ->filter()
+            ->all();
+
+        $created = [];
+        $blocked = [];
+
+        foreach ($product->children as $child) {
+            if (in_array($child->sku, $liveSkus, true)) {
+                $child->update(['uploaded_to_shopify' => 1]);
+                $created[] = $child->sku;
+            } else {
+                $child->update(['uploaded_to_shopify' => self::STATUS_NEEDS_REVIEW]);
+                $blocked[] = $child->sku;
+            }
+        }
+
+        $parentLive = in_array($product->sku, $liveSkus, true);
+        if ($parentLive) {
+            $created[] = $product->sku;
+        } else {
+            $blocked[] = $product->sku;
+        }
+
+        $product->update(['uploaded_to_shopify' => ($parentLive && empty($blocked)) ? 1 : self::STATUS_NEEDS_REVIEW]);
+
+        return ['created' => $created, 'blocked' => $blocked];
+    }
+
+    /**
+     * Sync the complete family (parent + children) onto an already-live Shopify product
+     * via productSet, then reconcile flags from what actually went live.
+     *
+     * productSet treats variants as a list field (create/update/delete to match input);
+     * because we emit the full intended set, this adds the parent's own variant and any
+     * missing children, updates the rest, and prunes anything no longer in the family.
+     * Only call this once the product is confirmed live (never on an unverified fetch).
+     *
+     * @return array{created: array<int, string>, blocked: array<int, string>, ok: bool}
+     */
+    private function syncExistingProductVariants(RetailEdgeProduct $product, string $productGid, $client): array
+    {
+        $set = (new VariantSetBuilder)->build($product);
+
+        if (empty($set->variants)) {
+            // Nothing buildable (every row collapsed) — never send an empty/destructive set.
+            return ['created' => [], 'blocked' => [], 'ok' => false];
+        }
+
+        $synchronous = count($set->variants) < self::PRODUCTSET_SYNC_MAX;
+        $updatedId = $this->runProductSet($product, $set, $client, $synchronous, $productGid);
+        if (! $updatedId) {
+            return ['created' => [], 'blocked' => [], 'ok' => false];
+        }
+
+        $refreshed = $this->getProductData($updatedId, $client);
+        if (! $refreshed) {
+            return ['created' => [], 'blocked' => [], 'ok' => false];
+        }
+
+        $marked = $this->markFlagsFromProductSet($product, $refreshed);
+
+        return ['created' => $marked['created'], 'blocked' => $marked['blocked'], 'ok' => true];
     }
 
     /**
@@ -632,11 +858,10 @@ class CreateProduct extends Command
             'productType' => $product->s_cat,
             'tags' => $productTags, // Array format for GraphQL
             'status' => 'ACTIVE', // Create as active
-            'productOptions' => $this->buildProductOptions($product),
         ];
 
-        // Note: ProductCreateInput doesn't support variants field
-        // We'll update the first variant after product creation
+        // Variant options/variants are supplied by buildProductSetInput() from the
+        // VariantSetBuilder; this method only provides the base product attributes.
 
         // Add template suffix for Pandora products
         if ($product->brand?->name === 'Pandora') {
@@ -647,312 +872,6 @@ class CreateProduct extends Command
         }
 
         return $productInput;
-    }
-
-    /**
-     * Build product options for GraphQL (2025-01 format)
-     */
-    private function buildProductOptions(RetailEdgeProduct $product): array
-    {
-        $variantTypes = ['vt1' => 'Size', 'vt2' => 'Color', 'vt3' => 'Material', 'vt4' => 'Style'];
-        $variantOptions = [];
-
-        if ($product->children->count()) {
-            foreach ($product->children as $child) {
-                $vts = array_filter(array_map('trim', array_map('strtolower', explode('-', $child->id3))));
-
-                foreach ($vts as $vt) {
-                    $vt = trim($vt);
-
-                    if (isset($variantTypes[$vt])) {
-                        $variantType = $variantTypes[$vt];
-                        $variantTypeValue = '';
-
-                        if ($vt == 'vt1') {
-                            if ($child->s_cat == 'Rings') {
-                                $variantTypeValue = $child->ring_size;
-                            } elseif ($child->s_cat == 'Bracelets') {
-                                $variantTypeValue = $child->bracelet_length;
-                            }
-                        } elseif ($vt == 'vt2') {
-                            $variantTypeValue = $child->metal_colour;
-                        } elseif ($vt == 'vt3') {
-                            $variantTypeValue = $child->s_metal_type;
-                        } elseif ($vt == 'vt4') {
-                            if ($child->s_cat == 'Bracelets') {
-                                // TODO - Aman
-                                // <a:ItemISD>
-                                // <a:Index>6</a:Index>
-                                // <a:Name>Style</a:Name>
-                                // <a:Value>Letter T</a:Value>
-                            } else {
-                                $variantTypeValue = $child->pendant_style;
-                            }
-                        }
-
-                        if (! empty($variantTypeValue)) {
-                            if (! isset($variantOptions[$variantType])) {
-                                $variantOptions[$variantType] = [];
-                            }
-                            if (! in_array($variantTypeValue, $variantOptions[$variantType])) {
-                                $variantOptions[$variantType][] = $variantTypeValue;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Convert to GraphQL 2025-01 format
-        $productOptions = [];
-        foreach ($variantOptions as $optionName => $optionValues) {
-            $values = [];
-            foreach ($optionValues as $value) {
-                $values[] = ['name' => $value];
-            }
-
-            $productOptions[] = [
-                'name' => $optionName,
-                'values' => $values,
-            ];
-        }
-
-        return $productOptions;
-    }
-
-    /**
-     * Create product variants (with duplicate detection)
-     */
-    private function createProductVariants(array $createdProduct, RetailEdgeProduct $product, $client): array
-    {
-        $this->line("Creating variants for product: {$product->title}");
-
-        $variantTypes = ['vt1' => 'Size', 'vt2' => 'Color', 'vt3' => 'Material', 'vt4' => 'Style'];
-        $variants = [];
-        $existingVariants = $this->getExistingVariantOptions($createdProduct);
-
-        foreach ($product->children as $child) {
-            // Calculate prices
-            $retailPrices = [$child->retail_price1, $child->retail_price2];
-            $prices = array_filter(array_map('floatval', $retailPrices), function ($price) {
-                return $price > 0;
-            });
-
-            $price = empty($prices) ? 0 : min($prices);
-            $compareAtPrice = empty($prices) ? 0 : max($prices);
-
-            // Build option values for this variant
-            $optionValues = [];
-            $vts = array_filter(array_map('trim', array_map('strtolower', explode('-', $child->id3))));
-
-            foreach ($vts as $vt) {
-                $vt = trim($vt);
-                if (isset($variantTypes[$vt])) {
-                    $variantTypeValue = '';
-
-                    if ($vt == 'vt1') {
-                        if ($child->s_cat == 'Rings') {
-                            $variantTypeValue = $child->ring_size;
-                        } elseif ($child->s_cat == 'Bracelets') {
-                            $variantTypeValue = $child->bracelet_length;
-                        }
-                    } elseif ($vt == 'vt2') {
-                        $variantTypeValue = $child->metal_colour;
-                    } elseif ($vt == 'vt3') {
-                        $variantTypeValue = $child->s_metal_type;
-                    } elseif ($vt == 'vt4') {
-                        $variantTypeValue = $child->pendant_style;
-                    }
-
-                    if (! empty($variantTypeValue)) {
-                        $optionValues[] = $variantTypeValue;
-                    }
-                }
-            }
-
-            // Check if this variant combination already exists
-            $optionKey = implode(' / ', $optionValues);
-            if (in_array($optionKey, $existingVariants)) {
-                $this->line("Skipping variant {$child->sku} - option combination '{$optionKey}' already exists");
-
-                continue;
-            }
-
-            $variants[] = [
-                'productId' => $createdProduct['id'],
-                'sku' => $child->sku,
-                'price' => (string) $price,
-                'compareAtPrice' => ($price == $compareAtPrice) ? null : (string) $compareAtPrice,
-                'barcode' => $child->barcode,
-                'optionValues' => $optionValues,
-            ];
-        }
-
-        if (! empty($variants)) {
-            return $this->createVariantsBulk($variants, $client, $createdProduct);
-        }
-
-        $this->line('No new variants to create - all option combinations already exist');
-
-        return [];
-    }
-
-    /**
-     * Get existing variant option combinations from created product
-     */
-    private function getExistingVariantOptions(array $createdProduct): array
-    {
-        $existingVariants = [];
-
-        if (isset($createdProduct['variants']['edges'])) {
-            foreach ($createdProduct['variants']['edges'] as $edge) {
-                $variant = $edge['node'];
-                if (isset($variant['selectedOptions'])) {
-                    $optionValues = [];
-                    foreach ($variant['selectedOptions'] as $option) {
-                        $optionValues[] = $option['value'];
-                    }
-                    $existingVariants[] = implode(' / ', $optionValues);
-                }
-            }
-        }
-
-        return $existingVariants;
-    }
-
-    /**
-     * Create variants in bulk
-     */
-    private function createVariantsBulk(array $variants, $client, array $createdProduct): array
-    {
-        $this->line('Creating '.count($variants).' variants using bulk creation...');
-
-        return $this->createVariantsIndividually($variants, $client, $createdProduct);
-    }
-
-    /**
-     * Create variants using productVariantsBulkCreate (2025-01 API).
-     *
-     * @return array<int, string> SKUs of the variants successfully created
-     */
-    private function createVariantsIndividually(array $variants, $client, array $createdProduct): array
-    {
-        $this->line('Using productVariantsBulkCreate for variant creation...');
-
-        // Convert variants to the correct format for productVariantsBulkCreate
-        $bulkVariants = [];
-        foreach ($variants as $variant) {
-            $bulkVariant = [
-                'price' => $variant['price'],
-                'barcode' => $variant['barcode'],
-                'inventoryPolicy' => 'DENY',
-                'taxable' => true,
-            ];
-
-            // Add compareAtPrice if it's different from price
-            if (! empty($variant['compareAtPrice']) && $variant['compareAtPrice'] !== $variant['price']) {
-                $bulkVariant['compareAtPrice'] = $variant['compareAtPrice'];
-            }
-
-            // Add inventory item with SKU (correct field structure)
-            $bulkVariant['inventoryItem'] = [
-                'sku' => $variant['sku'],
-                'tracked' => true,
-            ];
-
-            // Add option values if they exist (using optionId from created product)
-            if (! empty($variant['optionValues'])) {
-                $bulkVariant['optionValues'] = [];
-                foreach ($variant['optionValues'] as $index => $value) {
-                    $optionId = $this->getOptionIdByIndex($createdProduct, $index);
-                    if ($optionId) {
-                        $bulkVariant['optionValues'][] = [
-                            'name' => $value,
-                            'optionId' => $optionId,
-                        ];
-                    }
-                }
-            }
-
-            $bulkVariants[] = $bulkVariant;
-        }
-
-        $mutation = <<<'GRAPHQL'
-        mutation productVariantsBulkCreate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-          productVariantsBulkCreate(productId: $productId, variants: $variants) {
-            product {
-              id
-            }
-            productVariants {
-              id
-              sku
-              price
-              compareAtPrice
-              barcode
-            }
-            userErrors {
-              field
-              message
-            }
-          }
-        }
-        GRAPHQL;
-
-        try {
-            $productId = $variants[0]['productId']; // Get product ID from first variant
-            $response = $client->query([
-                'query' => $mutation,
-                'variables' => [
-                    'productId' => $productId,
-                    'variants' => $bulkVariants,
-                ],
-            ]);
-            $resultBody = json_decode($response->getBody()->getContents(), true);
-
-            $userErrors = $resultBody['data']['productVariantsBulkCreate']['userErrors'] ?? ($resultBody['errors'] ?? []);
-            if (! empty($userErrors)) {
-                foreach ($userErrors as $error) {
-                    $this->error("Bulk variant creation error: {$error['message']} ".(isset($error['field']) ? json_encode($error['field']) : ''));
-                }
-
-                return [];
-            }
-
-            $createdVariants = $resultBody['data']['productVariantsBulkCreate']['productVariants'] ?? [];
-            $this->info('Successfully created '.count($createdVariants).' variants using bulk creation');
-
-            $createdSkus = [];
-            foreach ($createdVariants as $variant) {
-                $this->line("Created variant: {$variant['sku']} (ID: {$variant['id']})");
-                if (! empty($variant['sku'])) {
-                    $createdSkus[] = $variant['sku'];
-                }
-            }
-
-            return $createdSkus;
-        } catch (\Exception $e) {
-            $this->error('Exception during bulk variant creation: '.$e->getMessage());
-
-            return [];
-        }
-    }
-
-    /**
-     * Get option ID by index from created product
-     */
-    private function getOptionIdByIndex(array $createdProduct, int $index): ?string
-    {
-        if (! isset($createdProduct['options'])) {
-            return null;
-        }
-
-        // Sort options by position to ensure correct mapping
-        $options = $createdProduct['options'];
-        usort($options, function ($a, $b) {
-            return ($a['position'] ?? 0) <=> ($b['position'] ?? 0);
-        });
-
-        return $options[$index]['id'] ?? null;
     }
 
     /**
@@ -1487,93 +1406,6 @@ class CreateProduct extends Command
                 'message' => "Metafield batch processing complete: {$totalSuccessful} successful, {$totalFailed} failed",
             ]
         );
-    }
-
-    /**
-     * Update the first variant's SKU if it's empty
-     * For standalone products (no children), uses the product itself as the variant source
-     */
-    private function updateFirstVariantSku(array $createdProduct, RetailEdgeProduct $product, $client): void
-    {
-        if (! isset($createdProduct['variants']['edges'][0])) {
-            return;
-        }
-
-        $firstVariant = $createdProduct['variants']['edges'][0]['node'];
-
-        // For standalone products (no children), use the product itself as the variant source
-        $firstChild = $product->children->first();
-        $variantSource = $firstChild ?? $product;
-
-        // Check if the first variant has an empty SKU
-        if (empty($firstVariant['sku'])) {
-            $this->line("Updating first variant SKU from empty to: {$variantSource->sku}");
-
-            // Calculate prices for the first variant
-            $retailPrices = [$variantSource->retail_price1, $variantSource->retail_price2];
-            $prices = array_filter(array_map('floatval', $retailPrices), function ($price) {
-                return $price > 0;
-            });
-
-            $price = empty($prices) ? 0 : min($prices);
-            $compareAtPrice = empty($prices) ? 0 : max($prices);
-
-            $variantInput = [
-                'id' => $firstVariant['id'],
-                'price' => (string) $price,
-                'compareAtPrice' => ($price == $compareAtPrice) ? null : (string) $compareAtPrice,
-                'barcode' => $variantSource->barcode,
-                'inventoryItem' => [
-                    'sku' => $variantSource->sku,
-                    'tracked' => true,
-                ],
-                'inventoryPolicy' => 'DENY',
-                'taxable' => true,
-            ];
-
-            $mutation = <<<'GRAPHQL'
-            mutation productVariantsBulkUpdate($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-              productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-                product {
-                  id
-                }
-                productVariants {
-                  id
-                  sku
-                  price
-                  compareAtPrice
-                  barcode
-                }
-                userErrors {
-                  field
-                  message
-                }
-              }
-            }
-            GRAPHQL;
-
-            try {
-                $response = $client->query([
-                    'query' => $mutation,
-                    'variables' => [
-                        'productId' => $createdProduct['id'],
-                        'variants' => [$variantInput],
-                    ],
-                ]);
-                $resultBody = json_decode($response->getBody()->getContents(), true);
-
-                $userErrors = $resultBody['data']['productVariantsBulkUpdate']['userErrors'] ?? ($resultBody['errors'] ?? []);
-                if (! empty($userErrors)) {
-                    foreach ($userErrors as $error) {
-                        $this->error("First variant SKU update error: {$error['message']}");
-                    }
-                } else {
-                    $this->info("Successfully updated first variant SKU to: {$variantSource->sku}");
-                }
-            } catch (\Exception $e) {
-                $this->error('Exception updating first variant SKU: '.$e->getMessage());
-            }
-        }
     }
 
     /**

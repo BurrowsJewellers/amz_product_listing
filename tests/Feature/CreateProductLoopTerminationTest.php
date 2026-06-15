@@ -78,6 +78,38 @@ class CreateProductLoopTerminationTest extends TestCase
         $this->assertNull($next, 'A processed parent must be excluded so the loop terminates.');
     }
 
+    public function test_parent_is_pending_when_its_own_variant_is_missing_even_if_all_children_are_uploaded(): void
+    {
+        // The dropped-parent bug class: every child is already a Shopify variant, but the
+        // parent's own SKU was never listed (parent uploaded=0, not in shopify_product_variants).
+        // The pending query must still select it so the parent's own variant gets added.
+        DB::table('retail_edge_products')->insert([
+            ['sku' => '021-09535', 'old_key' => '021-09535', 'quantity' => 1, 'uploaded_to_shopify' => 0], // parent, own variant missing
+            ['sku' => '021-09536', 'old_key' => '021-09535', 'quantity' => 1, 'uploaded_to_shopify' => 1], // child, in Shopify
+            ['sku' => '021-09537', 'old_key' => '021-09535', 'quantity' => 1, 'uploaded_to_shopify' => 1], // child, in Shopify
+        ]);
+        DB::table('shopify_product_variants')->insert([['sku' => '021-09536'], ['sku' => '021-09537']]);
+
+        $cmd = new CreateProduct;
+
+        $product = $cmd->nextPendingProduct([]);
+        $this->assertNotNull($product, 'Parent whose own variant is missing must be selected even if all children are uploaded.');
+        $this->assertSame('021-09535', $product->sku);
+    }
+
+    public function test_parent_flagged_needs_review_does_not_churn_in_pending_query(): void
+    {
+        // A parent flagged STATUS_NEEDS_REVIEW (3) — e.g. it genuinely cannot be listed — must
+        // not be re-selected every run, even though its own SKU is absent from Shopify.
+        DB::table('retail_edge_products')->insert([
+            ['sku' => 'NR-1', 'old_key' => 'NR-1', 'quantity' => 1, 'uploaded_to_shopify' => 3],
+            ['sku' => 'NR-2', 'old_key' => 'NR-1', 'quantity' => 1, 'uploaded_to_shopify' => 1],
+        ]);
+        DB::table('shopify_product_variants')->insert(['sku' => 'NR-2']);
+
+        $this->assertNull((new CreateProduct)->nextPendingProduct([]), 'A needs-review parent must not churn.');
+    }
+
     public function test_next_pending_product_can_be_restricted_to_a_single_sku(): void
     {
         // Two standalone parents that both qualify (in stock, not in Shopify, no children).
@@ -97,9 +129,10 @@ class CreateProductLoopTerminationTest extends TestCase
         $this->assertNull($cmd->nextPendingProduct([$only->id], 'P-2'));
     }
 
-    public function test_reconcile_children_marks_only_skus_that_became_variants(): void
+    public function test_mark_flags_flags_parent_and_children_that_did_not_become_variants(): void
     {
-        // Parent + 3 children; only C1 ends up as a real Shopify variant (option collapse).
+        // Parent + 3 children; only C1 ends up as a real Shopify variant (the parent's own
+        // variant and C2/C3 did not). Each row is flagged by what actually went live.
         DB::table('retail_edge_products')->insert([
             ['sku' => 'PAR', 'old_key' => 'PAR', 'quantity' => 1, 'uploaded_to_shopify' => 0],
             ['sku' => 'C1', 'old_key' => 'PAR', 'quantity' => 1, 'uploaded_to_shopify' => 0],
@@ -107,23 +140,22 @@ class CreateProductLoopTerminationTest extends TestCase
             ['sku' => 'C3', 'old_key' => 'PAR', 'quantity' => 1, 'uploaded_to_shopify' => 0],
         ]);
 
-        $cmd = new CreateProduct;
         $product = \App\Models\RetailEdgeProduct::where('sku', 'PAR')->with('children')->first();
-
         $createdData = ['variants' => ['edges' => [['node' => ['sku' => 'C1']]]]];
-        $result = $cmd->reconcileChildrenAfterCreate($product, $createdData);
+
+        $result = $this->markFlags(new CreateProduct, $product, $createdData);
 
         $this->assertSame(['C1'], $result['created']);
-        $this->assertEqualsCanonicalizing(['C2', 'C3'], $result['blocked']);
+        $this->assertEqualsCanonicalizing(['C2', 'C3', 'PAR'], $result['blocked']);
 
         $val = fn ($sku) => (int) \App\Models\RetailEdgeProduct::where('sku', $sku)->value('uploaded_to_shopify');
-        $this->assertSame(1, $val('C1'), 'A child that became a variant is uploaded.');
-        $this->assertSame(CreateProduct::STATUS_NEEDS_REVIEW, $val('C2'), 'A child with no variant is flagged, not falsely synced.');
+        $this->assertSame(1, $val('C1'), 'A row that became a variant is uploaded.');
+        $this->assertSame(CreateProduct::STATUS_NEEDS_REVIEW, $val('C2'), 'A row with no variant is flagged, not falsely synced.');
         $this->assertSame(CreateProduct::STATUS_NEEDS_REVIEW, $val('C3'));
-        $this->assertSame(CreateProduct::STATUS_NEEDS_REVIEW, $val('PAR'), 'Parent is flagged when any child is blocked.');
+        $this->assertSame(CreateProduct::STATUS_NEEDS_REVIEW, $val('PAR'), 'Parent is flagged when any row is blocked.');
     }
 
-    public function test_reconcile_children_marks_all_uploaded_when_every_variant_present(): void
+    public function test_mark_flags_marks_all_uploaded_when_every_row_is_live(): void
     {
         DB::table('retail_edge_products')->insert([
             ['sku' => 'PAR', 'old_key' => 'PAR', 'quantity' => 1, 'uploaded_to_shopify' => 0],
@@ -131,15 +163,23 @@ class CreateProductLoopTerminationTest extends TestCase
             ['sku' => 'C2', 'old_key' => 'PAR', 'quantity' => 1, 'uploaded_to_shopify' => 0],
         ]);
 
-        $cmd = new CreateProduct;
         $product = \App\Models\RetailEdgeProduct::where('sku', 'PAR')->with('children')->first();
+        // Parent's own variant is live too — the dropped-parent regression is fixed.
+        $createdData = ['variants' => ['edges' => [['node' => ['sku' => 'PAR']], ['node' => ['sku' => 'C1']], ['node' => ['sku' => 'C2']]]]];
 
-        $createdData = ['variants' => ['edges' => [['node' => ['sku' => 'C1']], ['node' => ['sku' => 'C2']]]]];
-        $result = $cmd->reconcileChildrenAfterCreate($product, $createdData);
+        $result = $this->markFlags(new CreateProduct, $product, $createdData);
 
-        $this->assertEqualsCanonicalizing(['C1', 'C2'], $result['created']);
+        $this->assertEqualsCanonicalizing(['PAR', 'C1', 'C2'], $result['created']);
         $this->assertSame([], $result['blocked']);
         $this->assertSame(1, (int) \App\Models\RetailEdgeProduct::where('sku', 'PAR')->value('uploaded_to_shopify'));
+    }
+
+    private function markFlags(CreateProduct $cmd, \App\Models\RetailEdgeProduct $product, array $createdData): array
+    {
+        $m = new \ReflectionMethod(CreateProduct::class, 'markFlagsFromProductSet');
+        $m->setAccessible(true);
+
+        return $m->invoke($cmd, $product, $createdData);
     }
 
     public function test_classify_product_fetch_distinguishes_live_gone_and_error(): void
