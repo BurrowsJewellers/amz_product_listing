@@ -4,6 +4,7 @@ namespace Tests\Unit;
 
 use App\Models\RetailEdgeProduct;
 use App\Services\Shopify\VariantSetBuilder;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Tests\TestCase;
 
@@ -147,5 +148,46 @@ class VariantSetBuilderTest extends TestCase
         $this->assertContains('M-2', array_column($set->variants, 'sku'));
         $this->assertSame('M-1', $set->blocked[0]['sku']);
         $this->assertSame('empty_axis', $set->blocked[0]['reason']);
+    }
+
+    public function test_variant_carries_sale_price_and_compare_at_when_a_window_is_active(): void
+    {
+        // Pricing comes from SalePriceCalculator: an active special undercuts
+        // retail, so the variant sells at the special with retail struck through.
+        Carbon::setTestNow(Carbon::parse('2026-07-02 12:00:00', config('app.timezone')));
+
+        $parent = $this->withChildren(
+            $this->product([
+                'sku' => '026-01083', 'old_key' => '026-01083', 'id3' => 'VT1', 's_cat' => 'Rings', 'ring_size' => '50',
+                'retail_price1' => '89.95',
+                'special_price' => '34.50',
+                'special_price_start' => '2026-04-13 00:00:00',
+                'special_price_end' => '2028-12-30 23:59:59',
+            ]),
+            []
+        );
+
+        $set = (new VariantSetBuilder)->build($parent);
+
+        $this->assertSame('34.5', $set->variants[0]['price']);
+        $this->assertSame('89.95', $set->variants[0]['compareAtPrice']);
+
+        Carbon::setTestNow();
+    }
+
+    public function test_variant_without_active_windows_sells_at_retail_with_no_compare_at(): void
+    {
+        $parent = $this->withChildren(
+            $this->product([
+                'sku' => '021-09523', 'old_key' => '021-09523', 'id3' => 'VT1', 's_cat' => 'Rings', 'ring_size' => '50',
+                'retail_price1' => '100', 'retail_price2' => '120',
+            ]),
+            []
+        );
+
+        $set = (new VariantSetBuilder)->build($parent);
+
+        $this->assertSame('100', $set->variants[0]['price']);
+        $this->assertNull($set->variants[0]['compareAtPrice']);
     }
 }

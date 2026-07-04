@@ -281,34 +281,4 @@ class VerifyAndSyncPrices extends Command
 
         return $updatedCount;
     }
-
-    /**
-     * Additional method to check for orphaned special prices
-     */
-    public function checkOrphanedSpecialPrices()
-    {
-        $orphaned = DB::select('
-            SELECT
-                spv.sku,
-                spv.price,
-                spv.compare_at_price,
-                rep.retail_price1,
-                rep.special_price,
-                rep.special_price_end
-            FROM shopify_product_variants spv
-            JOIN retail_edge_products rep ON spv.sku = rep.sku
-            WHERE spv.compare_at_price IS NOT NULL
-                AND spv.compare_at_price > 0
-                AND (rep.special_price_end IS NULL OR rep.special_price_end < NOW())
-        ');
-
-        if (! empty($orphaned)) {
-            $this->warn('Found '.count($orphaned).' products with compare_at_price but no active special price');
-            foreach ($orphaned as $item) {
-                $this->line("  SKU: {$item->sku} - Compare at: {$item->compare_at_price} (should be removed)");
-            }
-        }
-
-        return count($orphaned);
-    }
 }

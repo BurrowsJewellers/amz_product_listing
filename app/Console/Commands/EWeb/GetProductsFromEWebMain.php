@@ -7,6 +7,7 @@ use App\Models\RetailEdgeProduct;
 use App\Models\RetailEdgeProductImage;
 use App\Models\RetailEdgeProductIsd;
 use App\Models\Shopify\ShopifySku;
+use App\Services\Pricing\SalePriceCalculator;
 use App\Services\RetailEdgeService;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -561,66 +562,10 @@ class GetProductsFromEWebMain extends Command
 
     private function calculatePricing($item)
     {
-        $price = $item->RetailPrice;
-        $compareAtPrice = 0;
+        $salePrice = (new SalePriceCalculator)->fromEWebItem($item);
 
-        // Check if CataloguePrice is active (has priority over SpecialPrice)
-        if (isset($item->CataloguePrice) && $item->CataloguePrice > 0) {
-            // Check both start and end dates, treating '0001-01-01' as invalid
-            $catalogueStart = null;
-            $catalogueEnd = null;
-
-            if (isset($item->CataloguePriceStart) && $item->CataloguePriceStart !== '0001-01-01T00:00:00') {
-                try {
-                    $catalogueStart = Carbon::parse($item->CataloguePriceStart, 'UTC')->setTimezone(config('app.timezone'));
-                } catch (\Exception $e) {
-                    // Invalid date format, skip
-                }
-            }
-
-            if (isset($item->CataloguePriceEnd) && $item->CataloguePriceEnd !== '0001-01-01T00:00:00') {
-                try {
-                    $catalogueEnd = Carbon::parse($item->CataloguePriceEnd, 'UTC')->setTimezone(config('app.timezone'));
-                } catch (\Exception $e) {
-                    // Invalid date format, skip
-                }
-            }
-
-            if ($catalogueStart && $catalogueEnd && now()->between($catalogueStart, $catalogueEnd)) {
-                $price = $item->CataloguePrice;
-                $compareAtPrice = $item->RetailPrice;
-            }
-        }
-        // If CataloguePrice is not active, check SpecialPrice
-        elseif (isset($item->SpecialPrice) && $item->SpecialPrice > 0) {
-            // Check both start and end dates for SpecialPrice, treating '0001-01-01' as invalid
-            $specialStart = null;
-            $specialEnd = null;
-
-            if (isset($item->SpecialPriceStart) && $item->SpecialPriceStart !== '0001-01-01T00:00:00') {
-                try {
-                    $specialStart = Carbon::parse($item->SpecialPriceStart, 'UTC')->setTimezone(config('app.timezone'));
-                } catch (\Exception $e) {
-                    // Invalid date format, skip
-                }
-            }
-
-            if (isset($item->SpecialPriceEnd) && $item->SpecialPriceEnd !== '0001-01-01T00:00:00') {
-                try {
-                    $specialEnd = Carbon::parse($item->SpecialPriceEnd, 'UTC')->setTimezone(config('app.timezone'));
-                } catch (\Exception $e) {
-                    // Invalid date format, skip
-                }
-            }
-
-            if ($specialStart && $specialEnd && now()->between($specialStart, $specialEnd)) {
-                $price = $item->SpecialPrice;
-                $compareAtPrice = $item->RetailPrice;
-            }
-        }
-
-        $item->price = $price;
-        $item->compareAtPrice = $compareAtPrice;
+        $item->price = $salePrice->price;
+        $item->compareAtPrice = $salePrice->compareAtPrice;
 
         return $item;
     }

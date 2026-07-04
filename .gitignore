@@ -24,3 +24,4 @@ yarn-error.log
 t.txt
 .DS_Store
 /docs/superpowers
+.env.testing

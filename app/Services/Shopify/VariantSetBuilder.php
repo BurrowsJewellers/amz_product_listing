@@ -3,6 +3,7 @@
 namespace App\Services\Shopify;
 
 use App\Models\RetailEdgeProduct;
+use App\Services\Pricing\SalePriceCalculator;
 use Illuminate\Support\Collection;
 
 /**
@@ -159,19 +160,9 @@ class VariantSetBuilder
     /** @return array{0: string, 1: ?string} [price, compareAtPrice] */
     private function prices(RetailEdgeProduct $row): array
     {
-        $prices = array_filter(
-            array_map('floatval', [$row->retail_price1, $row->retail_price2]),
-            fn ($p) => $p > 0
-        );
+        $sale = (new SalePriceCalculator)->fromModel($row);
 
-        if (empty($prices)) {
-            return ['0', null];
-        }
-
-        $min = min($prices);
-        $max = max($prices);
-
-        return [(string) $min, $min === $max ? null : (string) $max];
+        return [(string) $sale->price, $sale->onSale() ? (string) $sale->compareAtPrice : null];
     }
 
     /**

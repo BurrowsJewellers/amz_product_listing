@@ -9,6 +9,7 @@ use App\Models\ShopifyProductMetafield;
 use App\Models\ShopifyProductVariant;
 use App\Models\ShopifyProductVariantMetafield; // Changed
 use App\Services\MetafieldAssignmentService; // Added
+use App\Services\Pricing\SalePriceCalculator;
 use App\Services\ShopifyConnectionService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
@@ -336,21 +337,14 @@ class UpdateProduct extends Command
 
     private function calculatePrice(RetailEdgeProduct $retailEdgeChild): string
     {
-        // $retailPrices = [$retailEdgeChild->retail_price1, $retailEdgeChild->retail_price2];
-        // $prices = array_filter(array_map('floatval', $retailPrices), fn($price) => $price > 0);
-        // return (string) (empty($prices) ? 0 : min($prices));
-
-        return (string) $retailEdgeChild->retail_price1;
+        return (string) (new SalePriceCalculator)->fromModel($retailEdgeChild)->price;
     }
 
-    private function calculateCompareAtPrice(RetailEdgeProduct $retailEdgeChild, string $currentPrice): string
+    private function calculateCompareAtPrice(RetailEdgeProduct $retailEdgeChild, string $currentPrice): ?string
     {
-        // $currentPriceFloat = floatval($currentPrice);
-        // $retailPrices = [$retailEdgeChild->retail_price1, $retailEdgeChild->retail_price2];
-        // $prices = array_filter(array_map('floatval', $retailPrices), fn($price) => $price > 0);
-        // $compareAtPrice = empty($prices) ? 0 : max($prices);
-        // return (string) (($currentPriceFloat == $compareAtPrice) ? 0 : $compareAtPrice);
-        return (string) $retailEdgeChild->compare_at_price;
+        $sale = (new SalePriceCalculator)->fromModel($retailEdgeChild);
+
+        return $sale->onSale() ? (string) $sale->compareAtPrice : null;
     }
 
     // buildVariantOptionsInput might be needed if you intend to change variant option values.
